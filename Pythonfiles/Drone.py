@@ -71,6 +71,21 @@ class Drone(GeomBase):
     maximum_chamber_position: float = Input()
     front_spar_position: float = Input()
     rear_spar_position: float = Input()
+    #Mission inputs
+    mission_range: float = Input()
+    mission_endurance: float = Input()
+    cruise_speed: float = Input()
+    maximum_load_factor = Input()
+    cruise_altitude: float = Input()
+
+    @Attribute
+    def mission(self):
+        'Ik ga wel beginnen met deze functie'
+        temp = 1
+        return temp
+
+
+
 
 
 
