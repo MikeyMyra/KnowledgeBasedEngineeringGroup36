@@ -6,4 +6,12 @@ from parapy.geom import GeomBase
 
 
 class Airfoil(Base):
-    temp = 1
+    # Inputs
+    thickness_to_chord: float = Input()
+    maximum_chamber: float = Input()
+    maximum_chamber_position: float = Input()
+
+    @Attribute
+    def calculate_CST_coefficients(self):
+        temp = 1
+        return temp

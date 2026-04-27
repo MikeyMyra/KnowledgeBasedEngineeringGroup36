@@ -31,3 +31,4 @@ class Fuselage(GeomBase):
     def calculate_skin_friction(self):
         temp = 1
         return temp
+

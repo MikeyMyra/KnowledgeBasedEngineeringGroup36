@@ -6,4 +6,13 @@ from parapy.geom import GeomBase
 
 
 class Wingbox(GeomBase):
-    temp = 1
+    # Inputs
+    front_spar_position: float = Input()
+    rear_spar_position: float = Input()
+    material: float = Input()
+
+    @Part
+    def geometry(self):
+        temp = 1
+        return temp
+
