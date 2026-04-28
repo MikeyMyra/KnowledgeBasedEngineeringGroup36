@@ -174,6 +174,12 @@ wheels = [
 ]
 
 [[package]]
+name = "matlab"
+version = "0.1"
+source = { registry = "https://pypi.parapy.nl/simple/" }
+sdist = { url = "https://files.pythonhosted.org/packages/d1/ea/1ecc1d9dfde594111b395dff9637183225dfb55b54fff4a906ba0ad5095a/matlab-0.1.tar.gz", hash = "sha256:8b13f7f121fcfb138203e35fa931e5f434abeefccfc583f8b3b4e2c0d0e7bcae", size = 538, upload-time = "2014-10-03T22:43:53.169Z" }
+
+[[package]]
 name = "matplotlib"
 version = "3.10.8"
 source = { registry = "https://pypi.parapy.nl/simple/" }
@@ -248,6 +254,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "cairocffi" },
     { name = "kbeutils" },
+    { name = "matlab" },
     { name = "matplotlib" },
     { name = "parapy" },
     { name = "pyqt6" },
@@ -259,6 +266,7 @@ dependencies = [
 requires-dist = [
     { name = "cairocffi" },
     { name = "kbeutils", path = "kbeutils-1.0-py3-none-any.whl" },
+    { name = "matlab", specifier = ">=0.1" },
     { name = "matplotlib" },
     { name = "parapy", specifier = ">=1.15,<1.16", index = "https://pypi.parapy.nl/simple/" },
     { name = "pyqt6" },

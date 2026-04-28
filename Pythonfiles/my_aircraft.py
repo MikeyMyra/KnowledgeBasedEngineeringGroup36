@@ -1,5 +1,5 @@
 from parapy.gui import display
-from Tutorial_13.tutorial_python_matlab.tut6 import Aircraft
+from Pythonfiles.tut6 import Aircraft
 
 #if __name__ == '__main__':
 

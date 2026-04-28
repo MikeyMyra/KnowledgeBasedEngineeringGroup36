@@ -7,7 +7,7 @@ Wing
 # iYsym iZsym Zsym
 0 0 0 
 # Sref Cref Bref
-55.62 2.83787 21.6
+224.1 4.42491 54
 # Xref Yref Zref
 0 0 0
 
@@ -24,11 +24,11 @@ YDUPLICATE
 INDEX
 1
 ANGLE
-3
+1
 # ----------------------------------------------------------
 SECTION
 # Xle Yle Zle Chord Ainc
-0 0 0 4 0
+0 0 0 6 0
 AFILE
 AFsection1.dat
 CLAF
@@ -36,7 +36,7 @@ CLAF
 # ----------------------------------------------------------
 SECTION
 # Xle Yle Zle Chord Ainc
-10.8 10.8 10.8 1.15 0
+-26.7298 27 -26.7298 2.3 -5
 AFILE
 AFsection2.dat
 CLAF
