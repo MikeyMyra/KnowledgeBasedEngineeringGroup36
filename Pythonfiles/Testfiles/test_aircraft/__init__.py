@@ -1,10 +1,12 @@
-# import, initialise MATLAB engine
+import os
 import matlab.engine
+
 MATLAB_Q3D_ENGINE = matlab.engine.start_matlab()
-# The Matlab engine runs in a separate process and has a separate working
-# directory. Our Matlab code is in the "Q3D" sub-directory, so if we change
-# its working directory to it here, it can find all relevant files directly
-MATLAB_Q3D_ENGINE.cd(r'Matlabfiles\Q3D')
+
+# Get the directory of this file, then navigate to Q3D relative to it
+base_dir = os.path.dirname(os.path.abspath(__file__))
+q3d_path = os.path.join(base_dir, 'Matlabfiles', 'Q3D')
+MATLAB_Q3D_ENGINE.cd(q3d_path)
 
 
 from .ref_frame import Frame
