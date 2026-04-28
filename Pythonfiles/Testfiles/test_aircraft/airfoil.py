@@ -13,7 +13,7 @@
 
 from parapy.geom import FittedCurve, Point
 from parapy.core import Attribute, Part, Input
-from tut6 import Frame
+from test_aircraft import Frame
 
 import os # for path operations (opening airfoil definition files)
 
@@ -25,8 +25,8 @@ class Airfoil(FittedCurve):  # note the use of FittedCurve as superclass
     thickness_factor: float = Input(1.)
     mesh_deflection: float = Input(1e-4)
 
-    # airfoil files are located in 'tut6' subdirectory, but this can be changed
-    airfoil_dir = Input(os.path.abspath('tut6'))
+    # airfoil files are located in 'test_aircraft' subdirectory, but this can be changed
+    airfoil_dir = Input(os.path.abspath('Pythonfiles/Testfiles/test_aircraft'))
     # using abspath to create an absolute path makes this robust against
     # changes in working directory
 

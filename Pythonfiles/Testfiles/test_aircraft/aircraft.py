@@ -20,9 +20,9 @@ from parapy.geom import (GeomBase, translate, rotate90, rotate, MirroredShape,
                          Rectangle, ProjectedCurve, SubtractedSolid,
                          FusedSolid, Solid)
 
-from tut6 import Frame
-from tut6 import Fuselage
-from tut6 import LiftingSurface
+from test_aircraft import Frame
+from test_aircraft import Fuselage
+from test_aircraft import LiftingSurface
 
 # This is a global variable *within this module*
 maindir = os.path.dirname(__file__)

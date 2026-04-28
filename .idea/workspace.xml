@@ -7,10 +7,10 @@
     <list default="true" id="871c42f2-8ed7-4502-b344-e4de8b26f833" name="Changes" comment="">
       <change beforePath="$PROJECT_DIR$/Q3D/Storage/AVLinput.avl" beforeDir="false" afterPath="$PROJECT_DIR$/Q3D/Storage/AVLinput.avl" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/Q3D/Storage/AVLrun.dat" beforeDir="false" afterPath="$PROJECT_DIR$/Q3D/Storage/AVLrun.dat" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tut6/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/tut6/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tut6/aircraft.py" beforeDir="false" afterPath="$PROJECT_DIR$/tut6/aircraft.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tut6/airfoil.py" beforeDir="false" afterPath="$PROJECT_DIR$/tut6/airfoil.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tut6/liftingsurface.py" beforeDir="false" afterPath="$PROJECT_DIR$/tut6/liftingsurface.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_aircraft/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_aircraft/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_aircraft/aircraft.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_aircraft/aircraft.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_aircraft/airfoil.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_aircraft/airfoil.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/test_aircraft/liftingsurface.py" beforeDir="false" afterPath="$PROJECT_DIR$/test_aircraft/liftingsurface.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../tutorial_5/spam/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/../../tutorial_5/spam/__init__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/../../tutorial_5/spam/eggs.py" beforeDir="false" afterPath="$PROJECT_DIR$/../../tutorial_5/spam/eggs.py" afterDir="false" />
     </list>

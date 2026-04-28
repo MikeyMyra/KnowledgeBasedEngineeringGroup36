@@ -16,13 +16,13 @@ import numpy as np
 from parapy.geom import LoftedSolid, translate, rotate
 from parapy.core import Input, Attribute, Part
 
-from tut6 import Airfoil
-from tut6 import Frame
+from test_aircraft import Airfoil
+from test_aircraft import Frame
 
 # Matlab library, in order to use e.g. `matlab.double()`
 import matlab
 # Imports the Matlab engine instance created in the module's `__init__.py`
-from tut6 import MATLAB_Q3D_ENGINE
+from test_aircraft import MATLAB_Q3D_ENGINE
 
 
 class LiftingSurface(LoftedSolid):  # note use of loftedSolid as superclass
