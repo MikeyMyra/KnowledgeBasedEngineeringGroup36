@@ -1,13 +1,6 @@
-import os
-
-from parapy.core import Input,Attribute,Part, child, action, validate
+from parapy.core import Input,Attribute, validate
 from parapy.geom import GeomBase
-from Components.Wing import Wing
-from Components.Payload import Payload
-from Components.Fuselage import Fuselage
-from Components.Engine import Engine
-from Components.Avionics import Avionics
-from Components.Empennage import Empennage
+
 
 class Drone(GeomBase):
     #-------------------Inputs-------------------
@@ -80,9 +73,7 @@ class Drone(GeomBase):
 
     @Attribute
     def mission(self):
-        'Ik ga wel beginnen met deze functie'
-        temp = 1
-        return temp
+
 
 
 
