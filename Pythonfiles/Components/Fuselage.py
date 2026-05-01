@@ -1,35 +1,108 @@
 import math
+import sys
+import os
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
 from parapy.core import Input, Attribute, Part, child
 from parapy.geom import GeomBase, LoftedSolid, Circle, Vector, translate
 from Fuselage.Undercarriage import Undercarriage
+from Components.Frame import Frame
 
 
 class Fuselage(GeomBase):
-    """Fuselage has nosecone (tapered) part, then main (cylinder) part and then the tailcone (tapered) part"""
-    
+    """Fuselage: nosecone (tapered) + cylinder + tailcone (tapered)."""
+
     aircraft_mass = Input()
-    
+
     radius: float = Input()
     cylinder_start: float = Input()
     cylinder_end: float = Input()
     length: float = Input()
-    
+
     min_radius_pct: float = Input(0.0001)
-    
+
     taper_sections: int = Input(10)
     color_taper: str = Input("Orange")
-    
+
     cylinder_sections: int = Input(4)
     color_cylinder: str = Input("Yellow")
-    
+
     material_skin: str = Input()
     undercarriage_retractible: bool = Input()
     mesh_deflection: float = Input(1e-4)
-    
+
     # ------------------------------------------------------------------ #
-    # Child components
+    # POSITION HELPER
     # ------------------------------------------------------------------ #
-    
+
+    def _pos_x(self, x: float):
+        """Return a position along the fuselage X-axis, starting at the nose (0,0,0)."""
+        return translate(
+            self.position.rotate90('y'),
+            Vector(1, 0, 0), x,
+        )
+
+    # ------------------------------------------------------------------ #
+    # JUNCTION POSITIONS (reused by frames and profiles)
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def _x_nose_tip(self) -> float:
+        return 0.0
+
+    @Attribute
+    def _x_cylinder_start(self) -> float:
+        return (self.cylinder_start / 100.0) * self.length
+
+    @Attribute
+    def _x_cylinder_end(self) -> float:
+        return (self.cylinder_end / 100.0) * self.length
+
+    @Attribute
+    def _x_tail_tip(self) -> float:
+        return self.length
+
+    # ------------------------------------------------------------------ #
+    # REFERENCE FRAMES
+    # ------------------------------------------------------------------ #
+
+    @Part
+    def frame_nose(self):
+        """Frame at aircraft nose — origin of the fuselage (0, 0, 0)."""
+        return Frame(
+            pos=self._pos_x(self._x_nose_tip),
+            hidden=False,
+        )
+
+    @Part
+    def frame_cylinder_start(self):
+        """Frame at the nosecone / cylinder junction."""
+        return Frame(
+            pos=self._pos_x(self._x_cylinder_start),
+            hidden=False,
+        )
+
+    @Part
+    def frame_cylinder_end(self):
+        """Frame at the cylinder / tailcone junction."""
+        return Frame(
+            pos=self._pos_x(self._x_cylinder_end),
+            hidden=False,
+        )
+
+    @Part
+    def frame_tail(self):
+        """Frame at the tail tip."""
+        return Frame(
+            pos=self._pos_x(self._x_tail_tip),
+            hidden=False,
+        )
+
+    # ------------------------------------------------------------------ #
+    # CHILD COMPONENTS
+    # ------------------------------------------------------------------ #
+
     @Part
     def undercarriage(self):
         return Undercarriage(
@@ -38,20 +111,18 @@ class Fuselage(GeomBase):
             fuselage_length=self.length,
             fuselage_radius=self.radius,
             label="undercarriage",
-    )
-    
+        )
+
     # ------------------------------------------------------------------ #
-    # Nose cone geometry definition  
+    # NOSE CONE GEOMETRY
     # ------------------------------------------------------------------ #
-    
-    # Calculate positions of nose cone circles                                                        
+
     @Attribute
     def _nose_positions(self) -> list[float]:
         cs = self.cylinder_start / 100.0
         n  = self.taper_sections
         return [(i / (n - 1)) * cs * self.length for i in range(n)]
-    
-    # Calculate radii of nose cone circles
+
     @Attribute
     def _nose_radii(self) -> list[float]:
         r_min = self.min_radius_pct / 100.0
@@ -59,22 +130,16 @@ class Fuselage(GeomBase):
         def ellipse_blend(t):
             return r_min + (1.0 - r_min) * math.sqrt(max(0.0, 1.0 - t ** 2))
         return [ellipse_blend(1.0 - i / (n - 1)) * self.radius for i in range(n)]
-    
-    # Create nose cone profile
+
     @Part
     def nose_profiles(self):
         return Circle(
             quantify=self.taper_sections,
             color=self.color_taper,
             radius=self._nose_radii[child.index],
-            position=translate(
-                self.position.rotate90('y'),
-                Vector(1, 0, 0),
-                self._nose_positions[child.index],
-            ),
+            position=self._pos_x(self._nose_positions[child.index]),
         )
-    
-    # Create nose cone solid
+
     @Part
     def nose(self):
         return LoftedSolid(
@@ -82,40 +147,31 @@ class Fuselage(GeomBase):
             color=self.color_taper,
             mesh_deflection=self.mesh_deflection,
         )
-    
+
     # ------------------------------------------------------------------ #
-    # Cylindrical part geometry definition  
+    # CYLINDRICAL PART GEOMETRY
     # ------------------------------------------------------------------ #
-    
-    # Calculate positions of main part circles
+
     @Attribute
     def _cyl_positions(self) -> list[float]:
         cs = self.cylinder_start / 100.0
         ce = self.cylinder_end   / 100.0
         nc = self.cylinder_sections
-        # include junction at cs (i=0) through ce (i=nc)
-        return [( cs + (i / nc) * (ce - cs) ) * self.length for i in range(nc + 1)]
-    
-    # Calculate radii of main part circles
+        return [(cs + (i / nc) * (ce - cs)) * self.length for i in range(nc + 1)]
+
     @Attribute
     def _cyl_radii(self) -> list[float]:
         return [self.radius] * (self.cylinder_sections + 1)
-    
-    # Create main part profile
+
     @Part
     def cyl_profiles(self):
         return Circle(
             quantify=self.cylinder_sections + 1,
             color=self.color_cylinder,
             radius=self._cyl_radii[child.index],
-            position=translate(
-                self.position.rotate90('y'),
-                Vector(1, 0, 0),
-                self._cyl_positions[child.index],
-            ),
+            position=self._pos_x(self._cyl_positions[child.index]),
         )
-    
-    # Create main part solid
+
     @Part
     def cylinder(self):
         return LoftedSolid(
@@ -123,20 +179,17 @@ class Fuselage(GeomBase):
             color=self.color_cylinder,
             mesh_deflection=self.mesh_deflection,
         )
-    
+
     # ------------------------------------------------------------------ #
-    # Tail cone geometry definition  
+    # TAIL CONE GEOMETRY
     # ------------------------------------------------------------------ #
-    
-    # Calculate positions of tail cone circles 
+
     @Attribute
     def _tail_positions(self) -> list[float]:
         ce = self.cylinder_end / 100.0
         n  = self.taper_sections
-        # i=0 is the ce junction, i=n-1 is the tip
         return [(ce + (i / (n - 1)) * (1.0 - ce)) * self.length for i in range(n)]
-    
-    # Calculate radii of tail cone circles 
+
     @Attribute
     def _tail_radii(self) -> list[float]:
         r_min = self.min_radius_pct / 100.0
@@ -144,22 +197,16 @@ class Fuselage(GeomBase):
         def ellipse_blend(t):
             return r_min + (1.0 - r_min) * math.sqrt(max(0.0, 1.0 - t ** 2))
         return [ellipse_blend(i / (n - 1)) * self.radius for i in range(n)]
-    
-    # Create tail cone profile
+
     @Part
     def tail_profiles(self):
         return Circle(
             quantify=self.taper_sections,
             color=self.color_taper,
             radius=self._tail_radii[child.index],
-            position=translate(
-                self.position.rotate90('y'),
-                Vector(1, 0, 0),
-                self._tail_positions[child.index],
-            ),
+            position=self._pos_x(self._tail_positions[child.index]),
         )
-    
-    # Create tail cone solid
+
     @Part
     def tail(self):
         return LoftedSolid(
@@ -167,31 +214,31 @@ class Fuselage(GeomBase):
             color=self.color_taper,
             mesh_deflection=self.mesh_deflection,
         )
-    
+
     # ------------------------------------------------------------------ #
-    # Calculations #TODO: Give these useful output
+    # CALCULATIONS  # TODO: implement properly
     # ------------------------------------------------------------------ #
-    
-    # Calculate mass
+
     @Attribute
     def calculate_mass(self):
         return 1
-    
-    # Calculate volume
+
     @Attribute
     def calculate_volume(self):
         return 1
-    
-    # Calculate skin friction
+
     @Attribute
     def calculate_skin_friction(self):
         return 1
 
 
-# Test
+# ---------------------------------------------------------------------- #
+# TEST
+# ---------------------------------------------------------------------- #
+
 if __name__ == '__main__':
-    
     from parapy.gui import display
+
     obj = Fuselage(
         aircraft_mass=50000,
         radius=1,

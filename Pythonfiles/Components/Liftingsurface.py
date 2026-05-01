@@ -1,65 +1,171 @@
-import os
+from math import radians, tan
 
-from parapy.core import Input,Attribute,Part, child, action
-from parapy.geom import GeomBase
+import numpy as np
+from parapy.core import Input, Attribute, Part, child
+from parapy.geom import GeomBase, LoftedSolid, translate, rotate
+
+from Wing.Airfoil import Airfoil
+from Components.Frame import Frame
 
 
-class Liftingsurface(GeomBase):
-    # Inputs
-    span: float = Input()
-    wing_area: float = Input()
-    taper_ratio: float = Input()
-    leading_edge_position: float = Input()
-    material_wing: str = Input()
-    material_wingbox: str = Input()
-    thickness_to_chord: float = Input()
-    maximum_chamber: float = Input()
-    maximum_chamber_position: float = Input()
-    front_spar_position: float = Input()
-    rear_spar_position: float = Input()
+class LiftingSurface(GeomBase):
+    """Lifting surface geometry: root/tip airfoils + lofted solid + frame."""
 
-    @Attribute
-    def calculate_root_chord(self) -> float:
-        temp = 1
-        return temp
+    # ------------------------------------------------------------------ #
+    # INPUTS
+    # ------------------------------------------------------------------ #
 
-    @Attribute
-    def calculate_tip_chord(self) -> float:
-        temp = 1
-        return temp
+    airfoil_root_name: str = Input("whitcomb")
+    airfoil_tip_name: str = Input("simm_airfoil")
+    airfoil_dir: str = Input("Pythonfiles/Testfiles/test_aircraft")
 
-    @Attribute
-    def calculate_sweep_angle(self) -> float:
-        temp = 1
-        return temp
+    c_root: float = Input()
+    c_tip: float = Input()
+    t_factor_root: float = Input(1.0)
+    t_factor_tip: float = Input(1.0)
 
-    @Attribute
-    def calculate_MAC(self) -> float:
-        temp = 1
-        return temp
+    semi_span: float = Input()
+    sweep: float = Input(0.0)
+    twist: float = Input(0.0)
+    dihedral: float = Input(0.0)
 
-    @Attribute
-    def calculate_MAC_position(self) -> float:
-        temp = 1
-        return temp
+    taper_ratio: float = Input(0.5)
+    front_spar_position: float = Input(0.25)
+    rear_spar_position: float = Input(0.75)
+    thickness_to_chord: float = Input(0.12)
+    maximum_camber: float = Input(0.04)
+    maximum_camber_position: float = Input(0.4)
 
-    @Attribute
-    def calculate_aspect_ratio(self) -> float:
-        return self.wing_area / self.span**2
+    material_wing: str = Input("aluminium")
+    material_wingbox: str = Input("aluminium")
+
+    mesh_deflection: float = Input(1e-4)
+
+    # ------------------------------------------------------------------ #
+    # SIZING / DERIVED GEOMETRY
+    # ------------------------------------------------------------------ #
 
     @Attribute
-    def calculate_sectional_properties(self) -> float:
-        temp = 1
-        return temp
+    def wing_area(self) -> float:
+        return (self.c_root + self.c_tip) * self.semi_span
 
     @Attribute
-    def calculate_mass(self) -> float:
-        temp = 1
-        return temp
+    def aspect_ratio(self) -> float:
+        return (2 * self.semi_span) ** 2 / self.wing_area
+
+    @Attribute
+    def mean_aerodynamic_chord(self) -> float:
+        tr = self.c_tip / self.c_root
+        return (2 / 3) * self.c_root * (1 + tr + tr ** 2) / (1 + tr)
+
+    @Attribute
+    def mac_spanwise_position(self) -> float:
+        tr = self.c_tip / self.c_root
+        return self.semi_span * (1 + 2 * tr) / (3 * (1 + tr))
+
+    @Attribute
+    def sweep_angle_rad(self) -> float:
+        return radians(self.sweep)
+
+    @Attribute
+    def dihedral_rad(self) -> float:
+        return radians(self.dihedral)
+
+    @Attribute
+    def twist_rad(self) -> float:
+        return radians(self.twist)
+
+    # ------------------------------------------------------------------ #
+    # MASS ESTIMATE (placeholder — fill in structural model)
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def mass(self) -> float:
+        return 1.0  # TODO: implement structural mass model
+
+    # ------------------------------------------------------------------ #
+    # POSITION HELPERS
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def _tip_position(self):
+        """Position of the tip airfoil, accounting for sweep, dihedral and twist."""
+        return translate(
+            rotate(self.position, "y", self.twist_rad),
+            "y", self.semi_span,
+            "x", self.semi_span * tan(self.sweep_angle_rad),
+            "z", self.semi_span * np.sin(self.dihedral_rad),
+        )
+
+    # ------------------------------------------------------------------ #
+    # AIRFOIL PROFILES
+    # ------------------------------------------------------------------ #
 
     @Part
-    def geometry(self):
-        temp = 1
-        return temp
+    def root_airfoil(self):
+        return Airfoil(
+            airfoil_name=self.airfoil_root_name,
+            chord=self.c_root,
+            thickness_factor=self.t_factor_root,
+            airfoil_dir=self.airfoil_dir,
+            mesh_deflection=self.mesh_deflection,
+            position=self.position,
+        )
+
+    @Part
+    def tip_airfoil(self):
+        return Airfoil(
+            airfoil_name=self.airfoil_tip_name,
+            chord=self.c_tip,
+            thickness_factor=self.t_factor_tip,
+            airfoil_dir=self.airfoil_dir,
+            mesh_deflection=self.mesh_deflection,
+            position=self._tip_position,
+        )
+
+    # ------------------------------------------------------------------ #
+    # LOFTED SOLID
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def _loft_profiles(self):
+        return [self.root_airfoil.geometry, self.tip_airfoil.geometry]
+
+    @Part
+    def solid(self):
+        return LoftedSolid(
+            profiles=self._loft_profiles,
+            color="LightBlue",
+            mesh_deflection=self.mesh_deflection,
+        )
+
+    # ------------------------------------------------------------------ #
+    # FRAME VISUALISATION
+    # ------------------------------------------------------------------ #
+
+    @Part
+    def frame(self):
+        return Frame(
+            pos=self.position,
+            hidden=False,
+        )
 
 
+# ---------------------------------------------------------------------- #
+# TEST
+# ---------------------------------------------------------------------- #
+
+if __name__ == "__main__":
+    from parapy.gui import display
+
+    ls = LiftingSurface(
+        label="lifting_surface",
+        c_root=5.0,
+        c_tip=2.5,
+        semi_span=27.0,
+        sweep=25.0,
+        twist=-2.0,
+        dihedral=5.0,
+        mesh_deflection=1e-4,
+    )
+    display(ls)

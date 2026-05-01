@@ -1,9 +1,15 @@
 import math
+import sys
+import os
+
 from parapy.core import Input, Attribute, Part, child
 from parapy.geom import (
     GeomBase, LoftedSolid, RevolvedSolid,
     Circle, Vector, translate, Point
 )
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from Components.Frame import Frame
 
 
 class Undercarriage(GeomBase):
@@ -51,9 +57,9 @@ class Undercarriage(GeomBase):
     @Attribute
     def axle_half_width(self):
         return self.wheel_major_radius * 1.2
-    
+
     # ------------------------------------------------------------------ #
-    # POSITION HELPER (single source of truth)
+    # POSITION HELPER
     # ------------------------------------------------------------------ #
 
     def pos(self, x=0.0, y=0.0, z=0.0, base=None, rotate=None):
@@ -125,6 +131,13 @@ class Undercarriage(GeomBase):
             mesh_deflection=self.mesh_deflection,
         )
 
+    @Part
+    def nose_strut_frame(self):
+        return Frame(
+            pos=self.pos(x=self._nose_gear_position_x),
+            hidden=False,
+        )
+
     # ------------------------------------------------------------------ #
     # NOSE AXLE
     # ------------------------------------------------------------------ #
@@ -158,6 +171,13 @@ class Undercarriage(GeomBase):
             profiles=self.nose_axle_profiles,
             color="DarkGray",
             mesh_deflection=self.mesh_deflection,
+        )
+
+    @Part
+    def nose_axle_frame(self):
+        return Frame(
+            pos=self.pos(x=self._nose_gear_position_x, rotate='x'),
+            hidden=False,
         )
 
     # ------------------------------------------------------------------ #
@@ -203,6 +223,17 @@ class Undercarriage(GeomBase):
             mesh_deflection=self.mesh_deflection,
         )
 
+    @Part
+    def nose_tyre_frame(self):
+        return Frame(
+            pos=self.pos(
+                x=self._nose_gear_position_x,
+                z=self.wheel_major_radius,
+                rotate='y',
+            ),
+            hidden=False,
+        )
+
     # ------------------------------------------------------------------ #
     # MAIN STRUTS
     # ------------------------------------------------------------------ #
@@ -238,6 +269,17 @@ class Undercarriage(GeomBase):
             ],
             color="Gray",
             mesh_deflection=self.mesh_deflection,
+        )
+
+    @Part
+    def main_strut_frames(self):
+        return Frame(
+            quantify=self.n_main_struts,
+            pos=self.pos(
+                x=self._main_gear_position_x,
+                y=self._main_gear_positions_y[child.index],
+            ),
+            hidden=False,
         )
 
     # ------------------------------------------------------------------ #
@@ -276,22 +318,35 @@ class Undercarriage(GeomBase):
             mesh_deflection=self.mesh_deflection,
         )
 
-    # ------------------------------------------------------------------ #
-    # MAIN TYRES 
-    # ------------------------------------------------------------------ #
-
-    def _main_tyre_y(self, i):
-        strut_id = i // self.wheels_per_strut
-        wheel_id = i % self.wheels_per_strut
-
-        return (
-            self._main_gear_positions_y[strut_id]
-            + self._main_axle_offsets[wheel_id]
+    @Part
+    def main_axle_frames(self):
+        return Frame(
+            quantify=self.n_main_struts,
+            pos=self.pos(
+                x=self._main_gear_position_x,
+                y=self._main_gear_positions_y[child.index],
+                rotate='x',
+            ),
+            hidden=False,
         )
+
+    # ------------------------------------------------------------------ #
+    # MAIN TYRES
+    # ------------------------------------------------------------------ #
 
     @Attribute
     def _main_tyre_count(self):
         return self.n_main_struts * self.wheels_per_strut
+
+    @Attribute
+    def _main_tyre_positions_y(self):
+        """Pre-compute all tyre y-positions as a plain list so child.index
+        lookups never call _main_tyre_y with a non-integer argument."""
+        return [
+            self._main_gear_positions_y[i // self.wheels_per_strut]
+            + self._main_axle_offsets[i % self.wheels_per_strut]
+            for i in range(self._main_tyre_count)
+        ]
 
     @Part
     def main_tyres_profiles(self):
@@ -301,7 +356,7 @@ class Undercarriage(GeomBase):
             color="Black",
             position=self.pos(
                 x=self._main_gear_position_x,
-                y=self._main_tyre_y(child.index),
+                y=self._main_tyre_positions_y[child.index],
                 z=self.wheel_major_radius,
                 rotate='y',
             ),
@@ -314,12 +369,25 @@ class Undercarriage(GeomBase):
             built_from=self.main_tyres_profiles[child.index],
             center=Point(
                 self._main_gear_position_x,
-                self._main_tyre_y(child.index),
+                self._main_tyre_positions_y[child.index],
                 -self.fuselage_radius - self.strut_height,
             ),
             direction=Vector(0, 1, 0),
             color="Black",
             mesh_deflection=self.mesh_deflection,
+        )
+
+    @Part
+    def main_tyre_frames(self):
+        return Frame(
+            quantify=self._main_tyre_count,
+            pos=self.pos(
+                x=self._main_gear_position_x,
+                y=self._main_tyre_positions_y[child.index],
+                z=self.wheel_major_radius,
+                rotate='y',
+            ),
+            hidden=False,
         )
 
 
