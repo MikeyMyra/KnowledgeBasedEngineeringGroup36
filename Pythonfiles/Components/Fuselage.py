@@ -1,10 +1,13 @@
 import math
 from parapy.core import Input, Attribute, Part, child
 from parapy.geom import GeomBase, LoftedSolid, Circle, Vector, translate
+from Fuselage.Undercarriage import Undercarriage
 
 
 class Fuselage(GeomBase):
-    """ Fuselage has nosecone (tapered) part, then main (cylinder) part and then the tailcone (tapered) part"""
+    """Fuselage has nosecone (tapered) part, then main (cylinder) part and then the tailcone (tapered) part"""
+    
+    aircraft_mass = Input()
     
     radius: float = Input()
     cylinder_start: float = Input()
@@ -23,24 +26,27 @@ class Fuselage(GeomBase):
     undercarriage_retractible: bool = Input()
     mesh_deflection: float = Input(1e-4)
     
-    # Input validation                                          
-    @Attribute
-    def _validated_inputs(self):
-        assert 0.0 < self.cylinder_start < self.cylinder_end < 100.0, (
-            "cylinder_start must be between 0 and cylinder_end, "
-            "and cylinder_end must be less than 100."
-        )
-        assert 0.0 < self.min_radius_pct <= 100.0, (
-            "min_radius_pct must be between 0 (exclusive) and 100."
-        )
-        assert self.taper_sections >= 2, "taper_sections must be at least 2."
-        assert self.cylinder_sections >= 1, "cylinder_sections must be at least 1."
-        return True
+    # ------------------------------------------------------------------ #
+    # Child components
+    # ------------------------------------------------------------------ #
+    
+    @Part
+    def undercarriage(self):
+        return Undercarriage(
+            retractible=self.undercarriage_retractible,
+            aircraft_mass=self.aircraft_mass,
+            fuselage_length=self.length,
+            fuselage_radius=self.radius,
+            label="undercarriage",
+    )
+    
+    # ------------------------------------------------------------------ #
+    # Nose cone geometry definition  
+    # ------------------------------------------------------------------ #
     
     # Calculate positions of nose cone circles                                                        
     @Attribute
     def _nose_positions(self) -> list[float]:
-        _ = self._validated_inputs
         cs = self.cylinder_start / 100.0
         n  = self.taper_sections
         return [(i / (n - 1)) * cs * self.length for i in range(n)]
@@ -48,46 +54,11 @@ class Fuselage(GeomBase):
     # Calculate radii of nose cone circles
     @Attribute
     def _nose_radii(self) -> list[float]:
-        _ = self._validated_inputs
         r_min = self.min_radius_pct / 100.0
         n     = self.taper_sections
         def ellipse_blend(t):
             return r_min + (1.0 - r_min) * math.sqrt(max(0.0, 1.0 - t ** 2))
         return [ellipse_blend(1.0 - i / (n - 1)) * self.radius for i in range(n)]
-    
-    # Calculate positions of main part circles
-    @Attribute
-    def _cyl_positions(self) -> list[float]:
-        _ = self._validated_inputs
-        cs = self.cylinder_start / 100.0
-        ce = self.cylinder_end   / 100.0
-        nc = self.cylinder_sections
-        # include junction at cs (i=0) through ce (i=nc)
-        return [( cs + (i / nc) * (ce - cs) ) * self.length for i in range(nc + 1)]
-    
-    # Calculate radii of main part circles
-    @Attribute
-    def _cyl_radii(self) -> list[float]:
-        return [self.radius] * (self.cylinder_sections + 1)
-    
-    # Calculate positions of tail cone circles 
-    @Attribute
-    def _tail_positions(self) -> list[float]:
-        _ = self._validated_inputs
-        ce = self.cylinder_end / 100.0
-        n  = self.taper_sections
-        # i=0 is the ce junction, i=n-1 is the tip
-        return [(ce + (i / (n - 1)) * (1.0 - ce)) * self.length for i in range(n)]
-    
-    # Calculate radii of tail cone circles 
-    @Attribute
-    def _tail_radii(self) -> list[float]:
-        _ = self._validated_inputs
-        r_min = self.min_radius_pct / 100.0
-        n     = self.taper_sections
-        def ellipse_blend(t):
-            return r_min + (1.0 - r_min) * math.sqrt(max(0.0, 1.0 - t ** 2))
-        return [ellipse_blend(i / (n - 1)) * self.radius for i in range(n)]
     
     # Create nose cone profile
     @Part
@@ -103,6 +74,33 @@ class Fuselage(GeomBase):
             ),
         )
     
+    # Create nose cone solid
+    @Part
+    def nose(self):
+        return LoftedSolid(
+            profiles=self.nose_profiles,
+            color=self.color_taper,
+            mesh_deflection=self.mesh_deflection,
+        )
+    
+    # ------------------------------------------------------------------ #
+    # Cylindrical part geometry definition  
+    # ------------------------------------------------------------------ #
+    
+    # Calculate positions of main part circles
+    @Attribute
+    def _cyl_positions(self) -> list[float]:
+        cs = self.cylinder_start / 100.0
+        ce = self.cylinder_end   / 100.0
+        nc = self.cylinder_sections
+        # include junction at cs (i=0) through ce (i=nc)
+        return [( cs + (i / nc) * (ce - cs) ) * self.length for i in range(nc + 1)]
+    
+    # Calculate radii of main part circles
+    @Attribute
+    def _cyl_radii(self) -> list[float]:
+        return [self.radius] * (self.cylinder_sections + 1)
+    
     # Create main part profile
     @Part
     def cyl_profiles(self):
@@ -116,6 +114,36 @@ class Fuselage(GeomBase):
                 self._cyl_positions[child.index],
             ),
         )
+    
+    # Create main part solid
+    @Part
+    def cylinder(self):
+        return LoftedSolid(
+            profiles=self.cyl_profiles,
+            color=self.color_cylinder,
+            mesh_deflection=self.mesh_deflection,
+        )
+    
+    # ------------------------------------------------------------------ #
+    # Tail cone geometry definition  
+    # ------------------------------------------------------------------ #
+    
+    # Calculate positions of tail cone circles 
+    @Attribute
+    def _tail_positions(self) -> list[float]:
+        ce = self.cylinder_end / 100.0
+        n  = self.taper_sections
+        # i=0 is the ce junction, i=n-1 is the tip
+        return [(ce + (i / (n - 1)) * (1.0 - ce)) * self.length for i in range(n)]
+    
+    # Calculate radii of tail cone circles 
+    @Attribute
+    def _tail_radii(self) -> list[float]:
+        r_min = self.min_radius_pct / 100.0
+        n     = self.taper_sections
+        def ellipse_blend(t):
+            return r_min + (1.0 - r_min) * math.sqrt(max(0.0, 1.0 - t ** 2))
+        return [ellipse_blend(i / (n - 1)) * self.radius for i in range(n)]
     
     # Create tail cone profile
     @Part
@@ -131,24 +159,6 @@ class Fuselage(GeomBase):
             ),
         )
     
-    # Create nose cone solid
-    @Part
-    def nose(self):
-        return LoftedSolid(
-            profiles=self.nose_profiles,
-            color=self.color_taper,
-            mesh_deflection=self.mesh_deflection,
-        )
-    
-    # Create main part solid
-    @Part
-    def cylinder(self):
-        return LoftedSolid(
-            profiles=self.cyl_profiles,
-            color=self.color_cylinder,
-            mesh_deflection=self.mesh_deflection,
-        )
-    
     # Create tail cone solid
     @Part
     def tail(self):
@@ -158,27 +168,32 @@ class Fuselage(GeomBase):
             mesh_deflection=self.mesh_deflection,
         )
     
-    # Calculate mass PLACEHOLDER
+    # ------------------------------------------------------------------ #
+    # Calculations #TODO: Give these useful output
+    # ------------------------------------------------------------------ #
+    
+    # Calculate mass
     @Attribute
     def calculate_mass(self):
         return 1
     
-    # Calculate volume PLACEHOLDER
+    # Calculate volume
     @Attribute
     def calculate_volume(self):
         return 1
     
-    # Calculate skin friction PLACEHOLDER
+    # Calculate skin friction
     @Attribute
     def calculate_skin_friction(self):
         return 1
 
 
-# Local test
+# Test
 if __name__ == '__main__':
     
     from parapy.gui import display
     obj = Fuselage(
+        aircraft_mass=50000,
         radius=1,
         cylinder_start=10,
         cylinder_end=70,

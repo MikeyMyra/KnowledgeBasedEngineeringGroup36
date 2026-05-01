@@ -4,7 +4,7 @@ from parapy.core import Input,Attribute,Part, child, action
 from parapy.geom import GeomBase
 
 
-class Wing(GeomBase):
+class Liftingsurface(GeomBase):
     # Inputs
     span: float = Input()
     wing_area: float = Input()
@@ -61,3 +61,5 @@ class Wing(GeomBase):
     def geometry(self):
         temp = 1
         return temp
+
+

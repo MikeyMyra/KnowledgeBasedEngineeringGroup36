@@ -2,7 +2,7 @@ import os
 
 from parapy.core import Input,Attribute,Part, child, action, validate
 from parapy.geom import GeomBase
-from Components.Wing import Wing
+from Pythonfiles.Components.Liftingsurface import Wing
 from Components.Payload import Payload
 from Components.Fuselage import Fuselage
 from Components.Engine import Engine
