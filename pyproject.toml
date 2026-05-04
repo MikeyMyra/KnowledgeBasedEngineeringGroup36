@@ -51,3 +51,6 @@ url = "https://pypi.parapy.nl/simple/"
 name = "pypi"
 verify_ssl = true
 url = "https://pypi.org/simple"
+
+[tool.setuptools.packages.find]
+where = ["."]

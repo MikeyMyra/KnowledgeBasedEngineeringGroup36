@@ -10,8 +10,7 @@ from parapy.geom import (
     Polygon
 )
 
-if __name__ != "__main__":
-    from Liftingsurfaces.Airfoil import Airfoil
+from Pythonfiles.Components.Liftingsurfaces.Airfoil import Airfoil
 
 
 class Wingbox(GeomBase):
@@ -182,9 +181,6 @@ class Wingbox(GeomBase):
 
 if __name__ == "__main__":
     from parapy.gui import display
-    
-    if __name__ == "__main__":
-        from Airfoil import Airfoil
 
     root_af = Airfoil(
         chord=5.0,

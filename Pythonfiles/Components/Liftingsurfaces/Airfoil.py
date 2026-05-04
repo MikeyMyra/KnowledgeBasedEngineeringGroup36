@@ -5,8 +5,7 @@ import numpy as np
 from parapy.geom import GeomBase, FittedCurve, Point
 from parapy.core import Input, Attribute, Part
 
-if __name__ != "__main__":
-    from Frame import Frame
+from Pythonfiles.Components.Frame import Frame
 
 
 class Airfoil(GeomBase):
@@ -111,10 +110,9 @@ class Airfoil(GeomBase):
     # FRAME
     # ------------------------------------------------------------------ #
 
-    if __name__ != "__main__":
-        @Part
-        def frame(self):
-            return Frame(pos=self.position, hidden=False)
+    @Part
+    def frame(self):
+        return Frame(pos=self.position, hidden=False)
     
     # ------------------------------------------------------------------ #
     # PLACEHOLDERS

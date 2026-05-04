@@ -1,0 +1,7 @@
+parapy<1.16,>=1.15
+kbeutils
+wxpython
+matplotlib
+pyqt6
+cairocffi
+matlab>=0.1

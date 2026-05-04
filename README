@@ -1,0 +1,5 @@
+run the following in the terminal to fix the imports of the python files:
+
+uv pip install -e .
+
+this command allows importing without folder dependency

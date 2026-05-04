@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: parapy_1.15
+Version: 0.1.0
+Summary: UV environment for parapy 1.15
+Requires-Python: <3.13,>=3.12
+Description-Content-Type: text/markdown
+Requires-Dist: parapy<1.16,>=1.15
+Requires-Dist: kbeutils
+Requires-Dist: wxpython
+Requires-Dist: matplotlib
+Requires-Dist: pyqt6
+Requires-Dist: cairocffi
+Requires-Dist: matlab>=0.1
