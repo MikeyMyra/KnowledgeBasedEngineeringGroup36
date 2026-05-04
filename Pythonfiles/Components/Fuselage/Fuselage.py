@@ -2,12 +2,14 @@ import math
 import sys
 import os
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from parapy.core import Input, Attribute, Part, child
 from parapy.geom import GeomBase, LoftedSolid, Circle, Vector, translate
-from Fuselage.Undercarriage import Undercarriage
-from Components.Frame import Frame
+
+
+if __name__ != '__main__':
+    from Frame import Frame
+    from Fuselage.Undercarriage import Undercarriage
 
 
 class Fuselage(GeomBase):
@@ -98,7 +100,7 @@ class Fuselage(GeomBase):
             pos=self._pos_x(self._x_tail_tip),
             hidden=False,
         )
-
+    
     # ------------------------------------------------------------------ #
     # CHILD COMPONENTS
     # ------------------------------------------------------------------ #
@@ -238,6 +240,11 @@ class Fuselage(GeomBase):
 
 if __name__ == '__main__':
     from parapy.gui import display
+    
+    from Undercarriage import Undercarriage
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    from Frame import Frame
+    
 
     obj = Fuselage(
         aircraft_mass=50000,

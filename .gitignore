@@ -8,3 +8,9 @@ Pythonfiles/Testfiles/test_aircraft/__pycache__/ref_frame.cpython-312.pyc
 Pythonfiles/Testfiles/test_aircraft/__pycache__/fuselage.cpython-312.pyc
 Pythonfiles/Testfiles/test_aircraft/__pycache__/fuselage.cpython-312.pyc
 Pythonfiles/Testfiles/test_aircraft/__pycache__/fuselage.cpython-312.pyc
+Pythonfiles/Components/Liftingsurfaces/__pycache__/Airfoil.cpython-312.pyc
+Pythonfiles/Components/Liftingsurfaces/__pycache__/Liftingsurface.cpython-312.pyc
+Pythonfiles/Components/Fuselage/__pycache__/Undercarriage.cpython-312.pyc
+Pythonfiles/Components/Fuselage/__pycache__/Fuselage.cpython-312.pyc
+Pythonfiles/Components/__pycache__/Liftingsurface.cpython-312.pyc
+Pythonfiles/Components/Liftingsurfaces/Airfoils/__pycache__/Airfoil.cpython-312.pyc

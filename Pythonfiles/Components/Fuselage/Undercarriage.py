@@ -8,8 +8,8 @@ from parapy.geom import (
     Circle, Vector, translate, Point
 )
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
-from Components.Frame import Frame
+if __name__ != '__main__':
+    from Frame import Frame
 
 
 class Undercarriage(GeomBase):
@@ -397,6 +397,9 @@ class Undercarriage(GeomBase):
 
 if __name__ == '__main__':
     from parapy.gui import display
+    
+    sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+    from Components.Frame import Frame
 
     obj = Undercarriage(
         retractible=True,
