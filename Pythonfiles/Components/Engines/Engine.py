@@ -292,55 +292,55 @@ class Engine(GeomBase):
     # ENGINE CORE
     # ============================================================ #
 
-    engine_type: str = Input("propeller")
+    engine_type: str = Input()
 
     mtow: float = Input()
-    n_engines: int = Input(1)
-    thrust_to_weight: float = Input(0.35)
+    n_engines: int = Input()
+    thrust_to_weight: float = Input()
 
-    rho: float = Input(1.225)
-    g: float = Input(9.81)
+    rho: float = Input()
+    g: float = Input()
 
     # ============================================================ #
     # GEOMETRY CONTEXT (FROM AIRCRAFT, NOT WING OBJECTS)
     # ============================================================ #
 
     semi_span: float = Input()
-    sweep_le: float = Input(5.0)
-    dihedral: float = Input(5.0)
+    sweep_le: float = Input()
+    dihedral: float = Input()
 
-    fuselage_radius: float = Input(0.0)
+    fuselage_radius: float = Input()
 
     # ============================================================ #
     # POSITIONING
     # ============================================================ #
 
-    attach_spanwise_pct: float = Input(0.35)
-    attach_x_offset: float = Input(0.0)
-    attach_z_offset: float = Input(0.0)
+    attach_spanwise_pct: float = Input()
+    attach_x_offset: float = Input()
+    attach_z_offset: float = Input()
 
     # ============================================================ #
     # DESIGN CONTROL
     # ============================================================ #
 
-    disk_loading_uav: float = Input(80.0)
-    target_solidity: float = Input(0.15)
+    disk_loading_uav: float = Input()
+    target_solidity: float = Input()
 
     # ============================================================ #
     # OVERRIDES (GEOMETRY ONLY)
     # ============================================================ #
 
-    nacelle_length_override: float = Input(None)
-    nacelle_radius_override: float = Input(None)
+    nacelle_length_override: float = Input()
+    nacelle_radius_override: float = Input()
 
-    n_blades_override: int = Input(None)
-    blade_length_override: float = Input(None)
-    blade_root_chord_override: float = Input(None)
+    n_blades_override: int = Input()
+    blade_length_override: float = Input()
+    blade_root_chord_override: float = Input()
 
-    blade_sweep: float = Input(5.0)
+    blade_sweep: float = Input()
 
     taper_sections: int = Input(8)
-    color_nacelle: str = Input("Silver")
+    color_nacelle: str = Input()
 
     mesh_deflection: float = Input(1e-4)
 

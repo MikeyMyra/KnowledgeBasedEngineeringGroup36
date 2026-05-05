@@ -301,6 +301,7 @@ class Aircraft(GeomBase):
             attach_z_offset=self.attach_z_offset,
 
             disk_loading_uav=self.disk_loading_uav,
+            target_solidity=self.target_solidity,
 
             nacelle_length_override=self.nacelle_length_override,
             nacelle_radius_override=self.nacelle_radius_override,
@@ -310,10 +311,8 @@ class Aircraft(GeomBase):
             blade_root_chord_override=self.blade_root_chord_override,
 
             blade_sweep=self.blade_sweep,
-            taper_sections=self.engine_taper_sections,
-            color_nacelle=self.engine_color_nacelle,
 
-            mesh_deflection=self.mesh_deflection,
+            color_nacelle=self.engine_color_nacelle,  
         )
 
 
@@ -327,105 +326,86 @@ if __name__ == "__main__":
     ac = Aircraft(
 
         # ========================================================= #
-        # GLOBAL
+        # MISSION
         # ========================================================= #
-        aircraft_mass=1000,
-        g=9.81,
+        aircraft_mass=1000,          # ✔ mission sizing driver (payload + fuel + structure assumption)
+        g=9.81,                      # ✔ physical constant (always fixed on Earth)
+
+        wing_area=20.0,              # ✔ driven by wing loading requirement (W/S)
+        wing_semi_span=8.0,          # ✔ aspect ratio / airport constraint / mission geometry
+
+        n_engines=1,                 # ✔ mission architecture (redundancy vs simplicity)
+        engine_type="jet",          # ✔ mission choice (cruise speed, range, altitude)
+        thrust_to_weight=0.35,      # ✔ performance requirement (takeoff/climb requirement)
+
+        rho=1.225,                  # ✔ ISA sea level (or mission altitude if refined later)
 
         # ========================================================= #
-        # FUSELAGE
+        # ROSKAM
         # ========================================================= #
-        fuselage_length=None,
-        fuselage_radius=None,
-        fuselage_cylinder_start=10.0,
-        fuselage_cylinder_end=70.0,
-        undercarriage_retractible=False,
+        disk_loading_uav=80.0,      # ✔ Roskam / UAV empirical disk loading range
+        target_solidity=0.15,       # ✔ Roskam propeller design rule (~0.1–0.2)
 
+        tail_volume_coefficient_h=0.6,   # ✔ Roskam horizontal tail sizing
+        tail_volume_coefficient_v=0.04,  # ✔ Roskam vertical tail sizing
+
+        tail_aspect_ratio_h=4.5,         # ✔ Roskam typical HT range (3–5)
+        tail_aspect_ratio_v=1.8,         # ✔ Roskam vertical tail range (1.2–2.5)
+
+        wing_taper_ratio=0.40,           # ✔ typical efficient subsonic wing (0.3–0.5)
+        wing_sweep_le=5.0,               # ✔ low-speed aircraft assumption (almost straight wing)
+        wing_dihedral=5.0,               # ✔ stability rule-of-thumb
+        wing_twist=0.0,
+        wing_thickness_to_chord=0.15,    # ✔ subsonic structural/aero compromise
+        wing_maximum_camber=0.04,        # ✔ typical cambered airfoil range
+        wing_maximum_camber_position=0.4,# ✔ NACA-style default
+
+        tail_taper_ratio=0.40,           # ✔ same logic as wing
+        tail_sweep_le=10.0,              # ✔ slightly more swept tail (stability margin)
+        tail_thickness_to_chord=0.15,
+        tail_maximum_camber_position=0,
+        tail_maximum_camber=0,
+        tail_dihedral=0,
+        tail_twist=0,
+
+        blade_sweep=5.0,                 # ✔ propeller/rotor empirical aero smoothing
+
+        # ========================================================= #
+        # USER SET
+        # ========================================================= #
+        fuselage_length=None,        # ✔ intentionally Roskam-derived fallback
+        fuselage_radius=None,        # ✔ same
+
+        fuselage_cylinder_start=10.0,# ⚙ geometry partitioning (model structure choice)
+        fuselage_cylinder_end=70.0,  # ⚙ same
+
+        undercarriage_retractible=False,  # ⚙ design choice (simplification vs realism)
+
+        # ---------------- COLORS (PURE VISUAL ONLY) ----------------
         fuselage_cones_color="steelblue",
         fuselage_cylinder_color="blue",
         undercarriage_color_tyre="black",
         undercarriage_color_axle="white",
         undercarriage_color_strut="silver",
 
-        # ========================================================= #
-        # MAIN WING
-        # ========================================================= #
-        wing_area=20.0,
-        wing_semi_span=8.0,
-
-        wing_taper_ratio=0.40,
-        wing_sweep_le=5.0,
-        wing_twist=-2.0,
-        wing_dihedral=5.0,
-
-        wing_thickness_to_chord=0.15,
-        wing_maximum_camber=0.04,
-        wing_maximum_camber_position=0.4,
-
-        wing_t_factor_root=1.0,
-        wing_t_factor_tip=1.0,
-
-        wing_front_spar_position=0.15,
-        wing_rear_spar_position=0.60,
-        
         main_wing_color_wingbox="gold",
         main_wing_color_liftingsurface="yellow",
 
-        # ========================================================= #
-        # TAIL
-        # ========================================================= #
-        tail_area=None,
-        tail_semi_span=None,
-
-        tail_taper_ratio=0.40,
-        tail_sweep_le=10.0,
-        tail_twist=0.0,
-        tail_dihedral=0.0,
-
-        tail_thickness_to_chord=0.15,
-        tail_maximum_camber=0.0,
-        tail_maximum_camber_position=0.4,
-
-        tail_t_factor_root=1.0,
-        tail_t_factor_tip=1.0,
-
-        tail_front_spar_position=0.15,
-        tail_rear_spar_position=0.60,
-
-        tail_volume_coefficient_h=0.6,
-        tail_volume_coefficient_v=0.04,
-        tail_aspect_ratio_h=4.5,
-        tail_aspect_ratio_v=1.8,
-        
         tail_h_color_wingbox="gray",
         tail_h_color_liftingsurface="silver",
         tail_v_color_wingbox="black",
         tail_v_color_liftingsurface="white",
 
-        # ========================================================= #
-        # ENGINE
-        # ========================================================= #
-
-        engine_type="jet",
-
-        n_engines=1,
-        thrust_to_weight=0.35,
-        rho=1.225,
-
-        attach_spanwise_pct=0.0,
-        attach_x_offset=-0.5,
-        attach_z_offset=0.0,
-        
-        nacelle_length_override=None,
-        nacelle_radius_override=None,
-        
-        n_blades_override=None,
-        blade_length_override=None,
-        blade_root_chord_override=None,
-        blade_sweep=5.0,
-        
-        disk_loading_uav=80.0,
         engine_color_nacelle="Silver",
+
+        # ========================================================= #
+        # FIXED
+        # ========================================================= #
+        wing_front_spar_position=0.15,   # structural convention
+        wing_rear_spar_position=0.60,    # structural convention
+
+        tail_front_spar_position=0.15,    # structural convention
+        tail_rear_spar_position=0.60,     # structural convention
     )
 
     display(ac)
