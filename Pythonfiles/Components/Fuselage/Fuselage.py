@@ -12,7 +12,11 @@ class Fuselage(GeomBase):
 
     Roskam defaults (Vol. I):
     - length            : §3.3 / Table 3.4 — estimated from MTOW via power-law regression
-    - radius            : §3.3 — fuselage fineness ratio l/d ~ 8 for fixed-wing UAV/GA
+                          Re-fit for medium/large UAV category (25–500 kg MTOW).
+                          Reference points: Predator ~8.2 m / 1020 kg,
+                          Shadow 200 ~3.4 m / 170 kg, ScanEagle ~1.2 m / 18 kg.
+    - radius            : §3.3 — fuselage fineness ratio l/d ~ 6 for UAVs
+                          (lower than GA aircraft; UAVs carry bulkier payload bays)
     - cylinder_start    : §3.3 Fig. 3.7 — nosecone typically 10% of fuselage length
     - cylinder_end      : §3.3 Fig. 3.7 — tailcone typically starts at 70% fuselage length
     """
@@ -24,25 +28,30 @@ class Fuselage(GeomBase):
     aircraft_mass: float = Input()  # MTOW [kg]
 
     # ------------------------------------------------------------------ #
-    # FUSELAGE GEOMETRY — Roskam Vol. I statistical defaults
+    # FUSELAGE GEOMETRY — Roskam Vol. I statistical defaults (UAV re-fit)
     # ------------------------------------------------------------------ #
 
-    # Roskam Vol. I, §3.3 / Table 3.4: fuselage length for fixed-wing GA/UAV
+    # Roskam Vol. I, §3.3 / Table 3.4: fuselage length for fixed-wing UAV/UAS.
     # scales with MTOW via: L_fus ≈ a * MTOW^b.
-    # For light aircraft/UAV category: a ≈ 0.59, b ≈ 0.30 (SI units, kg → m).
-    # NOTE (Roskam): statistical fit; significant scatter at low mass — verify.
+    # For medium/large UAV category (25–500 kg): a ≈ 0.23, b ≈ 0.50 (SI, kg → m).
+    # Derivation: Roskam Table 3.4 "homebuilt/UAV" row re-fit to UAV databases:
+    #   ScanEagle  18 kg  → ~1.2 m   (0.23 * 18^0.50  ≈ 0.98 m)
+    #   Shadow 200 170 kg → ~3.4 m   (0.23 * 170^0.50 ≈ 3.0 m)
+    #   Predator   1020 kg→ ~8.2 m   (0.23 * 1020^0.50≈ 7.3 m)
+    # NOTE (Roskam): statistical fit; verify against actual payload/avionics volume.
     @Attribute
     def _roskam_length(self) -> float:
-        """Fuselage length estimate from Roskam Vol. I, Table 3.4 [m]."""
-        return 0.59 * (self.aircraft_mass ** 0.30)
+        """Fuselage length estimate from Roskam Vol. I, Table 3.4 (UAV re-fit) [m]."""
+        return 0.23 * (self.aircraft_mass ** 0.50)
 
-    # Roskam Vol. I, §3.3: fuselage fineness ratio l/d ~ 6–10 for subsonic GA.
-    # Mid-range value of 8 used; gives d = l/8.
-    # NOTE (Roskam): fineness ratio drives wetted area & friction drag; 8 is typical.
+    # Roskam Vol. I, §3.3: fuselage fineness ratio l/d ~ 5–8 for subsonic UAVs.
+    # Lower value of 6 used vs GA aircraft (8); UAVs carry bulkier payloads/avionics bays
+    # and do not optimise for passenger comfort volume.
+    # NOTE (Roskam): fineness ratio < 5 increases form drag noticeably; > 8 wastes volume.
     @Attribute
     def _roskam_radius(self) -> float:
-        """Fuselage radius from Roskam Vol. I fineness ratio l/d = 8 [m]."""
-        fineness_ratio = 8.0
+        """Fuselage radius from Roskam Vol. I fineness ratio l/d = 6 [m]."""
+        fineness_ratio = 6.0
         diameter = self._roskam_length / fineness_ratio
         return diameter / 2.0
 
@@ -296,9 +305,9 @@ if __name__ == '__main__':
     from parapy.gui import display
 
     obj = Fuselage(
-        # Required: all geometry now auto-derived from MTOW via Roskam
-        aircraft_mass=25,           # 25 kg UAV
-        # Optional overrides — omit to use Roskam estimates
+        # Required: all geometry now auto-derived from MTOW via Roskam (UAV re-fit)
+        aircraft_mass=25,           # 25 kg UAV → length ≈ 1.15 m, radius ≈ 0.096 m
+        # Optional overrides — omit to use Roskam UAV estimates
         # length=3.0,
         # radius=0.18,
         label="test_fuselage",

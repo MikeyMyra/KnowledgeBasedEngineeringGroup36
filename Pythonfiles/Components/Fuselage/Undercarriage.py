@@ -317,7 +317,7 @@ class Undercarriage(GeomBase):
 
     @Attribute
     def _main_strut_positions_z(self):
-        return [0.0, self.strut_height]
+        return [0.0, self.strut_height*2]
 
     @Attribute
     def _main_strut_radii(self):

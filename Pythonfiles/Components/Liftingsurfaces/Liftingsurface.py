@@ -1,6 +1,6 @@
 from math import radians, tan
-
 import numpy as np
+
 from parapy.core import Input, Attribute, Part
 from parapy.geom import GeomBase, LoftedSolid, translate, rotate
 
@@ -10,254 +10,249 @@ from Pythonfiles.Components.Frame import Frame
 
 
 class LiftingSurface(GeomBase):
-    """Lifting surface geometry: root/tip airfoils + lofted solid + frame.
 
-    Roskam defaults (Vol. I):
-    - taper_ratio       : Table 3.6 / Fig. 3.15 — typical UAV/GA: 0.40 (flagged)
-    - sweep_le          : Table 3.6 — low-speed fixed-wing UAV: 5° (flagged)
-    - twist             : Table 3.6 — typical washout: −2° (flagged)
-    - dihedral          : Table 3.6 — low-wing GA/UAV: 5° (flagged)
-    - thickness_to_chord: Table 3.5 — subsonic fixed-wing: 0.15 (flagged)
-    - maximum_camber    : typical NACA 4-series stats: 0.04 (flagged)
-    - front/rear spar   : Roskam Vol. I §4.1 structural layout guidelines (flagged)
-    - attach_x (wing)   : Roskam Vol. I §3.2 — MAC quarter chord at 40% fuselage length
-    - attach_x (tail)   : Roskam Vol. I §3.4 — tail LE at 85% fuselage length
-    """
+    # ------------------------------------------------------------ #
+    # PRIMARY INPUTS
+    # NOTE: wing_area is the TOTAL area (both halves combined) [m²]
+    #       semi_span is the half-span of ONE side [m]
+    # ------------------------------------------------------------ #
 
-    airfoil_root_name: str = Input("whitcomb")
-    airfoil_tip_name: str = Input("whitcomb")
+    wing_area: float = Input()      # total reference area, both sides [m²]
+    semi_span: float = Input()      # half-span, one side [m]
+
+    fuselage_length: float = Input(30.0)
+    fuselage_radius: float = Input(2.0)
+
+    is_tail: bool = Input(False)
+    is_vertical_tail: bool = Input(False)
+
+    mesh_deflection: float = Input(1e-4)
+
+    # ------------------------------------------------------------ #
+    # GEOMETRY
+    # ------------------------------------------------------------ #
+
+    taper_ratio: float = Input(0.40)
+    sweep_le: float = Input(5.0)
+    twist: float = Input(-2.0)
+    dihedral: float = Input(5.0)
+
+    thickness_to_chord: float = Input(0.15)
+    maximum_camber: float = Input(0.04)
+    maximum_camber_position: float = Input(0.4)
+
+    # ------------------------------------------------------------ #
+    # AIRFOIL SCALING
+    # ------------------------------------------------------------ #
 
     t_factor_root: float = Input(1.0)
     t_factor_tip: float = Input(1.0)
 
-    mesh_deflection: float = Input(1e-4)
+    # ------------------------------------------------------------ #
+    # SPARS
+    # ------------------------------------------------------------ #
 
-    # ------------------------------------------------------------------ #
-    # PRIMARY SIZING — always required from user
-    # ------------------------------------------------------------------ #
-
-    wing_area: float = Input()      # reference area (one side) [m²]
-    semi_span: float = Input()      # half-span [m]
-
-    # ------------------------------------------------------------------ #
-    # PLANFORM ANGLES & RATIOS — Roskam Vol. I statistical defaults
-    # ------------------------------------------------------------------ #
-
-    # Roskam Vol. I, Table 3.6: taper ratio for low-speed fixed-wing ~ 0.40.
-    # NOTE (Roskam): value is statistical; adjust for high-AR sailplane/UAV.
-    taper_ratio: float = Input(0.40)
-
-    # Roskam Vol. I, Table 3.6: LE sweep for subsonic UAV typically 0–10°.
-    # NOTE (Roskam): increase for higher cruise Mach; 5° is conservative default.
-    sweep_le: float = Input(5.0)
-
-    # Roskam Vol. I, Table 3.6: geometric twist (washout) typically −2° to −3°.
-    # NOTE (Roskam): negative = wash-out at tip, improves stall characteristics.
-    twist: float = Input(-2.0)
-
-    # Roskam Vol. I, Table 3.6: dihedral for low-wing configuration ~ 5°.
-    # NOTE (Roskam): high-wing configurations use 0–2°; mid-wing 2–4°.
-    dihedral: float = Input(5.0)
-
-    # ------------------------------------------------------------------ #
-    # AIRFOIL SECTION PROPERTIES — Roskam Vol. I statistical defaults
-    # ------------------------------------------------------------------ #
-
-    # Roskam Vol. I, Table 3.5: t/c for subsonic fixed-wing typically 0.12–0.18.
-    # NOTE (Roskam): thicker sections increase structural depth; 0.15 is midrange.
-    thickness_to_chord: float = Input(0.15)
-
-    # NOTE (Roskam default not explicit): 0.04 is representative of NACA 4-series
-    # sections commonly used in GA/UAV; flag and verify against chosen airfoil.
-    maximum_camber: float = Input(0.04)
-
-    # NOTE (Roskam default not explicit): 0.4c is typical for NACA 4-series.
-    maximum_camber_position: float = Input(0.4)
-
-    # ------------------------------------------------------------------ #
-    # WINGBOX SPAR POSITIONS — Roskam Vol. I §4.1 structural layout
-    # ------------------------------------------------------------------ #
-
-    # Roskam Vol. I, §4.1: front spar typically at 15–20% chord.
-    # NOTE (Roskam): 0.15 is the forward practical limit to preserve LE devices.
     front_spar_position: float = Input(0.15)
-
-    # Roskam Vol. I, §4.1: rear spar typically at 55–65% chord.
-    # NOTE (Roskam): 0.60 preserves room for trailing-edge control surfaces.
     rear_spar_position: float = Input(0.60)
 
-    # ------------------------------------------------------------------ #
-    # FUSELAGE INTERFACE — required for attachment positioning
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------ #
+    # ROSKAM TAIL PARAMETERS
+    # ------------------------------------------------------------ #
 
-    fuselage_length: float = Input(30.0)    # total fuselage length [m]
-    fuselage_radius: float = Input(2.0)     # fuselage radius at attach point [m]
+    tail_volume_coefficient_h: float = Input(0.6)
+    tail_volume_coefficient_v: float = Input(0.04)
+    tail_aspect_ratio_h: float = Input(4.5)
+    tail_aspect_ratio_v: float = Input(1.8)
 
-    is_tail: bool = Input(False)
+    # ------------------------------------------------------------ #
+    # WING REFERENCE OBJECT
+    # ------------------------------------------------------------ #
 
-    # ------------------------------------------------------------------ #
-    # ESTIMATED ATTACHMENT POSITION
-    # ------------------------------------------------------------------ #
+    wing_ref: "LiftingSurface" = Input(None)
+
+    # ------------------------------------------------------------ #
+    # ATTACH POSITION
+    # ------------------------------------------------------------ #
 
     @Attribute
-    def attach_x(self) -> float:
-        """Estimated x-position of the root LE along the fuselage [m].
+    def attach_x(self):
+        if self.is_tail and not self.is_vertical_tail:
+            return self.wing_ref.attach_x + self.tail_arm
+        
+        x_qc_mac = 0.40 * self.fuselage_length
+        return x_qc_mac - 0.25 * self.mean_aerodynamic_chord - self.mac_x_offset
 
-        Roskam Vol. I, §3.2 (wing): MAC quarter chord placed at ~40% fuselage length.
-        Roskam Vol. I, §3.4 (tail): tail LE placed at ~85% fuselage length.
-        """
-        if self.is_tail:
-            # Roskam Vol. I, §3.4: horizontal/vertical tail LE at 85% fuselage length.
-            return 0.85 * self.fuselage_length
+    @Attribute
+    def attach_z(self):
+        if self.is_tail and not self.is_vertical_tail:
+            return 0
+        
+        elif self.is_vertical_tail:
+            return self.fuselage_radius * 0.5
+        
         else:
-            # Roskam Vol. I, §3.2: wing quarter-chord of MAC at 40% fuselage length.
-            x_qc_mac = 0.40 * self.fuselage_length
-            return x_qc_mac - 0.25 * self.mean_aerodynamic_chord - self.mac_x_offset
+            return -self.fuselage_radius * 0.5
+
+    # ------------------------------------------------------------ #
+    # TAIL ARM
+    # ------------------------------------------------------------ #
 
     @Attribute
-    def attach_z(self) -> float:
-        """Z-position of the root LE = fuselage radius (surface of fuselage) [m]."""
-        return -self.fuselage_radius * 0.5
+    def tail_arm(self):
+        """Moment arm from wing attach_x to tail attach_x [m].
+        Both attach_x values are already absolute coordinates in metres."""
+        if not self.is_tail:
+            return None
 
-    # ------------------------------------------------------------------ #
-    # MASS ESTIMATE
-    # ------------------------------------------------------------------ #
+        span = 2.0 * self.wing_ref.semi_span
+        return 0.6 * span
 
-    @Attribute
-    def mass(self) -> float:
-        """Rough structural mass estimate [kg].
-
-        NOTE (Roskam default not explicit): Raymer simple wing weight equation
-        used as placeholder. Replace with Roskam Vol. V Chapter 10 for detail.
-        """
-        S_full = 1 * self.wing_area
-        return 0.0215 * (S_full ** 0.9) * (self.aspect_ratio ** 0.4)
-
-    # ------------------------------------------------------------------ #
-    # PLANFORM SIZING
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------ #
+    # ROSKAM EFFECTIVE AREA
+    # NOTE: all areas here are TOTAL (both sides) [m²]
+    # ------------------------------------------------------------ #
 
     @Attribute
-    def c_root(self) -> float:
-        """Root chord derived from area, span and taper ratio [m]."""
-        return (1 * self.wing_area) / (self.semi_span * (1 + self.taper_ratio))
+    def effective_area(self):
+        """Total reference area (both sides) [m²]."""
+
+        if not self.is_tail:
+            return self.wing_area       # wing_area is already total
+
+        if self.wing_ref is None:
+            raise ValueError("Tail requires wing_ref")
+
+        wing = self.wing_ref
+
+        S_w = wing.wing_area            # total wing area  [m²]
+        b_w = 2 * wing.semi_span        # full wing span   [m]
+        c_w = wing.mean_aerodynamic_chord
+
+        if self.is_vertical_tail:
+            Vv = self.tail_volume_coefficient_v
+            return (Vv * S_w * b_w) / self.tail_arm
+
+        else:
+            Vh = self.tail_volume_coefficient_h
+            return (Vh * S_w * c_w) / self.tail_arm
+
+    # ------------------------------------------------------------ #
+    # SPAN
+    # ------------------------------------------------------------ #
 
     @Attribute
-    def c_tip(self) -> float:
-        """Tip chord [m]."""
+    def effective_span(self):
+        """Semi-span (one side) [m]."""
+
+        if not self.is_tail:
+            return self.semi_span
+        
+        if self.is_vertical_tail:
+            return np.sqrt(self.tail_aspect_ratio_v * self.effective_area) / 2.0
+
+        # effective_area is total; AR = full_span² / S_total → full_span = sqrt(AR * S_total)
+        return np.sqrt(self.tail_aspect_ratio_h * self.effective_area) / 2.0
+
+    # ------------------------------------------------------------ #
+    # PLANFORM
+    # NOTE: effective_area is total; effective_span is semi-span
+    #   S_total = semi_span * c_root * (1 + taper)
+    #   → c_root = S_total / (semi_span * (1 + taper))
+    # ------------------------------------------------------------ #
+
+    @Attribute
+    def c_root(self):
+        return self.effective_area / (self.effective_span * (1 + self.taper_ratio))
+
+    @Attribute
+    def c_tip(self):
         return self.c_root * self.taper_ratio
 
     @Attribute
-    def aspect_ratio(self) -> float:
-        """Aspect ratio based on full span [-]."""
-        return (2 * self.semi_span) ** 2 / (2 * self.wing_area)
+    def aspect_ratio(self):
+        # AR = full_span² / S_total = (2*semi_span)² / effective_area
+        return (2 * self.effective_span) ** 2 / self.effective_area
 
     @Attribute
-    def mean_aerodynamic_chord(self) -> float:
-        """Mean aerodynamic chord [m]."""
+    def mean_aerodynamic_chord(self):
         tr = self.taper_ratio
-        return (2 / 3) * self.c_root * (1 + tr + tr ** 2) / (1 + tr)
+        return (2 / 3) * self.c_root * (1 + tr + tr**2) / (1 + tr)
 
     @Attribute
-    def mac_spanwise_position(self) -> float:
-        """Spanwise position of the MAC from root [m]."""
+    def mac_spanwise_position(self):
         tr = self.taper_ratio
-        return self.semi_span * (1 + 2 * tr) / (3 * (1 + tr))
+        return self.effective_span * (1 + 2 * tr) / (3 * (1 + tr))
 
     @Attribute
-    def mac_x_offset(self) -> float:
-        """Chordwise offset of MAC leading edge from root leading edge [m]
-        (due to sweep)."""
+    def mac_x_offset(self):
         return self.mac_spanwise_position * tan(radians(self.sweep_le))
 
-    @Attribute
-    def sweep_quarter_chord(self) -> float:
-        """Quarter-chord sweep angle [deg], derived from LE sweep."""
-        tr = self.taper_ratio
-        tan_qc = tan(radians(self.sweep_le)) - (1.0 / self.aspect_ratio) * (1 - tr) / (1 + tr)
-        return float(np.degrees(np.arctan(tan_qc)))
-
-    @Attribute
-    def sweep_half_chord(self) -> float:
-        """Half-chord sweep angle [deg]."""
-        tr = self.taper_ratio
-        tan_hc = tan(radians(self.sweep_le)) - (2.0 / self.aspect_ratio) * (1 - tr) / (1 + tr)
-        return float(np.degrees(np.arctan(tan_hc)))
-
-    # ------------------------------------------------------------------ #
-    # WINGBOX SIZING
-    # ------------------------------------------------------------------ #
-
-    @Attribute
-    def wingbox_chord_root(self) -> float:
-        """Wingbox chord width at root [m]."""
-        return (self.rear_spar_position - self.front_spar_position) * self.c_root
-
-    @Attribute
-    def wingbox_chord_tip(self) -> float:
-        """Wingbox chord width at tip [m]."""
-        return (self.rear_spar_position - self.front_spar_position) * self.c_tip
-
-    @Attribute
-    def wingbox_height_root(self) -> float:
-        """Wingbox height at root (= t/c * local chord) [m]."""
-        return self.thickness_to_chord * self.c_root
-
-    @Attribute
-    def wingbox_height_tip(self) -> float:
-        """Wingbox height at tip [m]."""
-        return self.thickness_to_chord * self.c_tip
-
-    @Attribute
-    def front_spar_x_root(self) -> float:
-        """Absolute x-position of front spar at root (local frame) [m]."""
-        return self.front_spar_position * self.c_root
-
-    @Attribute
-    def rear_spar_x_root(self) -> float:
-        """Absolute x-position of rear spar at root (local frame) [m]."""
-        return self.rear_spar_position * self.c_root
-
-    # ------------------------------------------------------------------ #
-    # POSITION HELPERS
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------ #
+    # POSITIONING
+    # ------------------------------------------------------------ #
 
     @Attribute
     def _root_position(self):
-        """Root LE position: on top of fuselage at the estimated attach station."""
-        return translate(
+
+        base = translate(
             self.position,
             "x", self.attach_x,
             "z", self.attach_z,
         )
 
+        if not self.is_vertical_tail:
+            return base
+
+        # VT rotates upright (X-axis rotation)
+        return rotate(base, "x", radians(90))
+
     @Attribute
     def _tip_position(self):
-        """Tip airfoil position accounting for sweep, dihedral and twist."""
+        """Tip position for the starboard (positive-Y) side."""
+
+        if not self.is_vertical_tail:
+            return rotate(
+                translate(
+                    self._root_position,
+                    "y", self.effective_span,
+                    "x", self.effective_span * tan(radians(self.sweep_le)),
+                    "z", self.effective_span * np.sin(radians(self.dihedral)),
+                ),
+                "y",
+                radians(self.twist),
+            )
+
+        # VT: span goes in Y, structure already rotated upright
         return rotate(
             translate(
                 self._root_position,
-                "y", self.semi_span,
-                "x", self.semi_span * tan(radians(self.sweep_le)),
-                "z", self.semi_span * np.sin(radians(self.dihedral)),
-            ), "y", radians(self.twist)
+                "y", self.effective_span,
+                "x", self.effective_span * tan(radians(self.sweep_le)),
+            ),
+            "z",
+            radians(self.twist),
         )
 
     @Attribute
     def _tip_position_mirrored(self):
-        """Tip position for the port (mirrored) side — y negated."""
+        """Tip position for the port (negative-Y) side. None for vertical tail."""
+        if self.is_vertical_tail:
+            return None
+
         return rotate(
             translate(
                 self._root_position,
-                "y", -self.semi_span,
-                "x", self.semi_span * tan(radians(self.sweep_le)),
-                "z", self.semi_span * np.sin(radians(self.dihedral)),
-            ), "y", radians(self.twist)
+                "y", -self.effective_span,
+                "x", self.effective_span * tan(radians(self.sweep_le)),
+                "z", self.effective_span * np.sin(radians(self.dihedral)),
+            ),
+            "y",
+            radians(self.twist),
         )
 
-    # ------------------------------------------------------------------ #
-    # AIRFOIL PROFILES
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------ #
+    # AIRFOILS
+    # ------------------------------------------------------------ #
 
     @Part
     def root_airfoil(self):
@@ -265,89 +260,76 @@ class LiftingSurface(GeomBase):
             maximum_camber=self.maximum_camber,
             camber_position=self.maximum_camber_position,
             thickness_to_chord=self.thickness_to_chord,
-            airfoil_name="root_airfoil",
             chord=self.c_root,
             thickness_factor=self.t_factor_root,
-            mesh_deflection=self.mesh_deflection,
             position=self._root_position,
         )
 
     @Part
     def tip_airfoil(self):
+        """Starboard tip airfoil."""
         return Airfoil(
             maximum_camber=self.maximum_camber,
             camber_position=self.maximum_camber_position,
             thickness_to_chord=self.thickness_to_chord,
-            airfoil_name="tip_airfoil",
             chord=self.c_tip,
             thickness_factor=self.t_factor_tip,
-            mesh_deflection=self.mesh_deflection,
             position=self._tip_position,
         )
 
     @Part
     def tip_airfoil_mirrored(self):
+        """Port tip airfoil — suppressed for vertical tail."""
         return Airfoil(
             maximum_camber=self.maximum_camber,
             camber_position=self.maximum_camber_position,
             thickness_to_chord=self.thickness_to_chord,
-            airfoil_name="tip_airfoil_mirrored",
             chord=self.c_tip,
             thickness_factor=self.t_factor_tip,
-            mesh_deflection=self.mesh_deflection,
             position=self._tip_position_mirrored,
+            suppress=self.is_vertical_tail,
         )
 
-    # ------------------------------------------------------------------ #
-    # LOFTED SOLIDS
-    # ------------------------------------------------------------------ #
-
-    @Attribute
-    def _loft_profiles(self):
-        return [self.root_airfoil.geometry, self.tip_airfoil.geometry]
-
-    @Attribute
-    def _loft_profiles_mirrored(self):
-        return [self.root_airfoil.geometry, self.tip_airfoil_mirrored.geometry]
+    # ------------------------------------------------------------ #
+    # SOLIDS
+    # ------------------------------------------------------------ #
 
     @Part
     def solid(self):
+        """Starboard wing solid."""
         return LoftedSolid(
-            profiles=self._loft_profiles,
-            color="LightBlue",
-            transparency=0.5,
+            profiles=[self.root_airfoil.geometry, self.tip_airfoil.geometry],
             mesh_deflection=self.mesh_deflection,
         )
 
     @Part
     def solid_mirrored(self):
+        """Port wing solid — suppressed for vertical tail."""
         return LoftedSolid(
-            profiles=self._loft_profiles_mirrored,
-            color="LightBlue",
+            profiles=[self.root_airfoil.geometry, self.tip_airfoil_mirrored.geometry],
             mesh_deflection=self.mesh_deflection,
+            suppress=self.is_vertical_tail,
         )
 
-    # ------------------------------------------------------------------ #
-    # FRAME VISUALISATION
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------ #
+    # FRAME
+    # ------------------------------------------------------------ #
 
     @Part
     def frame(self):
-        return Frame(
-            pos=self._root_position,
-            hidden=False,
-        )
+        return Frame(pos=self._root_position, hidden=False)
 
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------ #
     # WINGBOX
-    # ------------------------------------------------------------------ #
+    # ------------------------------------------------------------ #
 
     @Part
     def wingbox(self):
+        """Starboard wingbox."""
         return Wingbox(
             c_root=self.c_root,
             c_tip=self.c_tip,
-            semi_span=self.semi_span,
+            semi_span=self.effective_span,
             sweep_le=self.sweep_le,
             dihedral=self.dihedral,
             twist=self.twist,
@@ -360,10 +342,11 @@ class LiftingSurface(GeomBase):
 
     @Part
     def wingbox_mirrored(self):
+        """Port wingbox — suppressed for vertical tail."""
         return Wingbox(
             c_root=self.c_root,
             c_tip=self.c_tip,
-            semi_span=-self.semi_span,
+            semi_span=-self.effective_span,
             sweep_le=-self.sweep_le,
             dihedral=-self.dihedral,
             twist=self.twist,
@@ -372,6 +355,7 @@ class LiftingSurface(GeomBase):
             mesh_deflection=self.mesh_deflection,
             airfoil_root=self.root_airfoil,
             airfoil_tip=self.tip_airfoil_mirrored,
+            suppress=self.is_vertical_tail,
         )
 
 
@@ -380,16 +364,67 @@ class LiftingSurface(GeomBase):
 # ---------------------------------------------------------------------- #
 
 if __name__ == "__main__":
+
     from parapy.gui import display
 
-    ls = LiftingSurface(
-        # Required: geometry cannot be derived without these two
-        wing_area=15.0,
-        semi_span=5.0,
-        # Everything below now has Roskam-based defaults and can be omitted
+    # ------------------------------------------------------------ #
+    # MAIN WING — wing_area = total (both sides) = 20 m²
+    # ------------------------------------------------------------ #
+
+    wing = LiftingSurface(
+        label="main_wing",
+
+        wing_area=20.0,     # total area, both sides [m²]
+        semi_span=8.0,      # half-span [m]
+
+        is_tail=False,
+        is_vertical_tail=False,
+
         fuselage_length=10.0,
-        fuselage_radius=0.3,
-        mesh_deflection=1e-4,
-        label="test_liftingsurface",
+        fuselage_radius=1.0,
     )
-    display(ls)
+
+    # ------------------------------------------------------------ #
+    # HORIZONTAL TAIL (Roskam Vh sizing)
+    # ------------------------------------------------------------ #
+
+    horizontal_tail = LiftingSurface(
+        label="horizontal_tail",
+
+        wing_ref=wing,
+        is_tail=True,
+        is_vertical_tail=False,
+
+        fuselage_length=10.0,
+        fuselage_radius=1.0,
+
+        tail_volume_coefficient_h=0.35,
+        tail_aspect_ratio_h=4.5,
+
+        wing_area=1.0,      # dummy — ignored for tail
+        semi_span=1.0,      # dummy — ignored for tail
+    )
+
+    # ------------------------------------------------------------ #
+    # VERTICAL TAIL (Roskam Vv sizing)
+    # ------------------------------------------------------------ #
+
+    vertical_tail = LiftingSurface(
+        label="vertical_tail",
+
+        wing_ref=wing,
+        is_tail=True,
+        is_vertical_tail=True,
+
+        fuselage_length=10.0,
+        fuselage_radius=1.0,
+
+        tail_volume_coefficient_v=0.06,
+        tail_aspect_ratio_v=1.8,
+
+        wing_area=1.0,      # dummy — ignored for tail
+        semi_span=1.0,      # dummy — ignored for tail
+        sweep_le=35,
+    )
+
+    display([wing, horizontal_tail, vertical_tail])

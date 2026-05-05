@@ -1,6 +1,6 @@
 import sys
 import os
-from math import radians, tan, sin, cos
+from math import radians, tan, sin, cos, pi, sqrt
 
 from parapy.core import Input, Attribute, Part, child
 from parapy.geom import (
@@ -193,12 +193,6 @@ class _PropellerEngine(_EngineGeometry):
 
     @Attribute
     def _blade_root_positions(self) -> list:
-        # ParaPy translate() works in the GLOBAL frame even after a rotate().
-        # After rotate(pos, 'x', a), the local radial direction is no longer
-        # global Z — it is (0, sin(a), cos(a)) in global coordinates.
-        # Using Vector(0, 0, 1) for all blades placed every blade root at the
-        # same angular position (global Z+), making n_blades look like one blade.
-        # Fix: translate by the true radial unit vector for each blade angle.
         return [
             translate(
                 rotate(self.position, 'x', radians(a)),
@@ -263,30 +257,35 @@ class Engine(GeomBase):
     Thrust:        T_total = T/W * MTOW * g
                    T_eng   = T_total / n_engines
 
-    Nacelle        Roskam Vol. V, §4 — diameter/length scale with thrust:
-                   D_nac = k_D * (T_eng_kN)^0.4
-                   L_nac = k_L * D_nac
-                   k_D=0.2284, k_L=2.5  (jet)
-                   k_D=0.1956, k_L=1.8  (propeller)
+    Jet nacelle    Roskam Vol. V, §4 — diameter scales with thrust:
+                   D_nac = k_D * (T_eng_kN)^0.4,  k_D=0.2284
+                   L_nac = 2.5 * D_nac
 
-    Propeller      Roskam Vol. I, §3.6 + actuator disk theory:
-                   Disk area seeded from UAV disk loading DL_uav=80 N/m²
-                   (Roskam Vol. I Table 3.6: UAV fixed-wing ~ 60-120 N/m²)
-                   P_shaft = T * sqrt(T / (2*rho*A_disk))
-                   D_prop  = 0.658 * (P_kW)^0.25   (Roskam §3.6)
-                   D_prop  capped at 15% semi_span per side (clearance limit)
-                   c_blade = 0.065 * D_prop  (solidity σ ≈ 0.10, Roskam §3.6)
+    Propeller      Roskam Vol. I §3.6 + actuator disk theory:
+                   A_disk = T / DL,  DL=80 N/m² (UAV fixed-wing, Table 3.6)
+                   P_shaft = T * sqrt(T / (2*rho*A_disk))   [momentum theory]
+                   D_prop  = 0.658 * P_kW^0.25              [Roskam §3.6]
+                   D_prop capped so blade_length <= max_blade_length
 
-    BPR (jet):     BPR = 15 * (1 - T/W)^2   clamped [1, 12]
+    Prop nacelle   Sized from spinner, NOT from thrust (a prop nacelle is just
+                   a motor cowling; the Roskam jet-nacelle formula is not valid):
+                   spinner_radius = 0.15 * D_prop   (15% of prop diameter)
+                   nacelle_radius = spinner_radius   (nacelle wraps the spinner)
+                   nacelle_length = 3.5 * nacelle_radius  (slender motor cowl)
+
+    Blade count    Roskam Vol. I §3.6: disk solidity σ = n*c/(π*R)
+                   Target σ = 0.15 (statistical midpoint for UAV fixed-wing props)
+                   n = round(σ * π * R / c_blade), clamped to [2, 6]
+                   NOTE: override with n_blades_override if needed.
+
+    Blade chord    Roskam Vol. I §3.6: c = 0.065 * D_prop for σ ≈ 0.10
+                   Scaled up proportionally when n_blades > 2 to hold σ ≈ 0.15.
+
+    Max blade      For a centreline tractor (n_engines=1, attach_spanwise_pct=0),
+    length         clearance is limited by the fuselage radius, not semi_span.
+                   max_blade_length = max(fuselage_radius * 1.5, semi_span * 0.15)
+                   This prevents the old bug where a centreline prop got D_max=0.
     ─────────────────────────────────────────────────────────────────────
-
-    Previous issue fixed: _disk_area_seed formerly used nacelle_radius × 4
-    as a proxy for prop disk radius. This was circular (nacelle_radius itself
-    comes from thrust) and gave unrealistically high shaft power estimates.
-    The seed now uses a UAV disk loading of 80 N/m² directly, which anchors
-    to real fixed-wing UAV propeller data.
-    NOTE (Roskam): D_prop cap at 15% semi_span is a clearance heuristic —
-    override blade_length_override if propeller selection drives a larger disk.
     """
 
     # ------------------------------------------------------------------ #
@@ -306,9 +305,15 @@ class Engine(GeomBase):
     g: float = Input(9.81)
 
     # Roskam Vol. I, Table 3.6: UAV fixed-wing disk loading 60-120 N/m².
-    # 80 N/m² is used as the statistical midpoint for single-prop tractor/pusher.
-    # NOTE (Roskam): multirotor UAVs use 30-60 N/m²; increase for high-speed UAV.
+    # 80 N/m² is statistical midpoint for single-prop tractor/pusher UAV.
+    # NOTE (Roskam): increase toward 120 for high-speed UAV, decrease for
+    # slow-flying or loitering UAV.
     disk_loading_uav: float = Input(80.0)   # [N/m²]
+
+    # Roskam Vol. I §3.6: disk solidity σ = n*c/(π*R).
+    # Typical UAV fixed-wing props: σ = 0.10–0.20, midpoint 0.15.
+    # NOTE (Roskam): higher solidity for high-altitude or low-RPM designs.
+    target_solidity: float = Input(0.15)
 
     # ------------------------------------------------------------------ #
     # INPUTS — WING INTERFACE
@@ -319,18 +324,19 @@ class Engine(GeomBase):
     dihedral: float = Input(5.0)
     wing_root_x: float = Input()
     wing_root_z: float = Input()
+    fuselage_radius: float = Input(0.0)     # needed for centreline prop clearance
 
     attach_spanwise_pct: float = Input(0.35)
     attach_x_offset: float = Input(0.0)
     attach_z_offset: float = Input(0)
 
     # ------------------------------------------------------------------ #
-    # INPUTS — STYLE / OVERRIDES
+    # INPUTS — OVERRIDES  (None = use Roskam estimate)
     # ------------------------------------------------------------------ #
 
     nacelle_length_override: float = Input(None)
     nacelle_radius_override: float = Input(None)
-    n_blades: int = Input(3)
+    n_blades_override: int = Input(None)        # None → Roskam blade count
     blade_length_override: float = Input(None)
     blade_root_chord_override: float = Input(None)
     blade_sweep: float = Input(5.0)
@@ -349,57 +355,7 @@ class Engine(GeomBase):
 
     @Attribute
     def thrust_per_engine(self) -> float:
-        """Thrust per engine [N]."""
         return self.total_thrust / self.n_engines
-
-    # ------------------------------------------------------------------ #
-    # ROSKAM NACELLE SIZING  (Vol. V, §4)
-    # ------------------------------------------------------------------ #
-
-    @Attribute
-    def _k_D(self) -> float:
-        """Nacelle diameter coefficient. Roskam Vol. V, §4."""
-        return 0.2284 if self.engine_type == "jet" else 0.1956
-
-    @Attribute
-    def _k_L(self) -> float:
-        """Nacelle length-to-diameter ratio. Roskam Vol. V, §4."""
-        return 2.5 if self.engine_type == "jet" else 1.8
-
-    @Attribute
-    def nacelle_radius(self) -> float:
-        """Nacelle outer radius [m]. Roskam Vol. V, §4: D_nac = k_D * T_kN^0.4."""
-        if self.nacelle_radius_override is not None:
-            return self.nacelle_radius_override
-        T_kN = self.thrust_per_engine / 1000.0
-        return self._k_D * (T_kN ** 0.4) / 2.0
-
-    @Attribute
-    def nacelle_length(self) -> float:
-        """Nacelle length [m]. Roskam Vol. V, §4: L_nac = k_L * D_nac."""
-        if self.nacelle_length_override is not None:
-            return self.nacelle_length_override
-        return self._k_L * (2.0 * self.nacelle_radius)
-
-    # ------------------------------------------------------------------ #
-    # ROSKAM JET SIZING
-    # ------------------------------------------------------------------ #
-
-    @Attribute
-    def bypass_ratio(self) -> float:
-        """Bypass ratio estimate. Roskam Vol. I, §3.2: BPR = 15*(1-T/W)^2."""
-        bpr = 15.0 * (1.0 - self.thrust_to_weight) ** 2
-        return max(1.0, min(12.0, bpr))
-
-    @Attribute
-    def fan_radius(self) -> float:
-        """Fan tip radius = 90% of nacelle radius (annulus assumption)."""
-        return 0.90 * self.nacelle_radius
-
-    @Attribute
-    def core_radius(self) -> float:
-        """Core radius = 40% of fan radius (BPR-consistent annulus)."""
-        return self.fan_radius * 0.40
 
     # ------------------------------------------------------------------ #
     # ROSKAM PROPELLER SIZING  (Vol. I, §3.6)
@@ -407,56 +363,189 @@ class Engine(GeomBase):
 
     @Attribute
     def _disk_area(self) -> float:
-        """Actuator disk area seeded from UAV disk loading [m²].
+        """Actuator disk area from UAV disk loading [m²].
 
-        Roskam Vol. I, Table 3.6: fixed-wing UAV disk loading ~ 60-120 N/m².
-        Using DL=80 N/m² as statistical midpoint: A = T / DL.
-
-        Previous approach used nacelle_radius×4 as a proxy, which was circular
-        (nacelle_radius itself derives from thrust) and gave P_shaft ~4× too high,
-        inflating the Roskam D_prop formula. The D_prop cap at 15% semi_span
-        masked this, but shaft power was still unrealistic.
+        Roskam Vol. I, Table 3.6: A = T / DL, DL = 80 N/m² for UAV fixed-wing.
+        This directly seeds the momentum-theory shaft power calculation and is
+        independent of nacelle geometry — avoids the previous circular dependency.
         """
         return self.thrust_per_engine / self.disk_loading_uav
 
     @Attribute
     def shaft_power(self) -> float:
-        """Shaft power from actuator disk theory [W].
+        """Shaft power from actuator-disk momentum theory [W].
 
-        P = T * sqrt(T / (2 * rho * A_disk))  — momentum theory, static thrust.
+        P = T * sqrt(T / (2 * rho * A_disk))  — static thrust, ideal disk.
         """
         T = self.thrust_per_engine
-        return T * (T / (2.0 * self.rho * self._disk_area)) ** 0.5
+        return T * sqrt(T / (2.0 * self.rho * self._disk_area))
+
+    @Attribute
+    def _max_blade_length(self) -> float:
+        """Maximum allowable blade (prop radius) for geometric clearance [m].
+
+        For a centreline tractor (single engine, attach_spanwise_pct ≈ 0) the
+        limiting dimension is fuselage clearance, not wing semi_span.
+        For a wing-mounted engine the limiting dimension is 15% of semi_span.
+
+        The previous implementation used only semi_span * 0.15, which collapsed
+        to zero for a centreline prop (attach_y = 0 → D_max = 0).
+        """
+        wing_limit = self.semi_span * 0.15
+        # For centreline or near-centreline props, fall back to fuselage clearance.
+        # fuselage_radius * 1.5 gives a reasonable 50% tip-clearance margin.
+        fus_limit  = self.fuselage_radius * 1.5 if self.fuselage_radius > 0 else wing_limit
+        # Use fuselage limit when spanwise attachment is less than 10% semi_span
+        if self.attach_spanwise_pct * self.semi_span < 0.10 * self.semi_span:
+            return max(fus_limit, 0.10)     # hard floor: at least 10 cm radius
+        return wing_limit
 
     @Attribute
     def blade_length(self) -> float:
         """Propeller blade length (= prop radius) [m].
 
         Roskam Vol. I, §3.6: D_prop = 0.658 * P_kW^0.25 for GA propellers.
-        Capped at 15% semi_span per side to maintain wing/ground clearance.
+        Capped at _max_blade_length to maintain wing / fuselage clearance.
         NOTE (Roskam): select nearest standard prop diameter from catalogue.
         """
         if self.blade_length_override is not None:
             return self.blade_length_override
         P_kW = self.shaft_power / 1000.0
-        D = 0.658 * (P_kW ** 0.25)
-        D_max = 2.0 * self.semi_span * 0.15
-        return min(D, D_max) / 2.0
+        D_roskam = 0.658 * (P_kW ** 0.25)
+        return min(D_roskam / 2.0, self._max_blade_length)
 
     @Attribute
     def blade_root_chord(self) -> float:
         """Blade root chord [m].
 
-        Roskam Vol. I, §3.6: c_blade = 0.065 * D_prop for solidity σ ≈ 0.10.
+        Roskam Vol. I, §3.6 baseline: c = 0.065 * D_prop  (σ ≈ 0.10 for 2 blades).
+        Scaled by n_blades / 2 so that disk solidity stays near target_solidity
+        regardless of blade count.
+        NOTE (Roskam): verify chord against manufacturer data for final design.
         """
         if self.blade_root_chord_override is not None:
             return self.blade_root_chord_override
-        return 0.065 * (2.0 * self.blade_length)
+        D_prop = 2.0 * self.blade_length
+        c_base = 0.065 * D_prop                 # Roskam §3.6 baseline (2 blades)
+        return c_base * (self.n_blades / 2.0)   # scale to keep solidity consistent
 
     @Attribute
     def blade_tip_chord(self) -> float:
         """Blade tip chord = 30% of root chord (standard taper for UAV props)."""
         return self.blade_root_chord * 0.30
+
+    @Attribute
+    def n_blades(self) -> int:
+        """Blade count from Roskam Vol. I §3.6 disk solidity relation.
+
+        σ = n * c_blade / (π * R)
+        → n = σ * π * R / c_blade
+
+        where c_blade is the Roskam baseline chord (2-blade reference),
+        R = blade_length, σ = target_solidity (default 0.15).
+        Clamped to [2, 6] — practical range for fixed-wing UAV propellers.
+        NOTE (Roskam): 2 blades for low-drag cruise, 4-6 for compact / high-power.
+        Override with n_blades_override if a specific blade count is required.
+        """
+        if self.n_blades_override is not None:
+            return self.n_blades_override
+
+        R = self.blade_length
+        D_prop = 2.0 * R
+        c_base = 0.065 * D_prop         # Roskam §3.6 baseline chord (2-blade ref)
+        if c_base <= 0:
+            return 2
+        n_raw = self.target_solidity * pi * R / c_base
+        return max(2, min(6, round(n_raw)))
+
+    # ------------------------------------------------------------------ #
+    # PROPELLER NACELLE SIZING
+    # A prop nacelle is a motor cowling — it wraps the spinner, not the disk.
+    # The jet-nacelle Roskam thrust formula gives a wildly oversized cowl here.
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def spinner_radius(self) -> float:
+        """Spinner radius = 15% of prop diameter [m].
+
+        Roskam Vol. I §3.6: spinner diameter is typically 12–18% of prop diameter
+        for UAV/GA tractor propellers. 15% is the statistical midpoint.
+        """
+        return 0.15 * (2.0 * self.blade_length)
+
+    @Attribute
+    def spinner_length(self) -> float:
+        """Spinner length = 1.5 * spinner_radius (ellipsoidal nose profile)."""
+        return 1.5 * self.spinner_radius
+
+    # ------------------------------------------------------------------ #
+    # ROSKAM JET NACELLE SIZING  (Vol. V, §4)
+    # Only used for jet engines.
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def _jet_nacelle_radius(self) -> float:
+        """Jet nacelle outer radius [m]. Roskam Vol. V, §4: D = 0.2284 * T_kN^0.4."""
+        T_kN = self.thrust_per_engine / 1000.0
+        return 0.2284 * (T_kN ** 0.4) / 2.0
+
+    @Attribute
+    def _jet_nacelle_length(self) -> float:
+        """Jet nacelle length [m]. Roskam Vol. V, §4: L = 2.5 * D_nac."""
+        return 2.5 * (2.0 * self._jet_nacelle_radius)
+
+    # ------------------------------------------------------------------ #
+    # RESOLVED NACELLE DIMENSIONS (type-aware)
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def nacelle_radius(self) -> float:
+        """Nacelle outer radius [m].
+
+        Jet:  Roskam Vol. V §4 thrust-based formula.
+        Prop: equals spinner_radius (motor cowl, not thrust-sized).
+        Override with nacelle_radius_override if needed.
+        """
+        if self.nacelle_radius_override is not None:
+            return self.nacelle_radius_override
+        if self.engine_type == "jet":
+            return self._jet_nacelle_radius
+        # Propeller: nacelle is just a motor cowling around the spinner
+        return self.spinner_radius
+
+    @Attribute
+    def nacelle_length(self) -> float:
+        """Nacelle length [m].
+
+        Jet:  Roskam Vol. V §4: L = 2.5 * D_nac.
+        Prop: L = 3.5 * nacelle_radius (slender motor cowl).
+        Override with nacelle_length_override if needed.
+        """
+        if self.nacelle_length_override is not None:
+            return self.nacelle_length_override
+        if self.engine_type == "jet":
+            return self._jet_nacelle_length
+        return 3.5 * self.nacelle_radius
+
+    # ------------------------------------------------------------------ #
+    # ROSKAM JET INTERNAL SIZING
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def bypass_ratio(self) -> float:
+        """BPR estimate. Roskam Vol. I §3.2: BPR = 15*(1-T/W)^2, clamped [1,12]."""
+        bpr = 15.0 * (1.0 - self.thrust_to_weight) ** 2
+        return max(1.0, min(12.0, bpr))
+
+    @Attribute
+    def fan_radius(self) -> float:
+        """Fan tip radius = 90% of jet nacelle radius."""
+        return 0.90 * self._jet_nacelle_radius
+
+    @Attribute
+    def core_radius(self) -> float:
+        """Core radius = 40% of fan radius."""
+        return self.fan_radius * 0.40
 
     # ------------------------------------------------------------------ #
     # ATTACH POSITION
@@ -464,33 +553,28 @@ class Engine(GeomBase):
 
     @Attribute
     def _attach_y(self) -> float:
-        """Spanwise attach position: centreline for single engine, else % semi_span."""
+        """Spanwise attach position [m]."""
         return 0.0 if self.n_engines == 1 else self.semi_span * self.attach_spanwise_pct
 
     @Attribute
     def _attach_x(self) -> float:
-        return 0.0 if self.n_engines == 1 else (self.wing_root_x
-                                                    + self._attach_y * tan(radians(self.sweep_le))
-                                                    + self.attach_x_offset)
+        if self.n_engines == 1:
+            return 0
+        return (self.wing_root_x
+                + self._attach_y * tan(radians(self.sweep_le))
+                + self.attach_x_offset)
 
     @Attribute
     def _attach_z(self) -> float:
-        return 0.0 if self.n_engines == 1 else self.wing_root_z + self._attach_y * sin(radians(self.dihedral)) + self.attach_z_offset
+        if self.n_engines == 1:
+            return 0
+        return (self.wing_root_z
+                + self._attach_y * sin(radians(self.dihedral))
+                + self.attach_z_offset)
 
     @Attribute
     def _engine_position(self):
-        """Nacelle-axis position: translated to attach point, then oriented forward.
-
-        Bug fix: the previous code did rotate90('y') first, then translated using
-        Vector(1,0,0) etc. in the now-rotated frame. After rotate90('y') around Y,
-        the old X-axis becomes the new Z-axis, so translating by Vector(1,0,0)*attach_x
-        moved along old-Z instead of along the fuselage. This placed the engine in
-        completely the wrong location.
-
-        Correct order: translate in the original (fuselage-aligned) frame first,
-        then rotate the orientation at that translated point so the nacelle axis
-        (X after rotate90) aligns with the fuselage thrust direction.
-        """
+        """Engine position: translate first in fuselage frame, then orient."""
         return translate(
             self.position,
             Vector(1, 0, 0), self._attach_x,
@@ -499,7 +583,7 @@ class Engine(GeomBase):
         ).rotate90('y')
 
     # ------------------------------------------------------------------ #
-    # ENGINE INSTANCE — type selected here, not in Aircraft
+    # ENGINE INSTANCE
     # ------------------------------------------------------------------ #
 
     @Part(parse=False)
@@ -513,21 +597,21 @@ class Engine(GeomBase):
             position=self._engine_position,
         )
         if self.engine_type == "jet":
-            kwargs = dict(
+            return _JetEngine(
+                **shared,
                 fan_radius=self.fan_radius,
                 core_radius=self.core_radius,
             )
-            return _JetEngine(**shared, **kwargs)
-        kwargs = dict(
+        return _PropellerEngine(
+            **shared,
             n_blades=self.n_blades,
             blade_length=self.blade_length,
             blade_root_chord=self.blade_root_chord,
             blade_tip_chord=self.blade_tip_chord,
             blade_sweep=self.blade_sweep,
-            spinner_radius=self.nacelle_radius,
-            spinner_length=self.nacelle_length * 0.20,
+            spinner_radius=self.spinner_radius,
+            spinner_length=self.spinner_length,
         )
-        return _PropellerEngine(**shared, **kwargs)
 
     # ------------------------------------------------------------------ #
     # FRAME
@@ -535,10 +619,7 @@ class Engine(GeomBase):
 
     @Part
     def frame(self):
-        return Frame(
-            pos=self._engine_position,
-            hidden=False,
-        )
+        return Frame(pos=self._engine_position, hidden=False)
 
 
 # ---------------------------------------------------------------------- #
@@ -551,17 +632,17 @@ if __name__ == "__main__":
     eng = Engine(
         label="engine",
         engine_type="propeller",
-        mtow=25.0,
+        mtow=1000.0,
         n_engines=1,
-        thrust_to_weight=0.45,
-        semi_span=1.5,
-        sweep_le=0.0,
-        dihedral=3.0,
-        wing_root_x=0.8,
-        wing_root_z=0.2,
-        attach_spanwise_pct=0.0,
-        attach_x_offset=-0.4,
+        thrust_to_weight=0.8,
+        semi_span=5.0,
+        fuselage_radius=0.625,      # matches Roskam estimate for 1000 kg UAV
+        sweep_le=5.0,
+        dihedral=5.0,
+        wing_root_x=3.5,
+        wing_root_z=-0.3,
+        attach_spanwise_pct=0.0,    # centreline tractor
+        attach_x_offset=-0.5,
         attach_z_offset=0.0,
-        n_blades=3,
     )
     display(eng)
