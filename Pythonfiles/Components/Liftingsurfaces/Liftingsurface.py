@@ -1,30 +1,28 @@
-from math import radians, tan, cos, sqrt
+from math import radians, tan
 
 import numpy as np
-from parapy.core import Input, Attribute, Part, child
-from parapy.geom import GeomBase, LoftedSolid, translate, rotate, Point
+from parapy.core import Input, Attribute, Part
+from parapy.geom import GeomBase, LoftedSolid, translate, rotate
 
-if __name__ != "__main__":
-    from Liftingsurfaces.Airfoil import Airfoil
-    from Liftingsurfaces.Wingbox import Wingbox
-    from Frame import Frame
+from Pythonfiles.Components.Liftingsurfaces.Airfoil import Airfoil
+from Pythonfiles.Components.Liftingsurfaces.Wingbox import Wingbox
+from Pythonfiles.Components.Frame import Frame
 
 
 class LiftingSurface(GeomBase):
     """Lifting surface geometry: root/tip airfoils + lofted solid + frame.
 
-    Positioning convention (matches Fuselage):
-      - Fuselage nose is at (0, 0, 0)
-      - Fuselage runs along the +X axis
-      - Z is up, Y is spanwise (starboard positive)
-      - Wing/tail root sits on the fuselage surface:
-            x = fuselage_length * attach_x_pct / 100
-            z = fuselage_radius
+    Roskam defaults (Vol. I):
+    - taper_ratio       : Table 3.6 / Fig. 3.15 — typical UAV/GA: 0.40 (flagged)
+    - sweep_le          : Table 3.6 — low-speed fixed-wing UAV: 5° (flagged)
+    - twist             : Table 3.6 — typical washout: −2° (flagged)
+    - dihedral          : Table 3.6 — low-wing GA/UAV: 5° (flagged)
+    - thickness_to_chord: Table 3.5 — subsonic fixed-wing: 0.15 (flagged)
+    - maximum_camber    : typical NACA 4-series stats: 0.04 (flagged)
+    - front/rear spar   : Roskam Vol. I §4.1 structural layout guidelines (flagged)
+    - attach_x (wing)   : Roskam Vol. I §3.2 — MAC quarter chord at 40% fuselage length
+    - attach_x (tail)   : Roskam Vol. I §3.4 — tail LE at 85% fuselage length
     """
-
-    # ------------------------------------------------------------------ #
-    # INPUTS — AIRFOIL
-    # ------------------------------------------------------------------ #
 
     airfoil_root_name: str = Input("whitcomb")
     airfoil_tip_name: str = Input("whitcomb")
@@ -35,42 +33,66 @@ class LiftingSurface(GeomBase):
     mesh_deflection: float = Input(1e-4)
 
     # ------------------------------------------------------------------ #
-    # INPUTS — PLANFORM (provide these OR let sizing compute from area)
+    # PRIMARY SIZING — always required from user
     # ------------------------------------------------------------------ #
 
-    # Primary sizing inputs — always required
-    wing_area: float = Input()          # reference area (one side) [m²]
-    semi_span: float = Input()          # half-span [m]
-    taper_ratio: float = Input(0.3)     # c_tip / c_root [-]
-
-    # Angles
-    sweep_le: float = Input(25.0)       # leading-edge sweep [deg]
-    twist: float = Input(-2.0)          # washout at tip [deg], negative = wash-out
-    dihedral: float = Input(5.0)        # dihedral [deg]
-
-    # Aerofoil section properties (used for structural sizing)
-    thickness_to_chord: float = Input(0.12)     # t/c at root [-]
-    maximum_camber: float = Input(0.04)         # max camber [-]
-    maximum_camber_position: float = Input(0.4) # x/c of max camber [-]
-
-    # Wingbox spar positions (x/c fractions)
-    front_spar_position: float = Input(0.15)    # x/c front spar [-]
-    rear_spar_position: float = Input(0.60)     # x/c rear spar [-]
-
-    # Materials
-    material_wing: str = Input("aluminium")
-    material_wingbox: str = Input("aluminium")
+    wing_area: float = Input()      # reference area (one side) [m²]
+    semi_span: float = Input()      # half-span [m]
 
     # ------------------------------------------------------------------ #
-    # INPUTS — FUSELAGE INTERFACE
+    # PLANFORM ANGLES & RATIOS — Roskam Vol. I statistical defaults
+    # ------------------------------------------------------------------ #
+
+    # Roskam Vol. I, Table 3.6: taper ratio for low-speed fixed-wing ~ 0.40.
+    # NOTE (Roskam): value is statistical; adjust for high-AR sailplane/UAV.
+    taper_ratio: float = Input(0.40)
+
+    # Roskam Vol. I, Table 3.6: LE sweep for subsonic UAV typically 0–10°.
+    # NOTE (Roskam): increase for higher cruise Mach; 5° is conservative default.
+    sweep_le: float = Input(5.0)
+
+    # Roskam Vol. I, Table 3.6: geometric twist (washout) typically −2° to −3°.
+    # NOTE (Roskam): negative = wash-out at tip, improves stall characteristics.
+    twist: float = Input(-2.0)
+
+    # Roskam Vol. I, Table 3.6: dihedral for low-wing configuration ~ 5°.
+    # NOTE (Roskam): high-wing configurations use 0–2°; mid-wing 2–4°.
+    dihedral: float = Input(5.0)
+
+    # ------------------------------------------------------------------ #
+    # AIRFOIL SECTION PROPERTIES — Roskam Vol. I statistical defaults
+    # ------------------------------------------------------------------ #
+
+    # Roskam Vol. I, Table 3.5: t/c for subsonic fixed-wing typically 0.12–0.18.
+    # NOTE (Roskam): thicker sections increase structural depth; 0.15 is midrange.
+    thickness_to_chord: float = Input(0.15)
+
+    # NOTE (Roskam default not explicit): 0.04 is representative of NACA 4-series
+    # sections commonly used in GA/UAV; flag and verify against chosen airfoil.
+    maximum_camber: float = Input(0.04)
+
+    # NOTE (Roskam default not explicit): 0.4c is typical for NACA 4-series.
+    maximum_camber_position: float = Input(0.4)
+
+    # ------------------------------------------------------------------ #
+    # WINGBOX SPAR POSITIONS — Roskam Vol. I §4.1 structural layout
+    # ------------------------------------------------------------------ #
+
+    # Roskam Vol. I, §4.1: front spar typically at 15–20% chord.
+    # NOTE (Roskam): 0.15 is the forward practical limit to preserve LE devices.
+    front_spar_position: float = Input(0.15)
+
+    # Roskam Vol. I, §4.1: rear spar typically at 55–65% chord.
+    # NOTE (Roskam): 0.60 preserves room for trailing-edge control surfaces.
+    rear_spar_position: float = Input(0.60)
+
+    # ------------------------------------------------------------------ #
+    # FUSELAGE INTERFACE — required for attachment positioning
     # ------------------------------------------------------------------ #
 
     fuselage_length: float = Input(30.0)    # total fuselage length [m]
     fuselage_radius: float = Input(2.0)     # fuselage radius at attach point [m]
 
-    # Fraction of fuselage length from nose to main-gear attach;
-    # used to estimate CG and derive wing x-position.
-    # For a tail surface, set is_tail=True and the position is estimated differently.
     is_tail: bool = Input(False)
 
     # ------------------------------------------------------------------ #
@@ -81,26 +103,35 @@ class LiftingSurface(GeomBase):
     def attach_x(self) -> float:
         """Estimated x-position of the root LE along the fuselage [m].
 
-        Main wing:  placed so the quarter-chord of the MAC is at ~40% of
-                    fuselage length — a reasonable initial CG target for a
-                    tube-and-wing layout.
-        Tail:       placed at ~85% of fuselage length (typical for a
-                    conventional empennage).
-
-        Both are purely geometric first-estimates; update with a proper
-        CG / static-margin calculation once masses are known.
+        Roskam Vol. I, §3.2 (wing): MAC quarter chord placed at ~40% fuselage length.
+        Roskam Vol. I, §3.4 (tail): tail LE placed at ~85% fuselage length.
         """
         if self.is_tail:
+            # Roskam Vol. I, §3.4: horizontal/vertical tail LE at 85% fuselage length.
             return 0.85 * self.fuselage_length
         else:
-            # x_LE = x_quarter_chord_MAC - 0.25 * MAC - mac_x_offset
+            # Roskam Vol. I, §3.2: wing quarter-chord of MAC at 40% fuselage length.
             x_qc_mac = 0.40 * self.fuselage_length
             return x_qc_mac - 0.25 * self.mean_aerodynamic_chord - self.mac_x_offset
 
     @Attribute
     def attach_z(self) -> float:
         """Z-position of the root LE = fuselage radius (surface of fuselage) [m]."""
-        return self.fuselage_radius
+        return -self.fuselage_radius * 0.5
+
+    # ------------------------------------------------------------------ #
+    # MASS ESTIMATE
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def mass(self) -> float:
+        """Rough structural mass estimate [kg].
+
+        NOTE (Roskam default not explicit): Raymer simple wing weight equation
+        used as placeholder. Replace with Roskam Vol. V Chapter 10 for detail.
+        """
+        S_full = 1 * self.wing_area
+        return 0.0215 * (S_full ** 0.9) * (self.aspect_ratio ** 0.4)
 
     # ------------------------------------------------------------------ #
     # PLANFORM SIZING
@@ -109,7 +140,7 @@ class LiftingSurface(GeomBase):
     @Attribute
     def c_root(self) -> float:
         """Root chord derived from area, span and taper ratio [m]."""
-        return (2 * self.wing_area) / (self.semi_span * (1 + self.taper_ratio))
+        return (1 * self.wing_area) / (self.semi_span * (1 + self.taper_ratio))
 
     @Attribute
     def c_tip(self) -> float:
@@ -142,7 +173,6 @@ class LiftingSurface(GeomBase):
     @Attribute
     def sweep_quarter_chord(self) -> float:
         """Quarter-chord sweep angle [deg], derived from LE sweep."""
-        # tan(sweep_c/4) = tan(sweep_LE) - (1/AR) * (1 - taper) / (1 + taper)
         tr = self.taper_ratio
         tan_qc = tan(radians(self.sweep_le)) - (1.0 / self.aspect_ratio) * (1 - tr) / (1 + tr)
         return float(np.degrees(np.arctan(tan_qc)))
@@ -189,19 +219,6 @@ class LiftingSurface(GeomBase):
         return self.rear_spar_position * self.c_root
 
     # ------------------------------------------------------------------ #
-    # MASS ESTIMATE  (Raymer simple wing weight, placeholder)
-    # ------------------------------------------------------------------ #
-
-    @Attribute
-    def mass(self) -> float:
-        """Rough structural mass estimate [kg].
-        Replace with a proper class-II method when available.
-        Uses: m ≈ 0.0215 * S^0.9 * AR^0.4  (S in m², result in kg, very approximate).
-        """
-        S_full = 2 * self.wing_area
-        return 0.0215 * (S_full ** 0.9) * (self.aspect_ratio ** 0.4)
-
-    # ------------------------------------------------------------------ #
     # POSITION HELPERS
     # ------------------------------------------------------------------ #
 
@@ -245,7 +262,10 @@ class LiftingSurface(GeomBase):
     @Part
     def root_airfoil(self):
         return Airfoil(
-            airfoil_name=self.airfoil_root_name,
+            maximum_camber=self.maximum_camber,
+            camber_position=self.maximum_camber_position,
+            thickness_to_chord=self.thickness_to_chord,
+            airfoil_name="root_airfoil",
             chord=self.c_root,
             thickness_factor=self.t_factor_root,
             mesh_deflection=self.mesh_deflection,
@@ -255,7 +275,10 @@ class LiftingSurface(GeomBase):
     @Part
     def tip_airfoil(self):
         return Airfoil(
-            airfoil_name=self.airfoil_tip_name,
+            maximum_camber=self.maximum_camber,
+            camber_position=self.maximum_camber_position,
+            thickness_to_chord=self.thickness_to_chord,
+            airfoil_name="tip_airfoil",
             chord=self.c_tip,
             thickness_factor=self.t_factor_tip,
             mesh_deflection=self.mesh_deflection,
@@ -265,7 +288,10 @@ class LiftingSurface(GeomBase):
     @Part
     def tip_airfoil_mirrored(self):
         return Airfoil(
-            airfoil_name=self.airfoil_tip_name,
+            maximum_camber=self.maximum_camber,
+            camber_position=self.maximum_camber_position,
+            thickness_to_chord=self.thickness_to_chord,
+            airfoil_name="tip_airfoil_mirrored",
             chord=self.c_tip,
             thickness_factor=self.t_factor_tip,
             mesh_deflection=self.mesh_deflection,
@@ -327,12 +353,9 @@ class LiftingSurface(GeomBase):
             twist=self.twist,
             front_spar_position=self.front_spar_position,
             rear_spar_position=self.rear_spar_position,
-            thickness_to_chord=self.thickness_to_chord,
-            material=self.material_wingbox,
             mesh_deflection=self.mesh_deflection,
-            position=self._root_position,
             airfoil_root=self.root_airfoil,
-            airfoil_tip=self.tip_airfoil
+            airfoil_tip=self.tip_airfoil,
         )
 
     @Part
@@ -340,18 +363,15 @@ class LiftingSurface(GeomBase):
         return Wingbox(
             c_root=self.c_root,
             c_tip=self.c_tip,
-            semi_span=-self.semi_span,      # negative Y = port side
-            sweep_le=-self.sweep_le,        # mirror sweep
-            dihedral=-self.dihedral,        # mirror dihedral
+            semi_span=-self.semi_span,
+            sweep_le=-self.sweep_le,
+            dihedral=-self.dihedral,
             twist=self.twist,
             front_spar_position=self.front_spar_position,
             rear_spar_position=self.rear_spar_position,
-            thickness_to_chord=self.thickness_to_chord,
-            material=self.material_wingbox,
             mesh_deflection=self.mesh_deflection,
-            position=self._root_position,
             airfoil_root=self.root_airfoil,
-            airfoil_tip=self.tip_airfoil_mirrored
+            airfoil_tip=self.tip_airfoil_mirrored,
         )
 
 
@@ -362,21 +382,14 @@ class LiftingSurface(GeomBase):
 if __name__ == "__main__":
     from parapy.gui import display
 
-    from Airfoil import Airfoil
-    from Frame import Frame
-    from Wingbox import Wingbox
-
     ls = LiftingSurface(
-        label="main_wing",
-        wing_area=122.0,
-        semi_span=17.0,
-        taper_ratio=0.3,
-        sweep_le=27.0,
-        twist=-2.0,
-        dihedral=5.0,
-        thickness_to_chord=0.12,
-        fuselage_length=37.0,
-        fuselage_radius=2.0,
+        # Required: geometry cannot be derived without these two
+        wing_area=15.0,
+        semi_span=5.0,
+        # Everything below now has Roskam-based defaults and can be omitted
+        fuselage_length=10.0,
+        fuselage_radius=0.3,
         mesh_deflection=1e-4,
+        label="test_liftingsurface",
     )
     display(ls)
