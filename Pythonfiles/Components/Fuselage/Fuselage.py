@@ -27,8 +27,8 @@ class Fuselage(GeomBase):
 
     aircraft_mass: float = Input()  # MTOW [kg]
     
-    length: float = Input()     # total fuselage length [m]; None → Roskam estimate
-    radius: float = Input()    # max cross-section radius [m]; None → Roskam estimate
+    length_override: float = Input(None)   # user override [m]
+    radius_override: float = Input(None)   # user override [m]  
     
     # Roskam Vol. I, §3.3, Fig. 3.7: nosecone/forebody typically 8–12% of length.
     # NOTE (Roskam): 10% is the statistical midpoint for fixed-wing subsonic aircraft.
@@ -81,23 +81,21 @@ class Fuselage(GeomBase):
     # NOTE (Roskam): fineness ratio < 5 increases form drag noticeably; > 8 wastes volume.
     @Attribute
     def _roskam_radius(self) -> float:
-        """Fuselage radius from Roskam Vol. I fineness ratio l/d = 6 [m]."""
-        fineness_ratio = 6.0
+        """Fuselage radius from Roskam Vol. I fineness ratio l/d = 9."""
+        fineness_ratio = 9.0
         diameter = self._roskam_length / fineness_ratio
         return diameter / 2.0
 
     @Attribute
-    def _length(self) -> float:
-        """Resolved fuselage length: user value if given, else Roskam estimate."""
-        if self.length is not None:
-            return self.length
+    def length(self) -> float:
+        if self.length_override is not None:
+            return self.length_override
         return self._roskam_length
 
     @Attribute
-    def _radius(self) -> float:
-        """Resolved fuselage radius: user value if given, else Roskam estimate."""
-        if self.radius is not None:
-            return self.radius
+    def radius(self) -> float:
+        if self.radius_override is not None:
+            return self.radius_override
         return self._roskam_radius
 
     # ------------------------------------------------------------------ #
@@ -121,15 +119,15 @@ class Fuselage(GeomBase):
 
     @Attribute
     def _x_cylinder_start(self) -> float:
-        return (self.cylinder_start / 100.0) * self._length
+        return (self.cylinder_start / 100.0) * self.length
 
     @Attribute
     def _x_cylinder_end(self) -> float:
-        return (self.cylinder_end / 100.0) * self._length
+        return (self.cylinder_end / 100.0) * self.length
 
     @Attribute
     def _x_tail_tip(self) -> float:
-        return self._length
+        return self.length
 
     # ------------------------------------------------------------------ #
     # REFERENCE FRAMES
@@ -176,8 +174,8 @@ class Fuselage(GeomBase):
         return Undercarriage(
             retractible=self.undercarriage_retractible,
             aircraft_mass=self.aircraft_mass,
-            fuselage_length=self._length,
-            fuselage_radius=self._radius,
+            fuselage_length=self.length,
+            fuselage_radius=self.radius,
             label="undercarriage",
             color_tyre=self.undercarriage_color_tyre,
             color_axle=self.undercarriage_color_axle,
@@ -192,7 +190,7 @@ class Fuselage(GeomBase):
     def _nose_positions(self) -> list[float]:
         cs = self.cylinder_start / 100.0
         n  = self.taper_sections
-        return [(i / (n - 1)) * cs * self._length for i in range(n)]
+        return [(i / (n - 1)) * cs * self.length for i in range(n)]
 
     @Attribute
     def _nose_radii(self) -> list[float]:
@@ -200,7 +198,7 @@ class Fuselage(GeomBase):
         n     = self.taper_sections
         def ellipse_blend(t):
             return r_min + (1.0 - r_min) * math.sqrt(max(0.0, 1.0 - t ** 2))
-        return [ellipse_blend(1.0 - i / (n - 1)) * self._radius for i in range(n)]
+        return [ellipse_blend(1.0 - i / (n - 1)) * self.radius for i in range(n)]
 
     @Part
     def nose_profiles(self):
@@ -228,11 +226,11 @@ class Fuselage(GeomBase):
         cs = self.cylinder_start / 100.0
         ce = self.cylinder_end   / 100.0
         nc = self.cylinder_sections
-        return [(cs + (i / nc) * (ce - cs)) * self._length for i in range(nc + 1)]
+        return [(cs + (i / nc) * (ce - cs)) * self.length for i in range(nc + 1)]
 
     @Attribute
     def _cyl_radii(self) -> list[float]:
-        return [self._radius] * (self.cylinder_sections + 1)
+        return [self.radius] * (self.cylinder_sections + 1)
 
     @Part
     def cyl_profiles(self):
@@ -260,7 +258,7 @@ class Fuselage(GeomBase):
     def _tail_positions(self) -> list[float]:
         ce = self.cylinder_end / 100.0
         n  = self.taper_sections
-        return [(ce + (i / (n - 1)) * (1.0 - ce)) * self._length for i in range(n)]
+        return [(ce + (i / (n - 1)) * (1.0 - ce)) * self.length for i in range(n)]
 
     @Attribute
     def _tail_radii(self) -> list[float]:
@@ -268,7 +266,7 @@ class Fuselage(GeomBase):
         n     = self.taper_sections
         def ellipse_blend(t):
             return r_min + (1.0 - r_min) * math.sqrt(max(0.0, 1.0 - t ** 2))
-        return [ellipse_blend(i / (n - 1)) * self._radius for i in range(n)]
+        return [ellipse_blend(i / (n - 1)) * self.radius for i in range(n)]
 
     @Part
     def tail_profiles(self):
@@ -314,8 +312,8 @@ if __name__ == '__main__':
     obj = Fuselage(
         undercarriage_retractible=False,
         aircraft_mass=2500,     
-        length=20,
-        radius=1,
+        length_override=20,
+        radius_override=1,
         cylinder_start=10,
         cylinder_end=70,
         label="test_fuselage",

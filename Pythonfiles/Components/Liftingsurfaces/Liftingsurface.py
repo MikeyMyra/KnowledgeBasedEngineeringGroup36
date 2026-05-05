@@ -90,10 +90,10 @@ class LiftingSurface(GeomBase):
             return 0
         
         elif self.is_vertical_tail:
-            return self.fuselage_radius * 0.5
+            return 0 #self.fuselage_radius * 0.5
         
         else:
-            return -self.fuselage_radius * 0.5
+            return 0 #-self.fuselage_radius * 0.5
 
     # ------------------------------------------------------------ #
     # TAIL ARM
@@ -101,14 +101,15 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def tail_arm(self):
-        """Moment arm from wing attach_x to tail attach_x [m].
-        Both attach_x values are already absolute coordinates in metres."""
         if not self.is_tail:
             return None
 
         span = self.wing_ref.effective_span
+        fuselage_length = self.fuselage_length
+        wing_x = self.wing_ref.attach_x 
 
-        return 0.65 * span
+        max_arm = fuselage_length - wing_x  # can't go beyond the tail tip
+        return min(0.65 * span, max_arm)
 
     # ------------------------------------------------------------ #
     # ROSKAM EFFECTIVE AREA

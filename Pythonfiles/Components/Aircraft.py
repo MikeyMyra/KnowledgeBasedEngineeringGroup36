@@ -17,6 +17,7 @@ class Aircraft(GeomBase):
     # GLOBAL
     # ============================================================ #
 
+    cruise_speed: float = Input()
     aircraft_mass: float = Input()
     mesh_deflection: float = Input(1e-4)
     g: float = Input(9.81)
@@ -24,10 +25,6 @@ class Aircraft(GeomBase):
     # ============================================================ #
     # FUSELAGE
     # ============================================================ #
-
-    fuselage_length: float = Input(None)
-    fuselage_radius: float = Input(None)
-
     fuselage_cylinder_start: float = Input()
     fuselage_cylinder_end: float = Input()
 
@@ -106,18 +103,12 @@ class Aircraft(GeomBase):
     # ENGINE (CLEANED INTERFACE)
     # ============================================================ #
 
-    engine_type: str = Input("propeller")
-    n_engines: int = Input(1)
-    thrust_to_weight: float = Input(0.35)
+    thrust_to_weight: float = Input()
 
-    rho: float = Input(1.225)
+    rho: float = Input()
 
-    attach_spanwise_pct: float = Input(0.35)
-    attach_x_offset: float = Input(0.0)
-    attach_z_offset: float = Input(0.0)
-
-    disk_loading_uav: float = Input(80.0)
-    target_solidity: float = Input(0.15)
+    disk_loading_uav: float = Input()
+    target_solidity: float = Input()
 
     nacelle_length_override: float = Input(None)
     nacelle_radius_override: float = Input(None)
@@ -126,26 +117,12 @@ class Aircraft(GeomBase):
     blade_length_override: float = Input(None)
     blade_root_chord_override: float = Input(None)
 
-    blade_sweep: float = Input(5.0)
+    blade_sweep: float = Input()
+    
+    inlet_radius_ratio: float = Input()
+    nozzle_radius_ratio: float = Input()
 
-    engine_taper_sections: int = Input(8)
     engine_color_nacelle: str = Input("Silver")
-
-    # ============================================================ #
-    # FUSELAGE FALLBACKS
-    # ============================================================ #
-
-    @Attribute
-    def _fus_length(self):
-        if self.fuselage_length is not None:
-            return self.fuselage_length
-        return 0.6 * (2 * self.wing_semi_span)
-
-    @Attribute
-    def _fus_radius(self):
-        if self.fuselage_radius is not None:
-            return self.fuselage_radius
-        return self._fus_length / 20.0
 
     # ============================================================ #
     # PARTS
@@ -155,8 +132,6 @@ class Aircraft(GeomBase):
     def fuselage(self):
         return Fuselage(
             aircraft_mass=self.aircraft_mass,
-            length=self._fus_length,
-            radius=self._fus_radius,
             cylinder_start=self.fuselage_cylinder_start,
             cylinder_end=self.fuselage_cylinder_end,
             color_taper=self.fuselage_cones_color,
@@ -174,8 +149,8 @@ class Aircraft(GeomBase):
             wing_area=self.wing_area,
             semi_span=self.wing_semi_span,
 
-            fuselage_length=self._fus_length,
-            fuselage_radius=self._fus_radius,
+            fuselage_length=self.fuselage.length,
+            fuselage_radius=self.fuselage.radius,
 
             is_tail=False,
             is_vertical_tail=False,
@@ -209,8 +184,8 @@ class Aircraft(GeomBase):
             is_tail=True,
             is_vertical_tail=False,
 
-            fuselage_length=self._fus_length,
-            fuselage_radius=self._fus_radius,
+            fuselage_length=self.fuselage.length,
+            fuselage_radius=self.fuselage.radius,
 
             wing_area=self.tail_area or 1.0,
             semi_span=self.tail_semi_span or 1.0,
@@ -247,8 +222,8 @@ class Aircraft(GeomBase):
             is_tail=True,
             is_vertical_tail=True,
 
-            fuselage_length=self._fus_length,
-            fuselage_radius=self._fus_radius,
+            fuselage_length=self.fuselage.length,
+            fuselage_radius=self.fuselage.radius,
 
             wing_area=self.tail_area or 1.0,
             semi_span=self.tail_semi_span or 1.0,
@@ -282,9 +257,8 @@ class Aircraft(GeomBase):
     def engines(self):
         return Engine(
 
-            engine_type=self.engine_type,
+            cruise_speed=self.cruise_speed,
             mtow=self.aircraft_mass,
-            n_engines=self.n_engines,
             thrust_to_weight=self.thrust_to_weight,
 
             rho=self.rho,
@@ -294,17 +268,20 @@ class Aircraft(GeomBase):
             sweep_le=self.main_wing.sweep_le,
             dihedral=self.main_wing.dihedral,
 
-            fuselage_radius=self._fus_radius,
-
-            attach_spanwise_pct=self.attach_spanwise_pct,
-            attach_x_offset=self.attach_x_offset,
-            attach_z_offset=self.attach_z_offset,
+            fuselage_length=self.fuselage.length,
+            fuselage_radius=self.fuselage.radius,
+            
+            wing_root_x=self.main_wing._root_position.x,
+            wing_root_z=self.main_wing._root_position.z,
 
             disk_loading_uav=self.disk_loading_uav,
             target_solidity=self.target_solidity,
 
             nacelle_length_override=self.nacelle_length_override,
             nacelle_radius_override=self.nacelle_radius_override,
+            
+            inlet_radius_ratio=self.inlet_radius_ratio,
+            nozzle_radius_ratio=self.nozzle_radius_ratio,
 
             n_blades_override=self.n_blades_override,
             blade_length_override=self.blade_length_override,
@@ -328,16 +305,15 @@ if __name__ == "__main__":
         # ========================================================= #
         # MISSION
         # ========================================================= #
-        aircraft_mass=1000,          # ✔ mission sizing driver (payload + fuel + structure assumption)
-        g=9.81,                      # ✔ physical constant (always fixed on Earth)
+        
+        cruise_speed=220.0,
+        aircraft_mass=2000,          # ✔ mission sizing driver (payload + fuel + structure assumption)
 
         wing_area=20.0,              # ✔ driven by wing loading requirement (W/S)
         wing_semi_span=8.0,          # ✔ aspect ratio / airport constraint / mission geometry
 
-        n_engines=1,                 # ✔ mission architecture (redundancy vs simplicity)
-        engine_type="jet",          # ✔ mission choice (cruise speed, range, altitude)
         thrust_to_weight=0.35,      # ✔ performance requirement (takeoff/climb requirement)
-
+        
         rho=1.225,                  # ✔ ISA sea level (or mission altitude if refined later)
 
         # ========================================================= #
@@ -373,9 +349,6 @@ if __name__ == "__main__":
         # ========================================================= #
         # USER SET
         # ========================================================= #
-        fuselage_length=None,        # ✔ intentionally Roskam-derived fallback
-        fuselage_radius=None,        # ✔ same
-
         fuselage_cylinder_start=10.0,# ⚙ geometry partitioning (model structure choice)
         fuselage_cylinder_end=70.0,  # ⚙ same
 
@@ -388,10 +361,10 @@ if __name__ == "__main__":
         undercarriage_color_axle="white",
         undercarriage_color_strut="silver",
 
-        main_wing_color_wingbox="gold",
+        main_wing_color_wingbox="black",
         main_wing_color_liftingsurface="yellow",
 
-        tail_h_color_wingbox="gray",
+        tail_h_color_wingbox="black",
         tail_h_color_liftingsurface="silver",
         tail_v_color_wingbox="black",
         tail_v_color_liftingsurface="white",
@@ -406,6 +379,11 @@ if __name__ == "__main__":
 
         tail_front_spar_position=0.15,    # structural convention
         tail_rear_spar_position=0.60,     # structural convention
+        
+        inlet_radius_ratio=0.85,
+        nozzle_radius_ratio=0.7,
+        
+        g=9.81,                      # ✔ physical constant (always fixed on Earth)
     )
 
     display(ac)
