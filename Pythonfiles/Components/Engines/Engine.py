@@ -288,60 +288,60 @@ class Engine(GeomBase):
     ─────────────────────────────────────────────────────────────────────
     """
 
-    # ------------------------------------------------------------------ #
-    # INPUTS — TYPE
-    # ------------------------------------------------------------------ #
+    # ============================================================ #
+    # ENGINE CORE
+    # ============================================================ #
 
-    engine_type: str = Input("propeller")   # "jet" or "propeller"
-
-    # ------------------------------------------------------------------ #
-    # INPUTS — SIZING
-    # ------------------------------------------------------------------ #
+    engine_type: str = Input("propeller")
 
     mtow: float = Input()
     n_engines: int = Input(1)
     thrust_to_weight: float = Input(0.35)
+
     rho: float = Input(1.225)
     g: float = Input(9.81)
 
-    # Roskam Vol. I, Table 3.6: UAV fixed-wing disk loading 60-120 N/m².
-    # 80 N/m² is statistical midpoint for single-prop tractor/pusher UAV.
-    # NOTE (Roskam): increase toward 120 for high-speed UAV, decrease for
-    # slow-flying or loitering UAV.
-    disk_loading_uav: float = Input(80.0)   # [N/m²]
-
-    # Roskam Vol. I §3.6: disk solidity σ = n*c/(π*R).
-    # Typical UAV fixed-wing props: σ = 0.10–0.20, midpoint 0.15.
-    # NOTE (Roskam): higher solidity for high-altitude or low-RPM designs.
-    target_solidity: float = Input(0.15)
-
-    # ------------------------------------------------------------------ #
-    # INPUTS — WING INTERFACE
-    # ------------------------------------------------------------------ #
+    # ============================================================ #
+    # GEOMETRY CONTEXT (FROM AIRCRAFT, NOT WING OBJECTS)
+    # ============================================================ #
 
     semi_span: float = Input()
-    sweep_le: float = Input(25.0)
+    sweep_le: float = Input(5.0)
     dihedral: float = Input(5.0)
-    wing_root_x: float = Input()
-    wing_root_z: float = Input()
-    fuselage_radius: float = Input(0.0)     # needed for centreline prop clearance
+
+    fuselage_radius: float = Input(0.0)
+
+    # ============================================================ #
+    # POSITIONING
+    # ============================================================ #
 
     attach_spanwise_pct: float = Input(0.35)
     attach_x_offset: float = Input(0.0)
-    attach_z_offset: float = Input(0)
+    attach_z_offset: float = Input(0.0)
 
-    # ------------------------------------------------------------------ #
-    # INPUTS — OVERRIDES  (None = use Roskam estimate)
-    # ------------------------------------------------------------------ #
+    # ============================================================ #
+    # DESIGN CONTROL
+    # ============================================================ #
+
+    disk_loading_uav: float = Input(80.0)
+    target_solidity: float = Input(0.15)
+
+    # ============================================================ #
+    # OVERRIDES (GEOMETRY ONLY)
+    # ============================================================ #
 
     nacelle_length_override: float = Input(None)
     nacelle_radius_override: float = Input(None)
-    n_blades_override: int = Input(None)        # None → Roskam blade count
+
+    n_blades_override: int = Input(None)
     blade_length_override: float = Input(None)
     blade_root_chord_override: float = Input(None)
+
     blade_sweep: float = Input(5.0)
+
     taper_sections: int = Input(8)
     color_nacelle: str = Input("Silver")
+
     mesh_deflection: float = Input(1e-4)
 
     # ------------------------------------------------------------------ #
@@ -629,20 +629,98 @@ class Engine(GeomBase):
 if __name__ == "__main__":
     from parapy.gui import display
 
-    eng = Engine(
-        label="engine",
+    # ============================================================ #
+    # PROPELLER ENGINE TEST CASE (FULL INPUT TRACEABILITY)
+    # ============================================================ #
+
+    prop_engine = Engine(
+
+        # ---------------------- TYPE ------------------------------ #
         engine_type="propeller",
+
+        # ---------------------- GLOBAL ---------------------------- #
         mtow=1000.0,
         n_engines=1,
-        thrust_to_weight=0.8,
-        semi_span=5.0,
-        fuselage_radius=0.625,      # matches Roskam estimate for 1000 kg UAV
+        thrust_to_weight=0.35,
+        rho=1.225,
+        g=9.81,
+
+        # ---------------------- WING INTERFACE ------------------- #
+        semi_span=8.0,
         sweep_le=5.0,
         dihedral=5.0,
-        wing_root_x=3.5,
-        wing_root_z=-0.3,
-        attach_spanwise_pct=0.0,    # centreline tractor
+        fuselage_radius=0.625,
+
+        attach_spanwise_pct=0.0,
         attach_x_offset=-0.5,
         attach_z_offset=0.0,
+
+        # ---------------------- NACELLE OVERRIDES --------------- #
+        nacelle_length_override=None,
+        nacelle_radius_override=None,
+
+        # ---------------------- PROPELLER ------------------------ #
+        n_blades_override=None,
+        blade_length_override=None,
+        blade_root_chord_override=None,
+
+        blade_sweep=5.0,
+
+        # ---------------------- DISK / ROSKAM ------------------- #
+        disk_loading_uav=80.0,
+
+        # ---------------------- GEOMETRY CONTROL ----------------- #
+        taper_sections=8,
+        color_nacelle="Silver",
+
+        mesh_deflection=1e-4,
     )
-    display(eng)
+
+    # ============================================================ #
+    # JET ENGINE TEST CASE (FULL INPUT TRACEABILITY)
+    # ============================================================ #
+
+    jet_engine = Engine(
+
+        # ---------------------- TYPE ------------------------------ #
+        engine_type="jet",
+
+        # ---------------------- GLOBAL ---------------------------- #
+        mtow=1000.0,
+        n_engines=2,
+        thrust_to_weight=0.40,
+        rho=1.225,
+        g=9.81,
+
+        # ---------------------- WING INTERFACE ------------------- #
+        semi_span=8.0,
+        sweep_le=15.0,
+        dihedral=3.0,
+        fuselage_radius=0.7,
+
+        attach_spanwise_pct=0.35,
+        attach_x_offset=0.2,
+        attach_z_offset=0.1,
+
+        # ---------------------- NACELLE OVERRIDES --------------- #
+        nacelle_length_override=None,
+        nacelle_radius_override=None,
+
+        # ---------------------- JET-SPECIFIC INPUTS ------------- #
+        n_blades_override=None,
+        blade_length_override=None,
+        blade_root_chord_override=None,
+
+        blade_sweep=0.0,
+
+        # ---------------------- DISK / ROSKAM ------------------- #
+        disk_loading_uav=80.0,
+
+        # ---------------------- GEOMETRY CONTROL ----------------- #
+        taper_sections=10,
+        color_nacelle="Silver",
+
+        mesh_deflection=1e-4,
+    )
+
+    display([prop_engine, jet_engine])

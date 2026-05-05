@@ -21,12 +21,16 @@ class Undercarriage(GeomBase):
     - main_gear_y        : §8.6 Fig. 8.5 — lateral track ≥ 3× wheel radius for tip-over stability
     """
 
-    retractible: bool = Input(False)
+    retractible: bool = Input()
     aircraft_mass: float = Input()          # MTOW [kg]
-    fuselage_length: float = Input(20.0)
-    fuselage_radius: float = Input(2.0)
+    fuselage_length: float = Input()
+    fuselage_radius: float = Input()
 
     mesh_deflection: float = Input(1e-4)
+    
+    color_tyre: str = Input()
+    color_axle: str = Input()
+    color_strut: str = Input()
 
     # ------------------------------------------------------------------ #
     # SIZING MODEL — Roskam Vol. I statistical relationships
@@ -204,7 +208,7 @@ class Undercarriage(GeomBase):
     def nose_strut(self):
         return LoftedSolid(
             profiles=self.nose_strut_profiles,
-            color="Gray",
+            color=self.color_strut,
             mesh_deflection=self.mesh_deflection,
         )
 
@@ -246,7 +250,7 @@ class Undercarriage(GeomBase):
     def nose_axle(self):
         return LoftedSolid(
             profiles=self.nose_axle_profiles,
-            color="DarkGray",
+            color=self.color_axle,
             mesh_deflection=self.mesh_deflection,
         )
 
@@ -296,7 +300,7 @@ class Undercarriage(GeomBase):
                 -self.fuselage_radius - self.strut_height,
             ),
             direction=Vector(0, 1, 0),
-            color="Black",
+            color=self.color_tyre,
             mesh_deflection=self.mesh_deflection,
         )
 
@@ -344,7 +348,7 @@ class Undercarriage(GeomBase):
                 self.main_strut_profiles[child.index * 2],
                 self.main_strut_profiles[child.index * 2 + 1],
             ],
-            color="Gray",
+            color=self.color_strut,
             mesh_deflection=self.mesh_deflection,
         )
 
@@ -391,7 +395,7 @@ class Undercarriage(GeomBase):
                 self.main_axle_profiles[child.index * 2],
                 self.main_axle_profiles[child.index * 2 + 1],
             ],
-            color="DarkGray",
+            color=self.color_axle,
             mesh_deflection=self.mesh_deflection,
         )
 
@@ -448,7 +452,7 @@ class Undercarriage(GeomBase):
                 -self.fuselage_radius - self.strut_height,
             ),
             direction=Vector(0, 1, 0),
-            color="Black",
+            color=self.color_tyre,
             mesh_deflection=self.mesh_deflection,
         )
 
@@ -474,10 +478,14 @@ if __name__ == '__main__':
     from parapy.gui import display
 
     obj = Undercarriage(
+        retractible=False,
         # Required: sizing fully driven by MTOW
         aircraft_mass=25,       # 25 kg UAV — all geometry auto-derived
         fuselage_length=3,
         fuselage_radius=0.5,
         label="test_undercarriage",
+        color_tyre="black",
+        color_axle="silver",
+        color_strut="gray",
     )
     display(obj)

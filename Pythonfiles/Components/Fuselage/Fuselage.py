@@ -26,6 +26,37 @@ class Fuselage(GeomBase):
     # ------------------------------------------------------------------ #
 
     aircraft_mass: float = Input()  # MTOW [kg]
+    
+    length: float = Input()     # total fuselage length [m]; None → Roskam estimate
+    radius: float = Input()    # max cross-section radius [m]; None → Roskam estimate
+    
+    # Roskam Vol. I, §3.3, Fig. 3.7: nosecone/forebody typically 8–12% of length.
+    # NOTE (Roskam): 10% is the statistical midpoint for fixed-wing subsonic aircraft.
+    cylinder_start: float = Input()     # nosecone end [% of length]
+
+    # Roskam Vol. I, §3.3, Fig. 3.7: tailcone starts at 65–75% of fuselage length.
+    # NOTE (Roskam): 70% leaves adequate room for empennage attachment volume.
+    cylinder_end: float = Input()       # tailcone start [% of length]
+
+    # ------------------------------------------------------------------ #
+    # RENDERING QUALITY — fixed defaults, no Roskam relevance
+    # ------------------------------------------------------------------ #
+
+    taper_sections: int = Input(10)
+    cylinder_sections: int = Input(4)
+    min_radius_pct: float = Input(0.0001)
+    mesh_deflection: float = Input(1e-4)
+    
+    color_taper: str = Input()
+    color_cylinder: str = Input()
+    
+    undercarriage_color_tyre: str = Input()
+    undercarriage_color_axle: str = Input()
+    undercarriage_color_strut: str = Input()
+
+    undercarriage_retractible: bool = Input()
+
+    
 
     # ------------------------------------------------------------------ #
     # FUSELAGE GEOMETRY — Roskam Vol. I statistical defaults (UAV re-fit)
@@ -55,8 +86,6 @@ class Fuselage(GeomBase):
         diameter = self._roskam_length / fineness_ratio
         return diameter / 2.0
 
-    length: float = Input(None)     # total fuselage length [m]; None → Roskam estimate
-
     @Attribute
     def _length(self) -> float:
         """Resolved fuselage length: user value if given, else Roskam estimate."""
@@ -64,37 +93,12 @@ class Fuselage(GeomBase):
             return self.length
         return self._roskam_length
 
-    radius: float = Input(None)     # max cross-section radius [m]; None → Roskam estimate
-
     @Attribute
     def _radius(self) -> float:
         """Resolved fuselage radius: user value if given, else Roskam estimate."""
         if self.radius is not None:
             return self.radius
         return self._roskam_radius
-
-    # Roskam Vol. I, §3.3, Fig. 3.7: nosecone/forebody typically 8–12% of length.
-    # NOTE (Roskam): 10% is the statistical midpoint for fixed-wing subsonic aircraft.
-    cylinder_start: float = Input(10.0)     # nosecone end [% of length]
-
-    # Roskam Vol. I, §3.3, Fig. 3.7: tailcone starts at 65–75% of fuselage length.
-    # NOTE (Roskam): 70% leaves adequate room for empennage attachment volume.
-    cylinder_end: float = Input(70.0)       # tailcone start [% of length]
-
-    # ------------------------------------------------------------------ #
-    # RENDERING QUALITY — fixed defaults, no Roskam relevance
-    # ------------------------------------------------------------------ #
-
-    taper_sections: int = Input(10)
-    color_taper: str = Input("SteelBlue")
-
-    cylinder_sections: int = Input(4)
-    color_cylinder: str = Input("LightBlue")
-
-    undercarriage_retractible: bool = Input(False)
-
-    min_radius_pct: float = Input(0.0001)
-    mesh_deflection: float = Input(1e-4)
 
     # ------------------------------------------------------------------ #
     # POSITION HELPER
@@ -175,6 +179,9 @@ class Fuselage(GeomBase):
             fuselage_length=self._length,
             fuselage_radius=self._radius,
             label="undercarriage",
+            color_tyre=self.undercarriage_color_tyre,
+            color_axle=self.undercarriage_color_axle,
+            color_strut=self.undercarriage_color_strut,
         )
 
     # ------------------------------------------------------------------ #
@@ -305,11 +312,17 @@ if __name__ == '__main__':
     from parapy.gui import display
 
     obj = Fuselage(
-        # Required: all geometry now auto-derived from MTOW via Roskam (UAV re-fit)
-        aircraft_mass=25,           # 25 kg UAV → length ≈ 1.15 m, radius ≈ 0.096 m
-        # Optional overrides — omit to use Roskam UAV estimates
-        # length=3.0,
-        # radius=0.18,
+        undercarriage_retractible=False,
+        aircraft_mass=2500,     
+        length=20,
+        radius=1,
+        cylinder_start=10,
+        cylinder_end=70,
         label="test_fuselage",
+        color_taper="SteelBlue",
+        color_cylinder="LightBlue",
+        undercarriage_color_tyre="pink",
+        undercarriage_color_axle="silver",
+        undercarriage_color_strut="gray",
     )
     display(obj)

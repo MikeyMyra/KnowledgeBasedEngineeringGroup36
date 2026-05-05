@@ -13,18 +13,20 @@ class Wingbox(GeomBase):
     c_root: float = Input()
     c_tip: float = Input()
     semi_span: float = Input()
-    sweep_le: float = Input(25.0)
-    dihedral: float = Input(5.0)
-    twist: float = Input(-2.0)
+    sweep_le: float = Input()
+    dihedral: float = Input()
+    twist: float = Input()
     
-    front_spar_position: float = Input(0.15)
-    rear_spar_position: float = Input(0.60)
+    front_spar_position: float = Input()
+    rear_spar_position: float = Input()
     
     # airfoil objects
     airfoil_root: "Airfoil" = Input()
     airfoil_tip: "Airfoil" = Input()
     
     mesh_deflection: float = Input(1e-4)
+    
+    color: str = Input()
     
     # ------------------------------------------------------------------ #
     # WIDTH 
@@ -131,7 +133,7 @@ class Wingbox(GeomBase):
     def root_section(self):
         return Polygon(
             points=self._root_corners,
-            color="SteelBlue",
+            color=self.color,
             mesh_deflection=self.mesh_deflection,
         )
     
@@ -139,7 +141,7 @@ class Wingbox(GeomBase):
     def tip_section(self):
         return Polygon(
             points=self._tip_corners,
-            color="SteelBlue",
+            color=self.color,
             mesh_deflection=self.mesh_deflection,
         )
     
@@ -151,7 +153,7 @@ class Wingbox(GeomBase):
     def solid(self):
         return LoftedSolid(
             profiles=[self.root_section, self.tip_section],
-            color="SteelBlue",
+            color=self.color,
             mesh_deflection=self.mesh_deflection,
         )
     
@@ -182,19 +184,34 @@ if __name__ == "__main__":
     from parapy.gui import display
     
     root_af = Airfoil(
+        label="test_root_airfoil",
         chord=5.0,
-        airfoil_name="simm_airfoil"
+        maximum_camber=0.00,
+        camber_position=0.0,
+        thickness_to_chord=0.12,
+        export_dat=False,
+        airfoil_name="naca_0012",
     )
     
     tip_af = Airfoil(
+        label="test_tip_airfoil",
         chord=2.0,
-        airfoil_name="simm_airfoil"
+        maximum_camber=0.00,
+        camber_position=0.0,
+        thickness_to_chord=0.12,
+        export_dat=False,
+        airfoil_name="naca_0012",
     )
     
     wb = Wingbox(
         c_root=5.0,
         c_tip=2.0,
         semi_span=15.0,
+        sweep_le=0,
+        dihedral=0,
+        twist=0,
+        front_spar_position=0.15,
+        rear_spar_position=0.6,
         airfoil_root=root_af,
         airfoil_tip=tip_af,
         label="test_wingbox",

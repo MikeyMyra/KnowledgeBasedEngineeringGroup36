@@ -15,18 +15,18 @@ class Airfoil(GeomBase):
     # INPUTS
     # ------------------------------------------------------------------ #
 
-    chord: float = Input(1.0)
+    chord: float = Input()
 
-    maximum_camber: float = Input(0.02)          # m (e.g. 0.02 = 2%)
-    camber_position: float = Input(0.4)          # p (0–1)
-    thickness_to_chord: float = Input(0.12)      # t (e.g. 0.12 = 12%)
+    maximum_camber: float = Input()          # m (e.g. 0.02 = 2%)
+    camber_position: float = Input()          # p (0–1)
+    thickness_to_chord: float = Input()      # t (e.g. 0.12 = 12%)
 
+    thickness_factor: float = Input(1)
     n_points: int = Input(100)
-    thickness_factor: float = Input(1.0)
     mesh_deflection: float = Input(1e-4)
 
-    export_dat: bool = Input(True)
-    airfoil_name: str = Input("custom_airfoil")
+    export_dat: bool = Input()
+    airfoil_name: str = Input()
 
     # ------------------------------------------------------------------ #
     # NACA GENERATION
@@ -276,10 +276,11 @@ if __name__ == "__main__":
     
     airfoil = Airfoil(
         label="test_airfoil",
-        chord=1.5,
-        maximum_camber=0.04,
-        camber_position=0.4,
-        thickness_to_chord=0.15,
-        airfoil_name="naca_4415",
+        chord=1.0,
+        maximum_camber=0.00,
+        camber_position=0.0,
+        thickness_to_chord=0.12,
+        export_dat=True,
+        airfoil_name="naca_0012",
     )
     display(airfoil)
