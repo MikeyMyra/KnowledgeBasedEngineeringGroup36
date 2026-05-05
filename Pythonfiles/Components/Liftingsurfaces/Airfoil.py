@@ -1,5 +1,6 @@
 import os
 import numpy as np
+from math import comb
 
 from parapy.geom import GeomBase, FittedCurve
 from parapy.core import Input, Attribute, Part
@@ -121,6 +122,80 @@ class Airfoil(GeomBase):
                 f.write(f"{x:.6f} {z:.6f}\n")
 
         return self.dat_file_path
+    
+    # ------------------------------------------------------------------ #
+    # CST COEFFICIENTS
+    # ------------------------------------------------------------------ #
+    
+    def bernstein_poly(self, i, n, x):
+        return comb(n, i) * (x**i) * ((1 - x)**(n - i))
+
+
+    def class_function(self, x, N1=0.5, N2=1.0):
+        return (x**N1) * ((1 - x)**N2)
+
+
+    def fit_cst(self, x, z, n_coeff=6):
+        n = n_coeff - 1
+
+        C = self.class_function(x)
+        B = np.zeros((len(x), n_coeff))
+
+        for i in range(n_coeff):
+            B[:, i] = self.bernstein_poly(i, n, x)
+
+        A = C[:, None] * B
+
+        # 🔧 Tikhonov regularization
+        lambda_reg = 1e-8
+        ATA = A.T @ A + lambda_reg * np.eye(n_coeff)
+        ATz = A.T @ z
+
+        coeffs = np.linalg.solve(ATA, ATz)
+        return coeffs
+    
+    @Attribute
+    def CST_coefficients(self):
+        """Return CST coefficients: (upper[6], lower[6])"""
+
+        upper, lower = self.upper_lower_surfaces
+
+        # Extract
+        x_u, z_u = upper[:, 0], upper[:, 1]
+        x_l, z_l = lower[:, 0], lower[:, 1]
+
+        # Sort
+        idx_u = np.argsort(x_u)
+        idx_l = np.argsort(x_l)
+
+        x_u, z_u = x_u[idx_u], z_u[idx_u]
+        x_l, z_l = x_l[idx_l], z_l[idx_l]
+
+        eps = 1e-6
+
+        # Remove problematic endpoints
+        mask_u = (x_u > eps) & (x_u < 1 - eps)
+        mask_l = (x_l > eps) & (x_l < 1 - eps)
+
+        x_u, z_u = x_u[mask_u], z_u[mask_u]
+        x_l, z_l = x_l[mask_l], z_l[mask_l]
+
+        # Normalize (extra safety)
+        x_u = np.clip(x_u, eps, 1 - eps)
+        x_l = np.clip(x_l, eps, 1 - eps)
+
+        coeffs_upper = self.fit_cst(x_u, z_u, n_coeff=6)
+
+        # IMPORTANT: fit lower surface as absolute then restore sign
+        coeffs_lower = self.fit_cst(x_l, -z_l, n_coeff=6)
+        coeffs_lower = -coeffs_lower
+
+        return coeffs_upper, coeffs_lower
+    
+    @Attribute
+    def CST_vector(self):
+        cu, cl = self.CST_coefficients
+        return np.concatenate([cu, cl])
 
     # ------------------------------------------------------------------ #
     # GEOMETRY POINTS
