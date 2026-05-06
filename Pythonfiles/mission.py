@@ -11,11 +11,14 @@ class Mission(Base):
     mission_endurance: float = Input()
     payload_weight: float = Input()
     specific_fuel: float = Input()
-    engine_type: str = Input()
     maximum_mach: float = Input()
     prop_efficiency: float = Input()
-    cruise_speed_guess: float = Input()
-    loiter_speed_guess: float = Input()
+    cruise_speed: float = Input()
+    loiter_speed: float = Input()
+    mission_objective: str = Input()
+
+
+
 
 
 
@@ -30,7 +33,14 @@ class Mission(Base):
     # aspect_ratio: float = Input()
     # thrust_loading: float = Input()
     # cd_0: float = Input()
-    # cd_0_loiter: float = Input()
+    # cd_0_loiter: float = Input().
+
+    def engine_selection(self):
+        a = ISA_calculator(self.mission_altitude)[3]
+        if self.cruise_speed / a > 0.4:
+            self.engine_type = "Jet"
+        elif self.cruise_speed / a <= 0.4:
+            self.engine_type = "propeller"
 
     def take_off_weight_estimate(self, empty_weight_guess, tol=0.01, max_iter=100):
         """
@@ -41,8 +51,8 @@ class Mission(Base):
         Wp = m2i.kilograms_to_pounds(self.payload_weight)
         Rc = m2i.kilometers_to_nautical_miles(cruise_range)
         T_loit = self.mission_endurance
-        Vc = m2i.meter_per_second_to_knots(self.cruise_speed_guess)
-        Vl = m2i.meter_per_second_to_knots(self.loiter_speed_guess)
+        Vc = m2i.meter_per_second_to_knots(self.cruise_speed)
+        Vl = m2i.meter_per_second_to_knots(self.loiter_speed)
         prop_efficiency = 0.8
 
         if self.engine_type == "Jet":
@@ -52,20 +62,21 @@ class Mission(Base):
             SFC_loiter = 0.7
             A = 1.67
             C = -0.16
-        elif self.engine_type == "Turboprop":
-            LDc = 23  # cruise L/D
-            LDl = 28  # loiter L/D higher for props (near best L/D speed)
-            SFC_cruise = 0.4
-            SFC_loiter = 0.5
-            A = 2.75
-            C = -0.18
-        elif self.engine_type == "Piston":
-            LDc = 13
-            LDl = 15  # loiter L/D higher for props
-            SFC_cruise = 0.4
-            SFC_loiter = 0.5
-            A = 0.97
-            C = -0.06
+        elif self.engine_type == "Propeller":
+            if self.mission_objective == "Endurance"
+                LDc = 23  # cruise L/D
+                LDl = 28  # loiter L/D higher for props (near best L/D speed)
+                SFC_cruise = 0.4
+                SFC_loiter = 0.5
+                A = 2.75
+                C = -0.18
+            elif self.mission_objective == "Low cost":
+                LDc = 13
+                LDl = 15  # loiter L/D higher for props
+                SFC_cruise = 0.4
+                SFC_loiter = 0.5
+                A = 0.97
+                C = -0.06
 
         # Fixed mission segment fractions
         W10 = 0.97
@@ -76,7 +87,7 @@ class Mission(Base):
         if self.engine_type == "Jet":
             W32 = W54 =  np.exp((-Rc * (SFC_cruise/3600)) / (Vc * LDc))
             W43 = np.exp(-T_loit * SFC_loiter / LDl)
-        elif self.engine_type == "Turboprop" or self.engine_type == "Piston":
+        elif self.engine_type == "Propeller":
             W32 = W54 = np.exp((-Rc * SFC_cruise) / (prop_efficiency * LDc))
             W43 = np.exp(-T_loit * Vl * (SFC_loiter / 3600) / (prop_efficiency *LDl))
 
@@ -161,7 +172,7 @@ class Mission(Base):
                 if abs(optimal_cruise_speed - old_cruise_speed) < 0.1:
                     self.cruise_speed = optimal_cruise_speed
                     break
-        elif self.engine_type == "Turboprop" or self.engine_type == "Piston":
+        elif self.engine_type == "Propeller":
             M = optimal_cruise_speed / speed_of_sound
             w2_w1 = 1.0065 - 0.0325 * M
 
