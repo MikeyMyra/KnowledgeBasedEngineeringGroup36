@@ -20,7 +20,7 @@ class Aircraft(GeomBase):
     cruise_speed: float = Input()
     aircraft_mass: float = Input()
     mesh_deflection: float = Input(1e-4)
-    g: float = Input(9.81)
+    g: float = Input()
 
     # ============================================================ #
     # FUSELAGE
@@ -122,7 +122,7 @@ class Aircraft(GeomBase):
     inlet_radius_ratio: float = Input()
     nozzle_radius_ratio: float = Input()
 
-    engine_color_nacelle: str = Input("Silver")
+    engine_color_nacelle: str = Input()
 
     # ============================================================ #
     # PARTS
@@ -349,10 +349,10 @@ if __name__ == "__main__":
         # ========================================================= #
         # USER SET
         # ========================================================= #
-        fuselage_cylinder_start=10.0,# ⚙ geometry partitioning (model structure choice)
-        fuselage_cylinder_end=70.0,  # ⚙ same
+        fuselage_cylinder_start=10.0,# To be set based on payload size
+        fuselage_cylinder_end=70.0,  # Same
 
-        undercarriage_retractible=False,  # ⚙ design choice (simplification vs realism)
+        undercarriage_retractible=False,  # User specified
 
         # ---------------- COLORS (PURE VISUAL ONLY) ----------------
         fuselage_cones_color="steelblue",

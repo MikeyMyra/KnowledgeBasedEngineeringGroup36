@@ -100,6 +100,7 @@ class Engine(GeomBase):
     def engine_type(self) -> str:
         """Roskam Vol. I §3.2 / §3.6: prop below Mach 0.40, jet above."""
         return "propeller" if self.cruise_speed < 130.0 else "jet"
+    # ADD ALTITUDE CALCULATION FOR MACH
 
     @Attribute
     def n_engines(self) -> int:
