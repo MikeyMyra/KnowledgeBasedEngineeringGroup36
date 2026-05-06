@@ -68,11 +68,23 @@ class Drone(GeomBase):
     mission_range: float = Input()
     mission_endurance: float = Input()
     cruise_speed: float = Input()
-    maximum_load_factor = Input()
+    maximum_load_factor: float = Input()
     cruise_altitude: float = Input()
 
     @Attribute
     def mission(self):
+
+
+''' belangrijk dat we engine type dus ook laten afhangen van de mission, daar is nu rekening mee gehouden bij de
+initial guess voor L/D, deze komen van AI:
+Mission profile                         Engine selection logic
+Long endurance / ISR / surveillance     Propeller (piston or turboprop)
+Strike / UCAV / high speed              Jet (turbofan)
+Loiter + light strike (multi-role)      Turboprop or low-bypass turbofan
+Tactical / short range / low cost       Propeller (piston)
+High altitude long endurance (HALE)     Turboprop
+'''
+
 
 
 
