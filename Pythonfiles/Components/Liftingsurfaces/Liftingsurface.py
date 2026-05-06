@@ -80,7 +80,7 @@ class LiftingSurface(GeomBase):
     @Attribute
     def attach_x(self):
         if self.is_tail:
-            return self.wing_ref.attach_x + self.tail_arm
+            return min(self.wing_ref.attach_x + self.tail_arm, self.fuselage_length - self.c_root)
         # Wing: place the quarter-chord of the MAC at a fixed fuselage station
         return 0.40 * self.fuselage_length  # or make this an Input
 
