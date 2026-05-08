@@ -44,10 +44,11 @@ class Aircraft(GeomBase):
     wing_area: float = Input()
     wing_semi_span: float = Input()
 
-    wing_taper_ratio: float = Input()
-    wing_sweep_le: float = Input()
-    wing_twist: float = Input()
-    wing_dihedral: float = Input()
+    wing_taper_ratio: float = Input() #Low sweep 0.4-0.5, most swept wings 0.2-0.3
+    wing_sweep_le: float = Input() # find critical mach number, after which we can find the wing sweep
+    wing_twist: float = Input() # -3 should be a good guess
+    wing_dihedral: float = Input() # -2 to 2 for subsonic swept wing
+    # wing incidence? Should be zero for military aircraft and I think that also applied to drones
 
     wing_thickness_to_chord: float = Input()
     wing_maximum_camber: float = Input()
