@@ -684,4 +684,4 @@ if __name__ == "__main__":
 
     p3.print_summary()
 
-    display(p3)
+    display([p1,p2,p3])
