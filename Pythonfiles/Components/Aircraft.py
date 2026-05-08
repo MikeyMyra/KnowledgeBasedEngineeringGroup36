@@ -41,8 +41,8 @@ class Aircraft(GeomBase):
     # MAIN WING
     # ============================================================ #
 
-    wing_area: float = Input()
-    wing_semi_span: float = Input()
+    effective_wing_area: float = Input()
+    effective_wing_semi_span: float = Input()
 
     wing_taper_ratio: float = Input()
     wing_sweep_le: float = Input()
@@ -146,8 +146,8 @@ class Aircraft(GeomBase):
     def main_wing(self):
         return LiftingSurface(
             label="main_wing",
-            wing_area=self.wing_area,
-            semi_span=self.wing_semi_span,
+            effective_area=self.effective_wing_area,
+            effective_semi_span=self.effective_wing_semi_span,
 
             fuselage_length=self.fuselage.length,
             fuselage_radius=self.fuselage.radius,
@@ -186,9 +186,7 @@ class Aircraft(GeomBase):
 
             fuselage_length=self.fuselage.length,
             fuselage_radius=self.fuselage.radius,
-
-            wing_area=self.tail_area or 1.0,
-            semi_span=self.tail_semi_span or 1.0,
+            fuselage_cone_radius_fn=self.fuselage.local_radius_at,
 
             taper_ratio=self.tail_taper_ratio,
             sweep_le=self.tail_sweep_le,
@@ -224,9 +222,7 @@ class Aircraft(GeomBase):
 
             fuselage_length=self.fuselage.length,
             fuselage_radius=self.fuselage.radius,
-
-            wing_area=self.tail_area or 1.0,
-            semi_span=self.tail_semi_span or 1.0,
+            fuselage_cone_radius_fn=self.fuselage.local_radius_at,
 
             taper_ratio=self.tail_taper_ratio,
 
@@ -264,7 +260,7 @@ class Aircraft(GeomBase):
             rho=self.rho,
             g=self.g,
 
-            semi_span=self.main_wing.semi_span,
+            semi_span=self.main_wing.effective_semi_span,
             sweep_le=self.main_wing.sweep_le,
             dihedral=self.main_wing.dihedral,
 
@@ -315,8 +311,8 @@ if __name__ == "__main__":
         cruise_speed=220.0,
         aircraft_mass=2000,          # ✔ mission sizing driver (payload + fuel + structure assumption)
 
-        wing_area=20.0,              # ✔ driven by wing loading requirement (W/S)
-        wing_semi_span=8.0,          # ✔ aspect ratio / airport constraint / mission geometry
+        effective_wing_area=20.0,              # ✔ driven by wing loading requirement (W/S)
+        effective_wing_semi_span=8.0,          # ✔ aspect ratio / airport constraint / mission geometry
 
         thrust_to_weight=0.35,      # ✔ performance requirement (takeoff/climb requirement)
         
