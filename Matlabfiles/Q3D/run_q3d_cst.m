@@ -1,4 +1,4 @@
-function [Res, AC] = run_q3d_cst(wing_planform_geom,  wing_airfoils, wing_incidence_angle, mach, reynolds, speed, alpha, altitude, density)
+function [Res, AC] = run_q3d_cst(wing_planform_geom,  wing_airfoils, wing_incidence_angle, mach, reynolds, speed, alpha_or_cl, altitude, density, use_cl)
 
    % Wing planform geometry format (expects half of symmetric wing):
    %                 x     y     z   chord(m)    twist angle (deg)
@@ -20,7 +20,7 @@ function [Res, AC] = run_q3d_cst(wing_planform_geom,  wing_airfoils, wing_incide
    AC.Wing.eta = [0;1];  % Spanwise location of the airfoil sections
 
    % Viscous vs inviscid
-   AC.Visc  = 1;              % 0 for inviscid and 1 for viscous analysis
+   AC.Visc  = 0;              % 0 for inviscid and 1 for viscous analysis
    AC.Aero.MaxIterIndex = 150;    %Maximum number of Iteration for the
                                    %convergence of viscous calculation
 
@@ -31,8 +31,11 @@ function [Res, AC] = run_q3d_cst(wing_planform_geom,  wing_airfoils, wing_incide
    AC.Aero.alt   = altitude;             % flight altitude (m)
    AC.Aero.Re    = reynolds;        % reynolds number (bqased on mean aerodynamic chord)
    AC.Aero.M     = mach;           % flight Mach number
-   % AC.Aero.CL    = 0.4;          % lift coefficient - comment this line to run the code for given alpha%
-   AC.Aero.Alpha = alpha;             % angle of attack -  comment this line to run the code for given cl
+   if use_cl
+      AC.Aero.CL    = alpha_or_cl;   % alpha slot carries CL value
+   else
+      AC.Aero.Alpha = alpha_or_cl;
+   end
 
 
    %%

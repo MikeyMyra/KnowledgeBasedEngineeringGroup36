@@ -2,7 +2,7 @@ Wing
 # AVL input file
 
 # Mach
-0.2
+0.180434
 
 # iYsym iZsym Zsym
 0 0 0 
@@ -24,7 +24,7 @@ YDUPLICATE
 INDEX
 1
 ANGLE
-1
+0
 # ----------------------------------------------------------
 SECTION
 # Xle Yle Zle Chord Ainc
@@ -36,7 +36,7 @@ CLAF
 # ----------------------------------------------------------
 SECTION
 # Xle Yle Zle Chord Ainc
-2.0991 7.4 2.0991 0.694981 -2
+0.647416 7.4 0.644952 0.694981 -2
 AFILE
 AFsection2.dat
 CLAF

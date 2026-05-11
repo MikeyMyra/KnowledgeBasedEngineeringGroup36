@@ -1,4 +1,5 @@
-from math import radians, tan, cos, sin
+from itertools import product
+from math import radians, tan, cos, sin, sqrt
 import numpy as np
 
 from parapy.core import Input, Attribute, Part
@@ -10,73 +11,58 @@ from Pythonfiles.Components.Frame import Frame
 
 import matlab
 import matlab.engine
-from Pythonfiles.Matlab_start import MATLAB_Q3D_ENGINE
+from Pythonfiles.Testfiles.test_aircraft import MATLAB_Q3D_ENGINE
 
 
 class LiftingSurface(GeomBase):
     """
     Lifting surface for wing, horizontal tail, and vertical tail.
 
-    Aero / geometric split
-    ----------------------
-    For ALL surfaces (wing and tails):
+    Airfoil selection
+    -----------------
+    When run_airfoil_sweep=False (default):
+        maximum_camber, maximum_camber_position, thickness_to_chord
+        are used directly as given — normal behaviour.
 
-        c_root_geometric  : chord at the root attachment line (centreline for
-                            wing, fuselage side for tails).  The wingbox starts
-                            here and extends to the tip — it passes through the
-                            fuselage wall.
-
-        c_root_aero       : chord at the fuselage wall (wing) or identical to
-                            c_root_geometric (tails, which attach at the wall).
-                            The lofted surface solid starts here.
-
-        _effective_span   : exposed semi-span from fuselage wall to tip.
-        _effective_area   : exposed trapezoid area (both sides for wing/HT,
-                            full span for VT).
-
-    Wing sizing (is_tail=False)
-    ---------------------------
-        effective_area and effective_span are direct inputs.
-
-    Tail sizing (is_tail=True)
-    --------------------------
-        effective_area and effective_span are computed internally from the
-        Roskam tail-volume coefficients (tail_volume_coefficient_h/v) and
-        tail_aspect_ratio_h/v, driven by wing_ref geometry.
-        Pass effective_area=None and effective_span=None (the defaults).
-
-    Wingbox vs surface solid
-    ------------------------
-        wingbox          : spans from centreline (wing) or fuselage wall (tail)
-                           all the way to the tip, using c_root_geometric.
-        solid / mirrored : spans from fuselage wall to tip only, using
-                           c_root_aero.  No skin is buried inside the fuselage.
+    When run_airfoil_sweep=True:
+        The three airfoil parameters above are IGNORED as inputs.
+        Instead, best_airfoil_params runs a Q3D sweep over
+        camber_range × position_range × thickness_range and resolves
+        the three parameters from the feasible candidate with the most
+        L/D margin above ld_required.
+        All airfoil Parts and the wingbox then pick up the swept values
+        automatically via the maximum_camber / maximum_camber_position /
+        thickness_to_chord attributes.
     """
 
     # ------------------------------------------------------------ #
-    # PRIMARY SIZING INPUTS
-    # Wing: provide these. Tails: leave as None (Roskam sizing used).
+    # FLIGHT CONDITION INPUTS
     # ------------------------------------------------------------ #
 
-    effective_area: float = Input(None)
-    effective_span: float = Input(None)
+    weight:    float = Input(1000)
+    velocity:  float = Input(100)
+    altitude:  float = Input(10000)
+    use_cl:    bool  = Input(True)
+    alpha:     float = Input(0.0)      # [deg] only used when use_cl=False
+
+    # ------------------------------------------------------------ #
+    # PRIMARY SIZING INPUTS
+    # ------------------------------------------------------------ #
+
+    effective_area:  float = Input(None)
+    effective_span:  float = Input(None)
 
     fuselage_length: float = Input()
     fuselage_radius: float = Input()
 
-    # Optional callable x → local_radius [m] from Fuselage.local_radius_at.
-    # When provided, tails use the cone radius at their attach_x rather than
-    # the constant cylinder radius.  Wings always sit on the cylinder, so
-    # they are unaffected even when this is set.
-    # Pass None (default) to keep the original constant-radius behaviour.
     fuselage_cone_radius_fn: object = Input(None)
 
-    is_tail: bool = Input()
+    is_tail:          bool = Input()
     is_vertical_tail: bool = Input()
 
-    mesh_deflection: float = Input(1e-4)
+    mesh_deflection:  float = Input(1e-4)
 
-    color_wingbox: str = Input()
+    color_wingbox:        str = Input()
     color_liftingsurface: str = Input()
 
     # ------------------------------------------------------------ #
@@ -84,45 +70,230 @@ class LiftingSurface(GeomBase):
     # ------------------------------------------------------------ #
 
     taper_ratio: float = Input()
-    sweep_le: float = Input()
-    twist: float = Input()
-    dihedral: float = Input()
+    sweep_le:    float = Input()
+    twist:       float = Input()
+    dihedral:    float = Input()
 
-    thickness_to_chord: float = Input()
-    maximum_camber: float = Input()
-    maximum_camber_position: float = Input()
+    # ------------------------------------------------------------ #
+    # AIRFOIL PARAMETERS
+    # These are plain inputs when run_airfoil_sweep=False.
+    # When run_airfoil_sweep=True they are overridden by Attributes
+    # below that resolve from best_airfoil_params.
+    # ------------------------------------------------------------ #
+
+    maximum_camber_input:          float = Input(0.04)
+    maximum_camber_position_input: float = Input(0.4)
+    thickness_to_chord_input:      float = Input(0.12)
+
+    # ------------------------------------------------------------ #
+    # AIRFOIL SWEEP CONTROLS
+    # ------------------------------------------------------------ #
+
+    run_airfoil_sweep: bool  = Input(False)
+
+    ld_required:       float = Input(None)   # mission L/D requirement
+    camber_range:      list  = Input([0.0, 0.02, 0.04, 0.06])
+    position_range:    list  = Input([0.3, 0.4, 0.5])
+    thickness_range:   list  = Input([0.10, 0.12, 0.15, 0.18])
+    cm_min:            float = Input(-0.10)
+    cm_max:            float = Input(0.00)
+    t_min:             float = Input(0.10)
 
     # ------------------------------------------------------------ #
     # AIRFOIL SCALING
     # ------------------------------------------------------------ #
 
     t_factor_root: float = Input()
-    t_factor_tip: float = Input()
+    t_factor_tip:  float = Input()
 
     # ------------------------------------------------------------ #
     # SPARS
     # ------------------------------------------------------------ #
 
     front_spar_position: float = Input()
-    rear_spar_position: float = Input()
+    rear_spar_position:  float = Input()
 
     # ------------------------------------------------------------ #
-    # ROSKAM TAIL PARAMETERS  (tails only — keep original names)
+    # ROSKAM TAIL PARAMETERS
     # ------------------------------------------------------------ #
 
     tail_volume_coefficient_h: float = Input(None)
     tail_volume_coefficient_v: float = Input(None)
-    tail_aspect_ratio_h: float = Input(None)
-    tail_aspect_ratio_v: float = Input(None)
+    tail_aspect_ratio_h:       float = Input(None)
+    tail_aspect_ratio_v:       float = Input(None)
 
     wing_ref: "LiftingSurface" = Input(None)
 
-    # Kept for compatibility — ignored when Roskam sizing is active
-    effective_wing_area: float = Input(None)
-    effective_semi_span: float = Input(None)
+    effective_wing_area:  float = Input(None)
+    effective_semi_span:  float = Input(None)
 
     # ------------------------------------------------------------ #
-    # ATTACH POSITION
+    # RESOLVED AIRFOIL PARAMETERS
+    # These attributes are what all Parts actually read.
+    # They either pass through the Input or resolve from the sweep.
+    # ------------------------------------------------------------ #
+
+    @Attribute
+    def maximum_camber(self):
+        return self.best_airfoil_params["camber"] if self.run_airfoil_sweep \
+               else self.maximum_camber_input
+
+    @Attribute
+    def maximum_camber_position(self):
+        return self.best_airfoil_params["position"] if self.run_airfoil_sweep \
+               else self.maximum_camber_position_input
+
+    @Attribute
+    def thickness_to_chord(self):
+        return self.best_airfoil_params["thickness"] if self.run_airfoil_sweep \
+               else self.thickness_to_chord_input
+
+    # ------------------------------------------------------------ #
+    # AIRFOIL SWEEP
+    # ------------------------------------------------------------ #
+
+    @Attribute
+    def best_airfoil_params(self):
+        """
+        Sweeps NACA 4-series (camber × position × thickness) through Q3D
+        and returns the parameter dict of the feasible airfoil with the
+        most L/D margin above ld_required.
+
+        Only called when run_airfoil_sweep=True.
+        ParaPy caches the result — Q3D runs once, not on every access.
+
+        Constraints
+        -----------
+          L/D  >= ld_required
+          CL   >= target_cl        (from 2W/rhoV²S)
+          Cm   in [cm_min, cm_max] (pitching moment / stability)
+          t/c  >= t_min            (structural minimum)
+        """
+        if not self.run_airfoil_sweep:
+            raise RuntimeError("best_airfoil_params called but run_airfoil_sweep=False.")
+
+        if self.ld_required is None:
+            raise ValueError("ld_required must be set when run_airfoil_sweep=True.")
+
+        combos = list(product(self.camber_range, self.position_range, self.thickness_range))
+        n      = len(combos)
+
+        print(f"\nAirfoil sweep: {n} Q3D evaluations")
+        print(f"  Required L/D : {self.ld_required}")
+        print(f"  Target CL    : {self.target_cl:.4f}")
+        print(f"  Cm bounds    : [{self.cm_min}, {self.cm_max}]")
+        print(f"  t/c minimum  : {self.t_min}\n")
+
+        results = []
+
+        for i, (m, p, t) in enumerate(combos):
+            print(f"  [{i+1}/{n}]  camber={m:.3f}  pos={p:.2f}  t/c={t:.3f}", end="  ")
+
+            try:
+                # Build lightweight temporary airfoils — no geometry,
+                # no dat export, purely to obtain CST vectors.
+                root_af = Airfoil(
+                    chord              = self.c_root_aero,
+                    maximum_camber     = m,
+                    camber_position    = p,
+                    thickness_to_chord = t,
+                    thickness_factor   = self.t_factor_root,
+                    export_dat         = False,
+                    airfoil_name       = f"_sweep_root_{i}",
+                    position           = self._root_position,
+                )
+                tip_af = Airfoil(
+                    chord              = self.c_tip,
+                    maximum_camber     = m,
+                    camber_position    = p,
+                    thickness_to_chord = t,
+                    thickness_factor   = self.t_factor_tip,
+                    export_dat         = False,
+                    airfoil_name       = f"_sweep_tip_{i}",
+                    position           = self._tip_position,
+                )
+
+                # CST matrix: rows = [root, tip], cols = 12 coefficients
+                af_matrix = matlab.double(
+                    np.vstack([root_af.CST_vector, tip_af.CST_vector]).tolist()
+                )
+
+                # Q3D call with candidate airfoil shape
+                Res, _ = MATLAB_Q3D_ENGINE.run_q3d_cst(
+                    self._q3d_planform_matrix,
+                    af_matrix,
+                    matlab.double([0.0]),
+                    matlab.double([self.mach]),
+                    matlab.double([self.reynolds]),
+                    matlab.double([self.velocity]),
+                    matlab.double([self.target_cl]),
+                    matlab.double([self.altitude]),
+                    matlab.double([self.density]),
+                    matlab.logical([True]),          # always CL-prescribed in sweep
+                    nargout=2
+                )
+                #print(Res)
+                cl  = float(Res["CLwing"])
+                cd  = float(Res["CDiwing"])
+                cm  = float(Res["CMwing"])
+                ld  = cl / cd if cd > 0 else 0.0
+
+                # Individual constraint checks
+                ld_met    = ld  >= self.ld_required
+                cl_met    = cl  >= self.target_cl
+                cm_stable = self.cm_min <= cm <= self.cm_max
+                t_ok      = t   >= self.t_min
+                feasible  = ld_met and cl_met and cm_stable and t_ok
+
+                print(f"L/D={ld:.2f}  CL={cl:.4f}  Cm={cm:.4f}  "
+                      f"{'FEASIBLE' if feasible else 'FAIL'}")
+
+                results.append({
+                    "camber":     m,
+                    "position":   p,
+                    "thickness":  t,
+                    "CL":         cl,
+                    "CD":         cd,
+                    "Cm":         cm,
+                    "L/D":        ld,
+                    "L/D_margin": ld - self.ld_required,
+                    "feasible":   feasible,
+                    "ld_met":     ld_met,
+                    "cl_met":     cl_met,
+                    "cm_stable":  cm_stable,
+                })
+
+            except Exception as e:
+                print(f"FAILED: {e}")
+
+        # ---- pick best feasible ------------------------------------- #
+        feasible_results = [r for r in results if r["feasible"]]
+
+        if feasible_results:
+            best = max(feasible_results, key=lambda r: r["L/D_margin"])
+            print(f"\nBest airfoil found:")
+            print(f"  camber={best['camber']:.3f}  "
+                  f"pos={best['position']:.2f}  "
+                  f"t/c={best['thickness']:.3f}")
+            print(f"  L/D={best['L/D']:.2f}  "
+                  f"margin=+{best['L/D_margin']:.2f}  "
+                  f"CL={best['CL']:.4f}  Cm={best['Cm']:.4f}")
+            return best
+
+        # ---- no feasible — diagnose which constraint blocked most --- #
+        print("\nNo feasible airfoil found. Constraint breakdown:")
+        print(f"  L/D  failed : {sum(1 for r in results if not r['ld_met'])}/{n}")
+        print(f"  CL   failed : {sum(1 for r in results if not r['cl_met'])}/{n}")
+        print(f"  Cm   failed : {sum(1 for r in results if not r['cm_stable'])}/{n}")
+        raise ValueError(
+            f"Airfoil sweep found no feasible candidate. "
+            f"Check ld_required={self.ld_required}, "
+            f"target_cl={self.target_cl:.4f}, "
+            f"cm bounds=[{self.cm_min}, {self.cm_max}]."
+        )
+
+    # ------------------------------------------------------------ #
+    # ATTACH POSITION  (unchanged)
     # ------------------------------------------------------------ #
 
     @Attribute
@@ -134,85 +305,39 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def attach_z(self):
-        """
-        Z-position of the surface root attachment on the fuselage [m].
-
-        Wing            : 0.0  (mid-fuselage on the cylinder — no z offset needed)
-        Horizontal tail : 0.0  (symmetric about the fuselage centreline)
-        Vertical tail   : +fuselage_wall_radius  (sits on TOP of the cone surface)
-
-        fuselage_wall_radius is the local cone radius at attach_x, so the VT
-        root chord begins flush with the fuselage skin rather than floating in
-        mid-air at a fixed cylinder radius.
-        """
         if self.is_tail and self.is_vertical_tail:
             return self.fuselage_wall_radius
         return 0.0
-
-    # ------------------------------------------------------------ #
-    # TAIL ARM
-    # ------------------------------------------------------------ #
 
     @Attribute
     def tail_arm(self):
         if not self.is_tail:
             return None
-        wing_x = self.wing_ref.attach_x
+        wing_x  = self.wing_ref.attach_x
         max_arm = self.fuselage_length - wing_x
         return min(0.65 * self.wing_ref._effective_span * 2, max_arm)
 
-    # ------------------------------------------------------------ #
-    # LOCAL FUSELAGE WALL RADIUS AT ATTACH POINT
-    # ------------------------------------------------------------ #
-
     @Attribute
     def fuselage_wall_radius(self):
-        """
-        Fuselage cross-section radius [m] at this surface's attach_x.
-
-        Wing  : always fuselage_radius (attaches on the constant cylinder).
-        Tails : uses fuselage_cone_radius_fn(attach_x) when the callable is
-                supplied, so the skin root and VT base track the converging
-                tailcone profile exactly.  Falls back to fuselage_radius if
-                the callable is not provided (preserves old behaviour).
-
-        This value drives:
-          - The y-offset of the HT skin root (±fuselage_wall_radius in y)
-          - The z-offset of the VT skin root (+fuselage_wall_radius in z)
-          - The wingbox burial depth (_geometric_span = _effective_span
-            + fuselage_wall_radius) so the box reaches all the way to the
-            structural centreline.
-        """
         if self.is_tail and self.fuselage_cone_radius_fn is not None:
             return self.fuselage_cone_radius_fn(self.attach_x + self.c_root_aero)
         return self.fuselage_radius
 
     # ------------------------------------------------------------ #
-    # RESOLVED EFFECTIVE AREA AND SPAN
+    # EFFECTIVE AREA AND SPAN  (unchanged)
     # ------------------------------------------------------------ #
 
     @Attribute
     def _effective_area(self):
-        """
-        Resolved exposed reference area [m^2].
-
-        Wing  : direct from effective_area input.
-        Tail  : Roskam tail-volume formula.
-                HT: S_h = Vh * S_w * c_w / tail_arm
-                VT: S_v = Vv * S_w * b_w / tail_arm
-        """
         if not self.is_tail:
             if self.effective_area is None:
                 raise ValueError("Wing requires effective_area input.")
             return self.effective_area
-
         if self.wing_ref is None:
             raise ValueError("Tail requires wing_ref.")
-
         S_w = self.wing_ref._effective_area
         b_w = 2 * self.wing_ref._effective_span
         c_w = self.wing_ref.mean_aerodynamic_chord
-
         if self.is_vertical_tail:
             if self.tail_volume_coefficient_v is None or self.tail_aspect_ratio_v is None:
                 raise ValueError("VT requires tail_volume_coefficient_v and tail_aspect_ratio_v.")
@@ -224,39 +349,21 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def _effective_span(self):
-        """
-        Resolved exposed semi-span [m]  (full span for VT).
-
-        Wing  : direct from effective_span input.
-        HT    : sqrt(AR_h * S_h) / 2
-        VT    : sqrt(AR_v * S_v)
-        """
         if not self.is_tail:
             if self.effective_semi_span is None:
                 raise ValueError("Wing requires effective_span input.")
             return self.effective_semi_span
-
         if self.is_vertical_tail:
             return np.sqrt(self.tail_aspect_ratio_v * self._effective_area)
         else:
             return np.sqrt(self.tail_aspect_ratio_h * self._effective_area) / 2
 
     # ------------------------------------------------------------ #
-    # CHORD
+    # CHORD  (unchanged)
     # ------------------------------------------------------------ #
 
     @Attribute
     def c_root_aero(self):
-        """
-        Chord at the fuselage wall [m].
-
-        Wing : linear interpolation from centreline to tip, evaluated at
-               y = fuselage_radius.
-        Tail : the entire exposed surface starts at the fuselage wall, so
-               c_root_aero is derived directly from the exposed trapezoid:
-               S_exposed = (c_root_aero + c_tip) * span
-               c_root_aero = S / (span * (1 + taper))
-        """
         return self._effective_area / (self._effective_span * (1 + self.taper_ratio))
 
     @Attribute
@@ -265,38 +372,15 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def c_root_geometric(self):
-        """
-        Chord at the structural root [m] — wingbox starts here.
-
-        Extrapolates the taper inward from the fuselage wall by
-        fuselage_wall_radius (the local cone radius at attach_x).
-        For the wing this equals fuselage_radius; for tails on the
-        converging tailcone it is the smaller local radius, so the
-        buried chord length is correctly proportioned to the actual
-        burial depth.
-        """
         slope = (self.c_root_aero - self.c_tip) / self._effective_span
         return self.c_root_aero + slope * self.fuselage_wall_radius
 
-    # ------------------------------------------------------------ #
-    # FULL GEOMETRIC SEMI-SPAN  (including fuselage burial)
-    # ------------------------------------------------------------ #
-
     @Attribute
     def _geometric_span(self):
-        """
-        Semi-span from structural centreline to tip [m].
-
-        = _effective_span + fuselage_wall_radius
-
-        fuselage_wall_radius is the local cone radius at attach_x, so the
-        wingbox burial depth matches the actual fuselage cross-section at
-        that station rather than the constant cylinder radius.
-        """
         return self._effective_span + self.fuselage_wall_radius
 
     # ------------------------------------------------------------ #
-    # DERIVED AERO PROPERTIES
+    # DERIVED AERO PROPERTIES  (unchanged)
     # ------------------------------------------------------------ #
 
     @Attribute
@@ -318,19 +402,10 @@ class LiftingSurface(GeomBase):
         return self.mac_spanwise_position * tan(radians(self.sweep_le))
 
     # ------------------------------------------------------------ #
-    # POSITIONING HELPERS
+    # POSITIONING HELPERS  (unchanged)
     # ------------------------------------------------------------ #
 
     def _spanwise_offsets(self, y_sign: float):
-        """
-        x/y/z offsets when stepping one fuselage_wall_radius outboard from
-        the centreline attachment, following sweep and dihedral.
-        y_sign = +1 for starboard, -1 for port.
-
-        Uses fuselage_wall_radius (= local cone radius at attach_x) so that
-        the skin root sits exactly on the fuselage surface at that station.
-        For the wing this equals fuselage_radius; for tails it is smaller.
-        """
         R  = self.fuselage_wall_radius
         dx = R * tan(radians(self.sweep_le))
         dy = y_sign * R
@@ -339,85 +414,31 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def _root_position_wingbox(self):
-        """
-        Structural root position — at (attach_x, 0, attach_z) with NO
-        sweep or dihedral pre-offset.
-
-        Why no offset?  The Wingbox Part internally propagates sweep and
-        dihedral over its full semi_span = _geometric_span.  It starts from
-        this position and arrives at the same tip z/x as the skin, because:
-
-            wb_root_z + geometric_span * sin(dihedral)
-          = attach_z  + (effective_span + R) * sin(dihedral)
-          = (attach_z + R*sin(d)) + effective_span * sin(d)
-          = skin_root_z + effective_span * sin(d)
-          = skin_tip_z                                         ✓
-
-        Adding a -dz_out offset to wb_root_z would cause the wingbox tip to
-        undershoot skin_tip_z by fuselage_radius * sin(dihedral), producing
-        the misalignment that was observed.  The same cancellation holds for x.
-
-        For the VT (no dihedral/twist): same logic, just rotated upright.
-        """
         if not self.is_vertical_tail:
-            return translate(
-                self.position,
-                "x", self.attach_x,
-                "y", 0.0,
-                "z", self.attach_z,
-            )
-        # VT: root at fuselage centreline, rotated upright
+            return translate(self.position, "x", self.attach_x, "y", 0.0, "z", self.attach_z)
         base = translate(self.position, "x", self.attach_x, "z", self.attach_z)
         return rotate(base, "x", radians(90))
 
     @Attribute
     def _root_position(self):
-        """
-        Starboard fuselage-wall position — aero surface (skin) starts here.
-
-        Moves one fuselage_radius outboard from the centreline attachment
-        following sweep (dx) and dihedral (dz), so this position is exactly
-        one fuselage_radius further outboard than _root_position_wingbox.
-        """
         if not self.is_vertical_tail:
             dx, dy, dz = self._spanwise_offsets(+1)
-            return translate(
-                self.position,
-                "x", self.attach_x + dx,
-                "y", dy,
-                "z", self.attach_z + dz,
-            )
-        # VT root is at the top of the fuselage wall, rotated upright.
-        # attach_z is already set to fuselage_wall_radius by attach_z attribute,
-        # so the base translate lands on the cone surface.  The small sweep dx
-        # along x is also scaled by the local wall radius.
+            return translate(self.position, "x", self.attach_x + dx, "y", dy, "z", self.attach_z + dz)
         R  = self.fuselage_wall_radius
         dx = R * tan(radians(self.sweep_le))
-        dz = R  # step up to cone surface top — same as fuselage_wall_radius
+        dz = R
         base = translate(self.position, "x", self.attach_x + dx, "z", self.attach_z + dz)
         return rotate(base, "x", radians(90))
 
     @Attribute
     def _root_position_mirrored(self):
-        """
-        Port fuselage-wall position — mirror of _root_position.
-
-        y is negated (port side), but dz is identical: dihedral raises
-        both wing panels upward symmetrically.
-        """
         if self.is_vertical_tail:
             return self._root_position
         dx, dy, dz = self._spanwise_offsets(-1)
-        return translate(
-            self.position,
-            "x", self.attach_x + dx,
-            "y", dy,
-            "z", self.attach_z + dz,
-        )
+        return translate(self.position, "x", self.attach_x + dx, "y", dy, "z", self.attach_z + dz)
 
     @Attribute
     def _tip_position(self):
-        """Starboard tip position."""
         if not self.is_vertical_tail:
             return rotate(
                 translate(
@@ -439,7 +460,6 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def _tip_position_mirrored(self):
-        """Port tip position — None for vertical tail."""
         if self.is_vertical_tail:
             return None
         return rotate(
@@ -453,98 +473,95 @@ class LiftingSurface(GeomBase):
         )
 
     # ------------------------------------------------------------ #
-    # AIRFOILS
+    # AIRFOIL PARTS  (unchanged — now read resolved Attributes)
     # ------------------------------------------------------------ #
 
     @Part
     def root_airfoil_wingbox(self):
-        """Structural root airfoil — at fuselage wall minus one radius inboard."""
         return Airfoil(
-            chord=self.c_root_geometric,
-            maximum_camber=self.maximum_camber,
-            camber_position=self.maximum_camber_position,
-            thickness_to_chord=self.thickness_to_chord,
-            export_dat=True,
-            airfoil_name="root_airfoil_geometric",
-            position=self._root_position_wingbox,
+            chord              = self.c_root_geometric,
+            maximum_camber     = self.maximum_camber,       # resolved
+            camber_position    = self.maximum_camber_position,
+            thickness_to_chord = self.thickness_to_chord,
+            export_dat         = True,
+            airfoil_name       = "root_airfoil_geometric",
+            position           = self._root_position_wingbox,
         )
 
     @Part
     def root_airfoil(self):
-        """Fuselage-wall airfoil — starboard aero surface root."""
         return Airfoil(
-            chord=self.c_root_aero,
-            maximum_camber=self.maximum_camber,
-            camber_position=self.maximum_camber_position,
-            thickness_to_chord=self.thickness_to_chord,
-            export_dat=True,
-            airfoil_name="root_airfoil_aero",
-            position=self._root_position,
+            chord              = self.c_root_aero,
+            maximum_camber     = self.maximum_camber,       # resolved
+            camber_position    = self.maximum_camber_position,
+            thickness_to_chord = self.thickness_to_chord,
+            export_dat         = True,
+            airfoil_name       = "root_airfoil_aero",
+            position           = self._root_position,
         )
 
     @Part
     def root_airfoil_mirrored(self):
-        """Fuselage-wall airfoil — port aero surface root."""
         return Airfoil(
-            chord=self.c_root_aero,
-            maximum_camber=self.maximum_camber,
-            camber_position=self.maximum_camber_position,
-            thickness_to_chord=self.thickness_to_chord,
-            export_dat=True,
-            airfoil_name="root_airfoil_aero_mirrored",
-            position=self._root_position_mirrored,
-            suppress=self.is_vertical_tail,
+            chord              = self.c_root_aero,
+            maximum_camber     = self.maximum_camber,
+            camber_position    = self.maximum_camber_position,
+            thickness_to_chord = self.thickness_to_chord,
+            export_dat         = True,
+            airfoil_name       = "root_airfoil_aero_mirrored",
+            position           = self._root_position_mirrored,
+            suppress           = self.is_vertical_tail,
         )
 
     @Part
     def tip_airfoil(self):
         return Airfoil(
-            chord=self.c_tip,
-            maximum_camber=self.maximum_camber,
-            camber_position=self.maximum_camber_position,
-            thickness_to_chord=self.thickness_to_chord,
-            export_dat=True,
-            airfoil_name="tip_airfoil",
-            position=self._tip_position,
+            chord              = self.c_tip,
+            maximum_camber     = self.maximum_camber,       # resolved
+            camber_position    = self.maximum_camber_position,
+            thickness_to_chord = self.thickness_to_chord,
+            export_dat         = True,
+            airfoil_name       = "tip_airfoil",
+            position           = self._tip_position,
         )
 
     @Part
     def tip_airfoil_mirrored(self):
         return Airfoil(
-            chord=self.c_tip,
-            maximum_camber=self.maximum_camber,
-            camber_position=self.maximum_camber_position,
-            thickness_to_chord=self.thickness_to_chord,
-            export_dat=True,
-            airfoil_name="tip_airfoil_mirrored",
-            position=self._tip_position_mirrored,
-            suppress=self.is_vertical_tail,
+            chord              = self.c_tip,
+            maximum_camber     = self.maximum_camber,
+            camber_position    = self.maximum_camber_position,
+            thickness_to_chord = self.thickness_to_chord,
+            export_dat         = True,
+            airfoil_name       = "tip_airfoil_mirrored",
+            position           = self._tip_position_mirrored,
+            suppress           = self.is_vertical_tail,
         )
 
     # ------------------------------------------------------------ #
-    # SOLIDS  (fuselage wall to tip — no buried skin)
+    # SOLIDS  (unchanged)
     # ------------------------------------------------------------ #
 
     @Part
     def solid(self):
         return LoftedSolid(
-            profiles=[self.root_airfoil.geometry, self.tip_airfoil.geometry],
-            color=self.color_liftingsurface,
-            mesh_deflection=self.mesh_deflection,
+            profiles        = [self.root_airfoil.geometry, self.tip_airfoil.geometry],
+            color           = self.color_liftingsurface,
+            mesh_deflection = self.mesh_deflection,
         )
 
     @Part
     def solid_mirrored(self):
         return LoftedSolid(
-            profiles=[self.root_airfoil_mirrored.geometry, self.tip_airfoil_mirrored.geometry],
-            color=self.color_liftingsurface,
-            transparency=0.6,
-            mesh_deflection=self.mesh_deflection,
-            suppress=self.is_vertical_tail,
+            profiles        = [self.root_airfoil_mirrored.geometry, self.tip_airfoil_mirrored.geometry],
+            color           = self.color_liftingsurface,
+            transparency    = 0.6,
+            mesh_deflection = self.mesh_deflection,
+            suppress        = self.is_vertical_tail,
         )
 
     # ------------------------------------------------------------ #
-    # FRAME
+    # FRAME  (unchanged)
     # ------------------------------------------------------------ #
 
     @Part
@@ -552,62 +569,130 @@ class LiftingSurface(GeomBase):
         return Frame(pos=self._root_position, hidden=False)
 
     # ------------------------------------------------------------ #
-    # WINGBOX  (structural root to tip — passes through fuselage wall)
+    # WINGBOX  (unchanged — picks up resolved thickness_to_chord
+    #           indirectly via airfoil_root / airfoil_tip Parts)
     # ------------------------------------------------------------ #
 
     @Part
     def wingbox(self):
         return Wingbox(
-            c_root=self.c_root_geometric,
-            c_tip=self.c_tip,
-            semi_span=self._geometric_span,
-            sweep_le=self.sweep_le,
-            dihedral=self.dihedral,
-            twist=self.twist,
-            front_spar_position=self.front_spar_position,
-            rear_spar_position=self.rear_spar_position,
-            airfoil_root=self.root_airfoil_wingbox,
-            airfoil_tip=self.tip_airfoil,
-            color=self.color_wingbox,
+            c_root               = self.c_root_geometric,
+            c_tip                = self.c_tip,
+            semi_span            = self._geometric_span,
+            sweep_le             = self.sweep_le,
+            dihedral             = self.dihedral,
+            twist                = self.twist,
+            front_spar_position  = self.front_spar_position,
+            rear_spar_position   = self.rear_spar_position,
+            airfoil_root         = self.root_airfoil_wingbox,
+            airfoil_tip          = self.tip_airfoil,
+            color                = self.color_wingbox,
         )
 
     @Part
     def wingbox_mirrored(self):
         return Wingbox(
-            c_root=self.c_root_geometric,
-            c_tip=self.c_tip,
-            semi_span=-self._geometric_span,
-            sweep_le=-self.sweep_le,
-            dihedral=-self.dihedral,
-            twist=self.twist,
-            front_spar_position=self.front_spar_position,
-            rear_spar_position=self.rear_spar_position,
-            airfoil_root=self.root_airfoil_wingbox,
-            airfoil_tip=self.tip_airfoil_mirrored,
-            color=self.color_wingbox,
-            suppress=self.is_vertical_tail,
+            c_root               = self.c_root_geometric,
+            c_tip                = self.c_tip,
+            semi_span            = -self._geometric_span,
+            sweep_le             = -self.sweep_le,
+            dihedral             = -self.dihedral,
+            twist                = self.twist,
+            front_spar_position  = self.front_spar_position,
+            rear_spar_position   = self.rear_spar_position,
+            airfoil_root         = self.root_airfoil_wingbox,
+            airfoil_tip          = self.tip_airfoil_mirrored,
+            color                = self.color_wingbox,
+            suppress             = self.is_vertical_tail,
         )
-    
-    # ---------------------------------------------------------------------- #
-    # AERODYNAMIC ANALYSIS
-    # ---------------------------------------------------------------------- #
+
+    # ------------------------------------------------------------ #
+    # ISA ATMOSPHERE
+    # ------------------------------------------------------------ #
+
+    @Attribute
+    def _isa(self):
+        T0    = 288.15
+        p0    = 101_325.0
+        L     = 0.0065
+        R     = 287.058
+        gamma = 1.4
+        g     = 9.80665
+        h     = self.altitude
+
+        if h <= 11_000:
+            T = T0 - L * h
+            p = p0 * (T / T0) ** (g / (L * R))
+        else:
+            T11 = T0 - L * 11_000
+            p11 = p0 * (T11 / T0) ** (g / (L * R))
+            T   = T11
+            p   = p11 * np.exp(-g * (h - 11_000) / (R * T11))
+
+        rho = p / (R * T)
+        a   = np.sqrt(gamma * R * T)
+        return {"T": T, "p": p, "rho": rho, "a": a}
+
+    @Attribute
+    def density(self):
+        return self._isa["rho"]
+
+    @Attribute
+    def mach(self):
+        return self.velocity / self._isa["a"]
+
+    @Attribute
+    def reynolds(self):
+        T  = self._isa["T"]
+        mu = 1.716e-5 * (T / 273.15)**1.5 * (273.15 + 110.4) / (T + 110.4)
+        return self.density * self.velocity * self.mean_aerodynamic_chord / mu
+
+    @Attribute
+    def target_cl(self):
+        return (2.0 * self.weight) / (
+            self.density * self.velocity**2 * self._effective_area
+        )
+
+    # ------------------------------------------------------------ #
+    # Q3D MATRICES
+    # ------------------------------------------------------------ #
+
+    @Attribute
+    def _q3d_airfoil_matrix(self):
+        cst_root = self.root_airfoil.CST_vector
+        cst_tip  = self.tip_airfoil.CST_vector
+        return matlab.double(np.vstack([cst_root, cst_tip]).tolist())
+
+    @Attribute
+    def _q3d_planform_matrix(self):
+        y_tip    = self._effective_span
+        x_le_tip = y_tip * tan(radians(self.sweep_le))
+        z_tip    = y_tip * np.sin(radians(self.dihedral))
+        return matlab.double([
+            [0.0,      0.0,   0.0,   self.c_root_aero, 0.0       ],
+            [x_le_tip, y_tip, z_tip, self.c_tip,       self.twist],
+        ])
+
+    # ------------------------------------------------------------ #
+    # Q3D CALL
+    # ------------------------------------------------------------ #
+
     @Attribute
     def q3d_data(self):
-        """All inputs and results from running Q3D (MATLAB)"""
-        #! Note: The file `runq3d.m` hard-codes the airfoil shapes a,d a lot of other things
-        #! To make this fully operational, you'd need to update the Matlab code such that it
-        #! accepts all relevant information (airfoil shape, flight speed, M, Re…) as input
-        return MATLAB_Q3D_ENGINE.run_q3d(matlab.double([[0, 0, 0, self.c_root_aero, 0],
-                                                        [self.effective_semi_span*np.cos(self.dihedral),
-                                                         self.effective_semi_span,
-                                                         self.effective_semi_span*np.cos(self.dihedral),
-                                                         self.c_tip, self.twist]
-                                                       ]),
-                                                       # in MATLAB 2021, double values are defined as
-                                                       # rectangular nested sequence
-                                         matlab.double([1]),
-                                         nargout=2 # specify number of outputs if >1
-                                        )
+        alpha_or_cl = self.target_cl if self.use_cl else self.alpha
+        return MATLAB_Q3D_ENGINE.run_q3d_cst(
+            self._q3d_planform_matrix,
+            self._q3d_airfoil_matrix,
+            matlab.double([0.0]),
+            matlab.double([self.mach]),
+            matlab.double([self.reynolds]),
+            matlab.double([self.velocity]),
+            matlab.double([alpha_or_cl]),
+            matlab.double([self.altitude]),
+            matlab.double([self.density]),
+            matlab.logical([self.use_cl]),
+            nargout=2
+        )
 
 
 # ---------------------------------------------------------------------- #
@@ -621,107 +706,174 @@ if __name__ == "__main__":
     wing = LiftingSurface(
         label="main_wing",
 
-        effective_area=18.0,
-        effective_semi_span=7.4,
+        # --- sizing --- #
+        effective_area       = 18.0,
+        effective_semi_span  = 7.4,
 
-        fuselage_length=10.0,
-        fuselage_radius=0.6,
+        fuselage_length      = 10.0,
+        fuselage_radius      = 0.6,
 
-        is_tail=False,
-        is_vertical_tail=False,
+        is_tail              = False,
+        is_vertical_tail     = False,
 
-        mesh_deflection=1e-4,
+        mesh_deflection      = 1e-4,
 
-        taper_ratio=0.40,
-        sweep_le=5.0,
-        twist=-2.0,
-        dihedral=5.0,
+        # --- geometry --- #
+        taper_ratio          = 0.40,
+        sweep_le             = 5.0,
+        twist                = -2.0,
+        dihedral             = 5.0,
 
-        thickness_to_chord=0.15,
-        maximum_camber=0.04,
-        maximum_camber_position=0.4,
+        # --- airfoil (fixed, no sweep) --- #
+        run_airfoil_sweep            = False,
+        maximum_camber_input         = 0.04,
+        maximum_camber_position_input= 0.4,
+        thickness_to_chord_input     = 0.15,
 
-        t_factor_root=1.0,
-        t_factor_tip=1.0,
+        # --- flight conditions (needed for Q3D / sweep) --- #
+        weight               = 15_000,    # [N]
+        velocity             = 60.0,      # [m/s]
+        altitude             = 2_000,     # [m]
 
-        front_spar_position=0.15,
-        rear_spar_position=0.60,
+        t_factor_root        = 1.0,
+        t_factor_tip         = 1.0,
 
-        color_wingbox="yellow",
-        color_liftingsurface="orange",
+        front_spar_position  = 0.15,
+        rear_spar_position   = 0.60,
+
+        color_wingbox        = "yellow",
+        color_liftingsurface = "orange",
+    )
+
+    # --- wing with airfoil sweep enabled --- #
+    wing_swept = LiftingSurface(
+        label="main_wing_swept",
+
+        effective_area       = 18.0,
+        effective_semi_span  = 7.4,
+
+        fuselage_length      = 10.0,
+        fuselage_radius      = 0.6,
+
+        is_tail              = False,
+        is_vertical_tail     = False,
+
+        mesh_deflection      = 1e-4,
+
+        taper_ratio          = 0.40,
+        sweep_le             = 5.0,
+        twist                = -2.0,
+        dihedral             = 5.0,
+
+        # --- airfoil sweep --- #
+        run_airfoil_sweep            = True,
+        ld_required                  = 10.0,
+        camber_range                 = [0.0, 0.02, 0.04, 0.06],
+        position_range               = [0.3, 0.4, 0.5],
+        thickness_range              = [0.10, 0.12, 0.15, 0.18],
+        cm_min                       = -0.30,
+        cm_max                       = 0.00,
+        t_min                        = 0.00,
+        # these are ignored when run_airfoil_sweep=True
+        # but ParaPy still needs a value for the Input
+        maximum_camber_input         = 0.04,
+        maximum_camber_position_input= 0.4,
+        thickness_to_chord_input     = 0.12,
+
+        weight               = 15_000,
+        velocity             = 60.0,
+        altitude             = 2_000,
+
+        t_factor_root        = 1.0,
+        t_factor_tip         = 1.0,
+
+        front_spar_position  = 0.15,
+        rear_spar_position   = 0.60,
+
+        color_wingbox        = "yellow",
+        color_liftingsurface = "orange",
     )
 
     horizontal_tail = LiftingSurface(
         label="horizontal_tail",
 
-        wing_ref=wing,
-        is_tail=True,
-        is_vertical_tail=False,
+        wing_ref             = wing,
+        is_tail              = True,
+        is_vertical_tail     = False,
 
-        # Roskam sizing — matches the calling convention in Aircraft
-        tail_volume_coefficient_h=0.60,
-        tail_volume_coefficient_v=0.04,
-        tail_aspect_ratio_h=4.5,
-        tail_aspect_ratio_v=1.8,
+        tail_volume_coefficient_h = 0.60,
+        tail_volume_coefficient_v = 0.04,
+        tail_aspect_ratio_h       = 4.5,
+        tail_aspect_ratio_v       = 1.8,
 
-        fuselage_length=10.0,
-        fuselage_radius=0.6,
+        fuselage_length      = 10.0,
+        fuselage_radius      = 0.6,
 
-        mesh_deflection=1e-4,
+        mesh_deflection      = 1e-4,
 
-        taper_ratio=0.40,
-        sweep_le=10.0,
-        twist=0.0,
-        dihedral=0.0,
+        taper_ratio          = 0.40,
+        sweep_le             = 10.0,
+        twist                = 0.0,
+        dihedral             = 0.0,
 
-        thickness_to_chord=0.12,
-        maximum_camber=0.0,
-        maximum_camber_position=0.4,
+        run_airfoil_sweep            = False,
+        maximum_camber_input         = 0.0,
+        maximum_camber_position_input= 0.4,
+        thickness_to_chord_input     = 0.12,
 
-        t_factor_root=1.0,
-        t_factor_tip=1.0,
+        weight               = 15_000,
+        velocity             = 60.0,
+        altitude             = 2_000,
 
-        front_spar_position=0.15,
-        rear_spar_position=0.60,
+        t_factor_root        = 1.0,
+        t_factor_tip         = 1.0,
 
-        color_wingbox="red",
-        color_liftingsurface="green",
+        front_spar_position  = 0.15,
+        rear_spar_position   = 0.60,
+
+        color_wingbox        = "red",
+        color_liftingsurface = "green",
     )
 
     vertical_tail = LiftingSurface(
         label="vertical_tail",
 
-        wing_ref=wing,
-        is_tail=True,
-        is_vertical_tail=True,
+        wing_ref             = wing,
+        is_tail              = True,
+        is_vertical_tail     = True,
 
-        tail_volume_coefficient_h=0.60,
-        tail_volume_coefficient_v=0.04,
-        tail_aspect_ratio_h=4.5,
-        tail_aspect_ratio_v=1.8,
+        tail_volume_coefficient_h = 0.60,
+        tail_volume_coefficient_v = 0.04,
+        tail_aspect_ratio_h       = 4.5,
+        tail_aspect_ratio_v       = 1.8,
 
-        fuselage_length=10.0,
-        fuselage_radius=0.6,
+        fuselage_length      = 10.0,
+        fuselage_radius      = 0.6,
 
-        mesh_deflection=1e-4,
+        mesh_deflection      = 1e-4,
 
-        taper_ratio=0.40,
-        sweep_le=35.0,
-        twist=0.0,
-        dihedral=0.0,
+        taper_ratio          = 0.40,
+        sweep_le             = 35.0,
+        twist                = 0.0,
+        dihedral             = 0.0,
 
-        thickness_to_chord=0.12,
-        maximum_camber=0.0,
-        maximum_camber_position=0.0,
+        run_airfoil_sweep            = False,
+        maximum_camber_input         = 0.0,
+        maximum_camber_position_input= 0.0,
+        thickness_to_chord_input     = 0.12,
 
-        t_factor_root=1.0,
-        t_factor_tip=1.0,
+        weight               = 15_000,
+        velocity             = 60.0,
+        altitude             = 2_000,
 
-        front_spar_position=0.15,
-        rear_spar_position=0.60,
+        t_factor_root        = 1.0,
+        t_factor_tip         = 1.0,
 
-        color_wingbox="blue",
-        color_liftingsurface="purple",
+        front_spar_position  = 0.15,
+        rear_spar_position   = 0.60,
+
+        color_wingbox        = "blue",
+        color_liftingsurface = "purple",
     )
 
-    display([wing, horizontal_tail, vertical_tail])
+    display([wing, wing_swept, horizontal_tail, vertical_tail])
