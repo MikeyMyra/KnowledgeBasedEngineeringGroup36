@@ -374,7 +374,7 @@ if __name__ == "__main__":
         mission_range=10,           # [km]
         mission_endurance=8,        # [hr]
         mission_objective="High Endurance",
-        maximum_load_factor=5,
+        maximum_load_factor=2.5,
 
         # --------------------------------------------------------- #
         # OPTIONAL OVERRIDES  (uncomment to change from default)
