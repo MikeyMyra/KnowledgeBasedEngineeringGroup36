@@ -1,12 +1,15 @@
 import sys
 import os
 from typing import Optional
-from mission import Mission
+
+
 
 from parapy.core import Input, Attribute, Part
 from parapy.geom import GeomBase
 
 from Pythonfiles.Components.Aircraft import Aircraft
+from mission import Mission
+from Pythonfiles.Components.Payload import Payload
 
 # ============================================================ #
 # CALCULATIONS
@@ -45,6 +48,8 @@ class Drone(GeomBase):
     mission_objective: str = Input("High Endurance")
     oswald_factor: float = Input(0.8)
     reserve_time: float = Input(0.5)  # [hr]
+    uav_class: int = Input()
+    payload_config: int = Input()
 
 
     # ============================================================ #
@@ -54,7 +59,16 @@ class Drone(GeomBase):
     # ADD ALTITUDE CALCULATION FOR MACH
 
     # ADD PAYLOAD WEIGHT CALCULATION (Mike)
+    @Attribute
+    def payload(self) -> Payload:
+        return Payload(
+            uav_class=self.uav_class,
+            payload_config=self.payload_config,
+        )
 
+    @Attribute
+    def payload_weight(self) -> float:
+        return self.payload.total_mass
 
     # ADD MTOW ESTIMATION CALL MISSION.PY
 
