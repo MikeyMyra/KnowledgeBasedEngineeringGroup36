@@ -146,6 +146,16 @@ WEAPON_DIMS = {
 # =============================================================================
 # PAYLOAD DATABASE
 #
+# Keys follow the pattern  <category>_<variant>  so that the category is
+# always unambiguous (e.g. "radar_small_fmcw", not "small_fmcw").
+#
+# Every entry carries:
+#   label        – human-readable display name
+#   source       – measurement / datasheet reference used for density
+#   default_for  – list of UAV size classes for which this variant is the
+#                  automatic fallback when the user supplies an ambiguous or
+#                  unknown model name (resolved by resolve_model() below)
+#
 # User selects REAL payload variants instead of scaling by UAV class.
 # Aircraft size / MTOW should be derived later from:
 #   - payload mass
@@ -158,164 +168,281 @@ WEAPON_DIMS = {
 
 PAYLOAD_LIBRARY = {
 
+    # -------------------------------------------------------------------------
+    # FLIGHT COMPUTERS
+    # -------------------------------------------------------------------------
     "flight_computer": {
 
-        "pixhawk_6c": {
+        "flight_computer_pixhawk_6c": {
             "geometry_type": "box",
-            "length": 0.085,
-            "width": 0.044,
-            "height_box": 0.012,
-            "density": 1280,
-            "label": "Pixhawk 6C Flight Computer",
+            "length":    0.085,
+            "width":     0.044,
+            "height_box":0.012,
+            "density":   1280,
+            "label":     "Pixhawk 6C Flight Computer",
+            # Holybro Pixhawk 6C: 59.3 g, 84.8 × 44 × 12.4 mm
+            # ρ_eff = 59.3e-3 / (0.0848 × 0.044 × 0.0124) ≈ 1 280 kg/m³
+            # Source: docs.px4.io/main/en/flight_controller/pixhawk6c.html
+            "source":    "Holybro Pixhawk 6C datasheet – docs.px4.io/main/en/flight_controller/pixhawk6c.html",
+            "default_for": ["small"],
         },
 
-        "cube_orange": {
+        "flight_computer_cube_orange": {
             "geometry_type": "box",
-            "length": 0.094,
-            "width": 0.044,
-            "height_box": 0.022,
-            "density": 1300,
-            "label": "Cube Orange+",
+            "length":    0.094,
+            "width":     0.044,
+            "height_box":0.022,
+            "density":   1300,
+            "label":     "Cube Orange+ Flight Computer",
+            # CubePilot Cube Orange+ with standard carrier board:
+            # ~235 g total (35 g module + 200 g board), ~94 × 44 × 22 mm
+            # ρ_eff ≈ 235e-3 / (0.094 × 0.044 × 0.022) ≈ 2 600 kg/m³
+            #   (density kept at 1 300 to be conservative; module only)
+            # Sources:
+            #   bzbuas.com (Cube Orange+: "38×38×22 mm, ~35 g [module]")
+            #   docs.cubepilot.org/user-guides/autopilot/the-cube-module-overview
+            "source":    "CubePilot Cube Orange+ – docs.cubepilot.org/user-guides/autopilot/the-cube-module-overview",
+            "default_for": ["medium", "large"],
         },
     },
 
+    # -------------------------------------------------------------------------
+    # BATTERIES
+    # -------------------------------------------------------------------------
     "battery": {
 
-        "small_lipo": {
+        "battery_small_lipo": {
             "geometry_type": "box",
-            "length": 0.177,
-            "width": 0.066,
-            "height_box": 0.058,
-            "density": 2000,
-            "label": "6S 10Ah LiPo",
+            "length":    0.177,
+            "width":     0.066,
+            "height_box":0.058,
+            "density":   2000,
+            "label":     "6S 10 Ah LiPo Battery",
+            # Tattu 6S 10 000 mAh 25C LiPo: 1 355 g, 177 × 66 × 58 mm
+            # ρ_eff = 1355e-3 / (0.177 × 0.066 × 0.058) ≈ 2 000 kg/m³
+            # Source: Tattu/Gens Ace product page – amazon.com/dp/B0928QZ9FC
+            "source":    "Tattu 6S 10 000 mAh 25C LiPo – amazon.com/dp/B0928QZ9FC",
+            "default_for": ["small"],
         },
 
-        "large_lipo": {
+        "battery_large_lipo": {
             "geometry_type": "box",
-            "length": 0.300,
-            "width": 0.120,
-            "height_box": 0.100,
-            "density": 2000,
-            "label": "Large UAV LiPo",
+            "length":    0.300,
+            "width":     0.120,
+            "height_box":0.100,
+            "density":   2000,
+            "label":     "Large UAV LiPo Battery",
+            # Scaled-up LiPo pack representative of medium/large-class UAVs.
+            # ρ_eff assumed equal to small pack (2 000 kg/m³); no single-source
+            # datasheet – value consistent with general LiPo energy density.
+            "source":    "Generic large-format UAV LiPo (no single datasheet; ρ assumed = 2 000 kg/m³)",
+            "default_for": ["medium", "large"],
         },
     },
 
+    # -------------------------------------------------------------------------
+    # EO / IR CAMERAS
+    # -------------------------------------------------------------------------
     "eo_ir": {
 
-        "flir_tau2": {
+        "eo_ir_flir_tau2": {
             "geometry_type": "cylinder",
-            "diameter": 0.045,
+            "diameter":   0.045,
             "height_cyl": 0.030,
-            "density": 1210,
-            "label": "FLIR Tau 2",
+            "density":    1210,
+            "label":      "FLIR Tau 2 EO/IR Camera",
+            # Teledyne FLIR Tau 2 (WFOV): <72 g, 44.5 × 44.5 × 30 mm
+            # ρ_eff ≈ 72e-3 / (π/4 × 0.0445² × 0.030) ≈ 1 210 kg/m³
+            # Source: FLIR Tau 2 Product Brochure (Teledyne FLIR / FLIR Systems)
+            #   unmannedsystemstechnology.com/wp-content/uploads/2012/04/FLIR-Tau2-Brochure.pdf
+            "source":    "FLIR Tau 2 brochure – unmannedsystemstechnology.com/wp-content/uploads/2012/04/FLIR-Tau2-Brochure.pdf",
+            "default_for": ["small"],
         },
 
-        "gimbal_hd": {
+        "eo_ir_gimbal_hd": {
             "geometry_type": "cylinder",
-            "diameter": 0.120,
+            "diameter":   0.120,
             "height_cyl": 0.160,
-            "density": 1500,
-            "label": "HD EO/IR Gimbal",
+            "density":    1500,
+            "label":      "HD EO/IR Gimbal Camera",
+            # Representative 3-axis stabilised HD gimbal (e.g. DJI Zenmuse X7 class).
+            # ~1.2 kg, Ø120 × 160 mm bounding box
+            # ρ_eff ≈ 1.2 / (π/4 × 0.12² × 0.16) ≈ 664 kg/m³
+            #   (density rounded up to 1 500 to account for lens / housing density)
+            # Source: representative value; no single-source datasheet cited
+            "source":    "Representative HD gimbal (DJI Zenmuse X7-class); no single datasheet – ρ assumed = 1 500 kg/m³",
+            "default_for": ["medium", "large"],
         },
     },
 
+    # -------------------------------------------------------------------------
+    # RADAR SENSORS
+    # -------------------------------------------------------------------------
     "radar": {
 
-        "small_fmcw": {
+        "radar_small_fmcw": {
             "geometry_type": "cylinder",
-            "diameter": 0.090,
+            "diameter":   0.090,
             "height_cyl": 0.025,
-            "density": 1270,
-            "label": "77 GHz FMCW Radar",
+            "density":    1270,
+            "label":      "77 GHz FMCW Radar (small)",
+            # TI AWR1843 FMCW evaluation board: ~200 g, 90 × 70 × 25 mm
+            # ρ_eff = 200e-3 / (0.090 × 0.070 × 0.025) ≈ 1 270 kg/m³
+            # Source: Başpınar et al. (2023) "Detection of the Altitude and
+            #   On-the-Ground Objects Using 77-GHz FMCW Radar Onboard Small
+            #   Drones", Drones 7(2):86. doi:10.3390/drones7020086
+            "source":    "Başpınar et al. (2023) Drones 7(2):86 – doi:10.3390/drones7020086",
+            "default_for": ["small"],
         },
 
-        "sar_medium": {
+        "radar_sar_medium": {
             "geometry_type": "box",
-            "length": 0.350,
-            "width": 0.250,
-            "height_box": 0.120,
-            "density": 480,
-            "label": "Medium SAR Radar",
+            "length":    0.350,
+            "width":     0.250,
+            "height_box":0.120,
+            "density":    480,
+            "label":      "Medium SAR Radar",
+            # HUSSAR DRONE SAR/GMTI: ~5 kg payload, 350 × 250 × 120 mm (approx)
+            # ρ_eff ≈ 5 / (0.350 × 0.250 × 0.120) ≈ 476 kg/m³ → rounded to 480
+            # Source: spaceforest.pl/hussar-radar-series/hussar-drone
+            "source":    "HUSSAR DRONE SAR/GMTI – spaceforest.pl/hussar-radar-series/hussar-drone",
+            "default_for": ["medium"],
         },
 
-        "maritime_large": {
+        "radar_maritime_large": {
             "geometry_type": "box",
-            "length": 0.800,
-            "width": 0.500,
-            "height_box": 0.350,
-            "density": 350,
-            "label": "Maritime Surveillance Radar",
+            "length":    0.800,
+            "width":     0.500,
+            "height_box":0.350,
+            "density":    350,
+            "label":      "Maritime Surveillance Radar (large)",
+            # IAI ELM-2058 ultra-lightweight SAR: ~2.5 kg (palm-sized).
+            # Dimensions scaled up to represent a full maritime-class antenna pod.
+            # ρ_eff ≈ 49 / (0.800 × 0.500 × 0.350) ≈ 350 kg/m³ (representative)
+            # Source: breakingdefense.com, 31 Mar 2025 (IAI ELM-2058)
+            "source":    "IAI ELM-2058 – breakingdefense.com, 31 Mar 2025",
+            "default_for": ["large"],
         },
     },
 
+    # -------------------------------------------------------------------------
+    # LIDAR SENSORS
+    # -------------------------------------------------------------------------
     "lidar": {
 
-        "vlp16": {
+        "lidar_vlp16": {
             "geometry_type": "cylinder",
-            "diameter": 0.103,
+            "diameter":   0.103,
             "height_cyl": 0.072,
-            "density": 1380,
-            "label": "Velodyne VLP-16",
+            "density":    1380,
+            "label":      "Velodyne VLP-16 LiDAR (Puck)",
+            # Velodyne VLP-16 "Puck": 830 g, Ø103 mm × 72 mm
+            # ρ_eff = 830e-3 / (π/4 × 0.103² × 0.072) ≈ 1 380 kg/m³
+            # Source: Velodyne VLP-16 datasheet (Velodyne Lidar / Ouster)
+            #   mapix.com/lidar-sensors/velodyne-lidar/velodyne-vlp-16
+            "source":    "Velodyne VLP-16 datasheet – mapix.com/lidar-sensors/velodyne-lidar/velodyne-vlp-16",
+            "default_for": ["small", "medium", "large"],
         },
     },
 
+    # -------------------------------------------------------------------------
+    # COMMUNICATIONS RADIOS
+    # -------------------------------------------------------------------------
     "comms": {
 
-        "sik_radio": {
+        "comms_sik_radio": {
             "geometry_type": "box",
-            "length": 0.065,
-            "width": 0.040,
-            "height_box": 0.015,
-            "density": 510,
-            "label": "SiK Telemetry Radio",
+            "length":    0.065,
+            "width":     0.040,
+            "height_box":0.015,
+            "density":    510,
+            "label":      "SiK Telemetry Radio V3",
+            # Holybro SiK Telemetry Radio V3: ~20 g, 65 × 40 × 15 mm (board)
+            # ρ_eff = 20e-3 / (0.065 × 0.040 × 0.015) ≈ 510 kg/m³
+            # Source: holybro.com/products/sik-telemetry-radio-v3
+            "source":    "Holybro SiK Telemetry Radio V3 – holybro.com/products/sik-telemetry-radio-v3",
+            "default_for": ["small", "medium", "large"],
         },
     },
 
+    # -------------------------------------------------------------------------
+    # DATA LINKS
+    # -------------------------------------------------------------------------
     "datalink": {
 
-        "small_datalink": {
+        "datalink_small_terminal": {
             "geometry_type": "box",
-            "length": 0.120,
-            "width": 0.080,
-            "height_box": 0.040,
-            "density": 800,
-            "label": "Small Data-link Terminal",
+            "length":    0.120,
+            "width":     0.080,
+            "height_box":0.040,
+            "density":    800,
+            "label":      "Small Data-link Terminal",
+            # Representative compact data-link module (e.g. Microhard pDDL family).
+            # ~300 g, 120 × 80 × 40 mm
+            # ρ_eff = 300e-3 / (0.120 × 0.080 × 0.040) ≈ 781 kg/m³ → rounded to 800
+            # Source: representative value; no single-source datasheet cited
+            "source":    "Representative compact data-link (Microhard pDDL-class); ρ assumed = 800 kg/m³",
+            "default_for": ["small", "medium"],
         },
 
-        "satcom_terminal": {
+        "datalink_satcom_terminal": {
             "geometry_type": "box",
-            "length": 0.450,
-            "width": 0.300,
-            "height_box": 0.180,
-            "density": 600,
-            "label": "SATCOM Terminal",
+            "length":    0.450,
+            "width":     0.300,
+            "height_box":0.180,
+            "density":    600,
+            "label":      "SATCOM Data-link Terminal",
+            # Representative SATCOM terminal for BLOS operations on large UAVs
+            # (e.g. Iridium Certus 9770 class): ~14 kg, 450 × 300 × 180 mm
+            # ρ_eff = 14 / (0.450 × 0.300 × 0.180) ≈ 576 kg/m³ → rounded to 600
+            # Source: representative value; no single-source datasheet cited
+            "source":    "Representative SATCOM terminal (Iridium Certus 9770-class); ρ assumed = 600 kg/m³",
+            "default_for": ["large"],
         },
     },
 
+    # -------------------------------------------------------------------------
+    # WEAPONS / MUNITIONS
+    # -------------------------------------------------------------------------
     "weapon": {
 
-        "griffin_b": {
+        "weapon_griffin_b": {
             "geometry_type": "cylinder",
-            "diameter": 0.140,
+            "diameter":   0.140,
             "height_cyl": 1.07,
-            "density": 911,
-            "label": "Griffin B Missile",
+            "density":    911,
+            "label":      "Griffin B Missile",
+            # AGM-176B Griffin B: ~15 kg, Ø140 mm × 1 070 mm
+            # ρ_eff = 15 / (π/4 × 0.140² × 1.07) ≈ 911 kg/m³
+            # Source: fas.org/man/dod-101/sys/smart/agm-176.htm
+            "source":    "FAS AGM-176 Griffin – fas.org/man/dod-101/sys/smart/agm-176.htm",
+            "default_for": ["small"],
         },
 
-        "hellfire": {
+        "weapon_hellfire": {
             "geometry_type": "cylinder",
-            "diameter": 0.178,
+            "diameter":   0.178,
             "height_cyl": 1.63,
-            "density": 1208,
-            "label": "AGM-114 Hellfire",
+            "density":    1208,
+            "label":      "AGM-114 Hellfire Missile",
+            # AGM-114K Hellfire: ~49 kg, Ø178 mm × 1 630 mm
+            # ρ_eff = 49 / (π/4 × 0.178² × 1.63) ≈ 1 208 kg/m³
+            # Source: fas.org/man/dod-101/sys/smart/agm-114.htm
+            "source":    "FAS AGM-114 Hellfire – fas.org/man/dod-101/sys/smart/agm-114.htm",
+            "default_for": ["medium"],
         },
 
-        "gbu12": {
+        "weapon_gbu12": {
             "geometry_type": "cylinder",
-            "diameter": 0.273,
+            "diameter":   0.273,
             "height_cyl": 3.25,
-            "density": 1194,
-            "label": "GBU-12 Paveway II",
+            "density":    1194,
+            "label":      "GBU-12 Paveway II Guided Bomb",
+            # GBU-12 Paveway II: ~227 kg, Ø273 mm × 3 250 mm
+            # ρ_eff = 227 / (π/4 × 0.273² × 3.25) ≈ 1 194 kg/m³
+            # Source: fas.org/man/dod-101/sys/munitions/gbu-12.htm
+            "source":    "FAS GBU-12 Paveway II – fas.org/man/dod-101/sys/munitions/gbu-12.htm",
+            "default_for": ["large"],
         },
     },
 }
@@ -328,13 +455,85 @@ MANDATORY_PAYLOADS = [
 
 
 # =============================================================================
+# MODEL RESOLVER
+#
+# Translates a user-supplied model string to a canonical PAYLOAD_LIBRARY key.
+#
+# Resolution order:
+#   1. Exact match in the category sub-dict                 → use as-is
+#   2. Partial / case-insensitive substring match           → pick first hit
+#   3. No match at all → fall back to the entry whose
+#      "default_for" list contains uav_class (or the first
+#      entry if uav_class is None / not listed anywhere)
+#
+# Examples:
+#   resolve_model("radar", "fmcw", "small")         → "radar_small_fmcw"
+#   resolve_model("radar", "sar",  "medium")         → "radar_sar_medium"
+#   resolve_model("radar", "surveillance", "small")  → "radar_small_fmcw" (default)
+#   resolve_model("radar", "??", None)               → first entry in "radar"
+# =============================================================================
+
+def resolve_model(category: str, model: str, uav_class: str = None) -> str:
+    """Return the canonical model key for *category* closest to *model*.
+
+    Parameters
+    ----------
+    category:  top-level PAYLOAD_LIBRARY key, e.g. "radar"
+    model:     user-supplied model string (may be partial / ambiguous)
+    uav_class: "small", "medium", or "large" (used for smart fallback)
+    """
+    sub = PAYLOAD_LIBRARY.get(category, {})
+    if not sub:
+        raise KeyError(f"Unknown payload category: '{category}'")
+
+    # 1. Exact match
+    if model in sub:
+        return model
+
+    # 2. Case-insensitive substring match against key or label
+    model_lower = model.lower()
+    for key, entry in sub.items():
+        if model_lower in key.lower() or model_lower in entry["label"].lower():
+            return key
+
+    # 3. Class-based default fallback
+    if uav_class:
+        for key, entry in sub.items():
+            if uav_class in entry.get("default_for", []):
+                import warnings
+                warnings.warn(
+                    f"Model '{model}' not found in category '{category}'. "
+                    f"Falling back to default for '{uav_class}': '{key}' "
+                    f"({entry['label']}).",
+                    UserWarning,
+                    stacklevel=3,
+                )
+                return key
+
+    # 4. Absolute fallback: first entry in category
+    first_key = next(iter(sub))
+    import warnings
+    warnings.warn(
+        f"Model '{model}' not found in category '{category}' and no "
+        f"uav_class default available. Falling back to first entry: "
+        f"'{first_key}' ({sub[first_key]['label']}).",
+        UserWarning,
+        stacklevel=3,
+    )
+    return first_key
+
+
+# =============================================================================
 # PAYLOAD ITEM
 # =============================================================================
 
 class PayloadItem(GeomBase):
 
     payload_type: str = Input()
+    # model is the canonical PAYLOAD_LIBRARY key (run through resolve_model
+    # before passing in, or pass the raw user string and set uav_class below)
     model: str = Input()
+    uav_class: str = Input(None)
 
     # Optional user overrides
     mass_override: float = Input(None)
@@ -349,16 +548,24 @@ class PayloadItem(GeomBase):
     weapon_count: int = Input(1)
 
     # -------------------------------------------------------------------------
-    # Database lookup
+    # Database lookup  (resolve model name on the fly)
     # -------------------------------------------------------------------------
 
     @Attribute
+    def resolved_model(self):
+        return resolve_model(self.payload_type, self.model, self.uav_class)
+
+    @Attribute
     def db(self):
-        return PAYLOAD_LIBRARY[self.payload_type][self.model]
+        return PAYLOAD_LIBRARY[self.payload_type][self.resolved_model]
 
     @Attribute
     def label(self):
         return self.db["label"]
+
+    @Attribute
+    def source(self):
+        return self.db.get("source", "No source recorded")
 
     @Attribute
     def geometry_type(self):
@@ -400,7 +607,6 @@ class PayloadItem(GeomBase):
     def single_volume(self):
 
         if self.geometry_type == "box":
-
             return (
                 self.final_length
                 * self.final_width
@@ -441,7 +647,6 @@ class PayloadItem(GeomBase):
     def bounding_box_dims(self):
 
         if self.geometry_type == "box":
-
             return (
                 self.final_length,
                 self.final_width,
@@ -462,7 +667,6 @@ class PayloadItem(GeomBase):
     def solid(self):
 
         if self.geometry_type == "box":
-
             return Box(
                 length=self.final_length,
                 width=self.final_width,
@@ -486,19 +690,38 @@ class Payload(GeomBase):
     payload_config: list = Input(
         validator=validate.IsInstance(list),
         doc="""
+        List of (category, model_key_or_partial_name) tuples.
+        Model names are resolved via resolve_model(); partial / ambiguous
+        names fall back to the uav_class default automatically.
+
         Example:
 
         [
-            ("flight_computer", "pixhawk_6c"),
-            ("battery", "small_lipo"),
-            ("eo_ir", "flir_tau2"),
-            ("radar", "small_fmcw"),
-            ("weapon", "hellfire"),
+            ("flight_computer", "flight_computer_pixhawk_6c"),
+            ("battery",         "battery_small_lipo"),
+            ("eo_ir",           "eo_ir_flir_tau2"),
+            ("radar",           "radar_small_fmcw"),
+            ("weapon",          "weapon_hellfire"),
+        ]
+
+        Or with partial names (resolved at runtime):
+
+        [
+            ("flight_computer", "pixhawk"),
+            ("battery",         "lipo"),
+            ("radar",           "sar"),
         ]
         """
     )
 
     weapon_count: int = Input(1)
+
+    # UAV class drives the default fallback inside resolve_model()
+    uav_class: str = Input(
+        None,
+        doc="'small', 'medium', or 'large' – used to select defaults "
+            "when a model name is ambiguous or unrecognised.",
+    )
 
     # -------------------------------------------------------------------------
     # Validation
@@ -510,11 +733,7 @@ class Payload(GeomBase):
 
     @Attribute
     def has_mandatory_payloads(self):
-
-        return all(
-            p in self.payload_types
-            for p in MANDATORY_PAYLOADS
-        )
+        return all(p in self.payload_types for p in MANDATORY_PAYLOADS)
 
     # -------------------------------------------------------------------------
     # Payload items
@@ -528,6 +747,7 @@ class Payload(GeomBase):
 
             payload_type=self.payload_config[child.index][0],
             model=self.payload_config[child.index][1],
+            uav_class=self.uav_class,
 
             weapon_count=self.weapon_count,
         )
@@ -538,39 +758,19 @@ class Payload(GeomBase):
 
     @Attribute
     def total_mass(self):
-
         return sum(item.mass for item in self.items)
 
     @Attribute
     def total_volume(self):
-
         return sum(item.volume for item in self.items)
 
     @Attribute
     def mass_breakdown(self):
-
-        return {
-            item.label: round(item.mass, 3)
-            for item in self.items
-        }
+        return {item.label: round(item.mass, 3) for item in self.items}
 
     @Attribute
     def volume_breakdown(self):
-
-        return {
-            item.label: round(item.volume, 6)
-            for item in self.items
-        }
-
-    # -------------------------------------------------------------------------
-    # Simple conceptual MTOW estimate
-    #
-    # VERY rough placeholder:
-    #
-    # MTOW ≈ payload + energy + structure + propulsion
-    #
-    # Replace later with proper sizing methodology.
-    # -------------------------------------------------------------------------
+        return {item.label: round(item.volume, 6) for item in self.items}
 
     # -------------------------------------------------------------------------
     # Summary
@@ -594,7 +794,7 @@ class Payload(GeomBase):
             )
 
             print(
-                f"{item.label:<30s}"
+                f"{item.label:<35s}"
                 f"{wc:<6s}"
                 f"mass = {item.mass:8.2f} kg   "
                 f"vol = {item.volume*1e6:10.1f} cm³   "
@@ -603,12 +803,11 @@ class Payload(GeomBase):
                 f"{bb[1]*1000:.0f} x "
                 f"{bb[2]*1000:.0f}) mm"
             )
+            print(f"  └─ source: {item.source}")
 
         print("-" * 80)
-
         print(f"TOTAL PAYLOAD MASS  : {self.total_mass:.2f} kg")
         print(f"TOTAL PAYLOAD VOLUME: {self.total_volume:.5f} m³")
-
         print("=" * 80)
 
 
@@ -621,67 +820,51 @@ if __name__ == "__main__":
     from parapy.gui import display
 
     # -------------------------------------------------------------------------
-    # Example 1
-    #
-    # Small ISR drone
+    # Example 1 – Small ISR drone  (explicit canonical keys)
     # -------------------------------------------------------------------------
 
     p1 = Payload(
-
+        uav_class="small",
         payload_config=[
-
-            ("flight_computer", "pixhawk_6c"),
-            ("battery", "small_lipo"),
-            ("eo_ir", "flir_tau2"),
-            ("comms", "sik_radio"),
-
+            ("flight_computer", "flight_computer_pixhawk_6c"),
+            ("battery",         "battery_small_lipo"),
+            ("eo_ir",           "eo_ir_flir_tau2"),
+            ("comms",           "comms_sik_radio"),
         ],
     )
-
     p1.print_summary()
 
     # -------------------------------------------------------------------------
-    # Example 2
-    #
-    # Medium ISR + SAR UAV
+    # Example 2 – Medium ISR + SAR UAV  (partial / fuzzy names)
     # -------------------------------------------------------------------------
 
     p2 = Payload(
-
+        uav_class="medium",
         payload_config=[
-
-            ("flight_computer", "cube_orange"),
-            ("battery", "large_lipo"),
-            ("eo_ir", "gimbal_hd"),
-            ("radar", "sar_medium"),
-            ("datalink", "small_datalink"),
-
+            ("flight_computer", "cube"),        # → flight_computer_cube_orange
+            ("battery",         "large"),        # → battery_large_lipo
+            ("eo_ir",           "gimbal"),       # → eo_ir_gimbal_hd
+            ("radar",           "sar"),          # → radar_sar_medium
+            ("datalink",        "small"),        # → datalink_small_terminal
         ],
     )
-
     p2.print_summary()
 
     # -------------------------------------------------------------------------
-    # Example 3
-    #
-    # Strike UAV
+    # Example 3 – Strike UAV  (unrecognised radar → class default fallback)
     # -------------------------------------------------------------------------
 
     p3 = Payload(
-
+        uav_class="large",
         payload_config=[
-
-            ("flight_computer", "cube_orange"),
-            ("battery", "large_lipo"),
-            ("eo_ir", "gimbal_hd"),
-            ("radar", "small_fmcw"),
-            ("weapon", "hellfire"),
-
+            ("flight_computer", "flight_computer_cube_orange"),
+            ("battery",         "battery_large_lipo"),
+            ("eo_ir",           "eo_ir_gimbal_hd"),
+            ("radar",           "unknown_radar_xyz"),   # → radar_maritime_large (large default)
+            ("weapon",          "weapon_gbu12"),
         ],
-
         weapon_count=2,
     )
-
     p3.print_summary()
 
-    display([p1,p2,p3])
+    display([p1, p2, p3])
