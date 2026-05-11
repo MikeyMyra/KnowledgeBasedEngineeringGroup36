@@ -4,6 +4,7 @@ from ISA_calculator import ISA_calculator, ISA_altitude_from_density
 import numpy as np
 import metric_imperial_conversions as m2i
 from Pythonfiles.main import engine_type
+from Pythonfiles.WP_WS_diagram import WP_WS_Diagram
 
 
 class Mission(Base):
@@ -18,8 +19,8 @@ class Mission(Base):
     cruise_speed: float = Input()
     loiter_speed: float = Input()
     mission_objective: str = Input()
-
-
+    oswald_factor: float = Input(0.8)
+    reserve_time: float = Input(0.5)
 
 
 
@@ -28,9 +29,9 @@ class Mission(Base):
 
     # climb_speed: float = Input()
     # wing_loading: float = Input()
-    # oswald_factor: float = Input()
 
-    # reserve_time: float = Input()
+
+
     # MTOW: float = Input()
     # aspect_ratio: float = Input()
     # thrust_loading: float = Input()
@@ -42,7 +43,10 @@ class Mission(Base):
         if self.cruise_speed / a > 0.4:
             self.engine_type = "Jet"
         elif self.cruise_speed / a <= 0.4:
-            self.engine_type = "Propeller"
+            if self.mission_objective == "High Endurance":
+                self.engine_type = "Turboprop"
+            elif self.mission_objective == "Low cost" or "Low weight":
+                self.engine_type = "Piston"
         return self.engine_type
 
     def take_off_weight_estimate(self, tol=0.01, max_iter=100):
@@ -67,23 +71,22 @@ class Mission(Base):
             SFC_loiter = 0.7
             A = 1.67
             C = -0.16
-        elif self.engine_type == "Propeller":
-            if self.mission_objective == "High Endurance":
-                empty_weight_guess = 400
-                LDc = 23  # cruise L/D
-                LDl = 28  # loiter L/D higher for props (near best L/D speed)
-                SFC_cruise = 0.4
-                SFC_loiter = 0.5
-                A = 2.75
-                C = -0.18
-            elif self.mission_objective == "Low cost" or "Low weight":
-                empty_weight_guess = 100
-                LDc = 13
-                LDl = 15  # loiter L/D higher for props
-                SFC_cruise = 0.4
-                SFC_loiter = 0.5
-                A = 0.97
-                C = -0.06
+        elif self.engine_type == "Turboprop":
+            empty_weight_guess = 400
+            LDc = 23  # cruise L/D
+            LDl = 28  # loiter L/D higher for props (near best L/D speed)
+            SFC_cruise = 0.4
+            SFC_loiter = 0.5
+            A = 2.75
+            C = -0.18
+        elif self.engine_type == "Piston":
+            empty_weight_guess = 100
+            LDc = 13
+            LDl = 15  # loiter L/D higher for props
+            SFC_cruise = 0.4
+            SFC_loiter = 0.5
+            A = 0.97
+            C = -0.06
 
         # Fixed mission segment fractions
         W10 = 0.97
@@ -94,7 +97,7 @@ class Mission(Base):
         if self.engine_type == "Jet":
             W32 = W54 =  np.exp((-Rc * (SFC_cruise/3600)) / (Vc * LDc))
             W43 = np.exp(-T_loit * SFC_loiter / LDl)
-        elif self.engine_type == "Propeller":
+        elif self.engine_type == "Turboprop" or "Piston":
             W32 = W54 = np.exp((-Rc * SFC_cruise) / (prop_efficiency * LDc))
             W43 = np.exp(-T_loit * Vl * (SFC_loiter / 3600) / (prop_efficiency * LDl))
 
@@ -118,6 +121,7 @@ class Mission(Base):
 
         We = W0_kg * (1 - wf_w0) - m2i.pounds_to_kilograms(Wp)
         Wf = W0_kg * wf_w0
+        print(f"W0_kg: {W0_kg}, We: {We}, Wf: {Wf}")
 
         return W0_kg, We, Wf
 
@@ -131,30 +135,71 @@ class Mission(Base):
             self.aspect_ratio = 7.6
         return self.aspect_ratio
 
-    def calc_thrust_to_weight(self):
-        a = ISA_calculator(self.mission_altitude)[3]
-        max_velocity = self.maximum_mach * a
-        fuel_fraction_to_cruise = 0.97 * 0.985
+    # def estimate_wing_parameters(self):
+    #     if self.engine_type == "Jet":
+    #         return [1.2, 1.5, 1.7, 0.015] # CL_max_clean, CL_max_TO, CL_max_land, CD0
+    #     elif self.engine_type == "Turboprop":
+    #         return [1.4, 1.7, 2.0, 0.02]
+    #     elif self.engine_type == "Piston":
+    #         return [1.3, 1.5, 1.8, 0.02]
+
+    def estimate_wing_parameters(self):
         if self.engine_type == "Jet":
-            TO_thrust_over_cruise_thrust = 1 / 0.4
-            a, C = 0.488, 0.728
-            cruise_thrust_to_weight = a * self.maximum_mach ** C
-            self.thrust_to_weight = cruise_thrust_to_weight * fuel_fraction_to_cruise * TO_thrust_over_cruise_thrust
+            self.CL_max_clean, self.CL_max_TO, self.CL_max_land = 1.2, 1.5, 1.7
+            self.CD0 = 0.015
         elif self.engine_type == "Turboprop":
-            TO_thrust_over_cruise_thrust = 1 / 0.6
-            a, C = 0.013, 0.50
-            cruise_thrust_to_weight = a * max_velocity ** C
-            self.thrust_to_weight = cruise_thrust_to_weight * fuel_fraction_to_cruise * TO_thrust_over_cruise_thrust
+            self.CL_max_clean, self.CL_max_TO, self.CL_max_land = 1.4, 1.7, 2.0
+            self.CD0 = 0.02
         elif self.engine_type == "Piston":
-            TO_thrust_over_cruise_thrust = 1 / 0.75
-            a, C = 0.025, 0.22
-            cruise_thrust_to_weight = a * max_velocity ** C
-            self.thrust_to_weight = cruise_thrust_to_weight * fuel_fraction_to_cruise * TO_thrust_over_cruise_thrust
-        return self.thrust_to_weight
-
-    def wing_loading(self):
+            self.CL_max_clean, self.CL_max_TO, self.CL_max_land = 1.3, 1.5, 1.8
+            self.CD0 = 0.02
+        return self.CL_max_clean, self.CL_max_TO, self.CL_max_land, self.CD0
 
 
+    # def calc_thrust_to_weight(self):
+    #     a = ISA_calculator(self.mission_altitude)[3]
+    #     max_velocity = self.maximum_mach * a
+    #     fuel_fraction_to_cruise = 0.97 * 0.985
+    #     if self.engine_type == "Jet":
+    #         TO_thrust_over_cruise_thrust = 1 / 0.4
+    #         a, C = 0.488, 0.728
+    #         cruise_thrust_to_weight = a * self.maximum_mach ** C
+    #         self.thrust_to_weight = cruise_thrust_to_weight * fuel_fraction_to_cruise * TO_thrust_over_cruise_thrust
+    #     elif self.engine_type == "Turboprop":
+    #         TO_thrust_over_cruise_thrust = 1 / 0.6
+    #         a, C = 0.013, 0.50
+    #         cruise_thrust_to_weight = a * max_velocity ** C
+    #         self.thrust_to_weight = cruise_thrust_to_weight * fuel_fraction_to_cruise * TO_thrust_over_cruise_thrust
+    #     elif self.engine_type == "Piston":
+    #         TO_thrust_over_cruise_thrust = 1 / 0.75
+    #         a, C = 0.025, 0.22
+    #         cruise_thrust_to_weight = a * max_velocity ** C
+    #         self.thrust_to_weight = cruise_thrust_to_weight * fuel_fraction_to_cruise * TO_thrust_over_cruise_thrust
+    #     return self.thrust_to_weight
+
+    def thrust_and_wing_loading(self):
+        CL_clean, CL_TO, CL_land, CD0 = self.estimate_wing_parameters()
+
+        tw_ws = WP_WS_Diagram(plot=False,
+                                aspect_ratio=self.calc_aspect_ratio(),
+                                CL_max_TO=CL_TO,
+                                CL_max_land=CL_land,
+                                CL_max_clean=CL_clean,
+                                cruise_speed=self.cruise_speed,
+                                CD0=CD0,
+                                prop_eff=self.prop_efficiency,
+                                engine_type=self.engine_type,
+                                oswald_factor=self.oswald_factor,
+                                x_max=2000,
+                                y_max=1
+                                )
+        self.density = ISA_calculator(self.mission_altitude)[2]
+        W_S_design, y_design = tw_ws.find_design_point(rho=self.density)
+
+        self.wing_loading = W_S_design
+        self.thrust_to_weight = y_design
+
+        return W_S_design, y_design
 
 
     @Attribute
@@ -174,7 +219,15 @@ class Mission(Base):
         cruise_range = self.mission_range / 2
         speed_of_sound = ISA_calculator(self.mission_altitude)[3]
         loiter_time = self.mission_endurance
-        MTOW = self.take_off_weight_estimate()
+        self.MTOW = self.take_off_weight_estimate()[0]
+        self.wing_loading = self.thrust_and_wing_loading()[0]
+        if self.engine_type == "Jet":
+            self.thrust_over_weight = self.thrust_and_wing_loading()[1]
+        elif self.engine_type == "Turboprop" or self.engine_type == "Piston":
+            self.power_loading = self.thrust_and_wing_loading()[1]
+        self.calc_aspect_ratio()
+        self.CD0 = self.estimate_wing_parameters()[3]
+
 
         #start-up, taxi
         w1_w0 = 0.98
@@ -189,57 +242,58 @@ class Mission(Base):
                 if abs(optimal_cruise_speed - old_cruise_speed) < 0.1:
                     self.cruise_speed = optimal_cruise_speed
                     break
-        elif self.engine_type == "Propeller":
-            M = optimal_cruise_speed / speed_of_sound
+        elif self.engine_type == "Turboprop" or self.engine_type == "Piston":
+            M = self.cruise_speed / speed_of_sound
             w2_w1 = 1.0065 - 0.0325 * M
 
         #cruise to loiter
         cruise_wing_loading = self.wing_loading * w1_w0 * w2_w1
-        cruise_lift_to_drag = self.calculate_lift_to_drag(self, cruise_wing_loading, self.cd_0, self.cruise_speed,
+        cruise_lift_to_drag = self.calculate_lift_to_drag(cruise_wing_loading, self.CD0, self.cruise_speed,
                                                           self.aspect_ratio, self.mission_altitude, self.oswald_factor)
         if self.engine_type == "Jet":
-            w3_w2 = np.exp((-cruise_range * specific_fuel) / (optimal_cruise_speed * cruise_lift_to_drag))
-        elif self.engine_type == "Propeller":
+            w3_w2 = np.exp((-cruise_range * specific_fuel) / (self.cruise_speed * cruise_lift_to_drag))
+        elif self.engine_type == "Turboprop" or self.engine_type == "Piston":
             w3_w2 = np.exp((-cruise_range * specific_fuel) / (self.prop_efficiency * cruise_lift_to_drag))
 
         #loiter
-        loiter_speed = self.find_optimal_loiter_speed_sizing(self, w1_w0 * w2_w1 * w3_w2)
+        # loiter_speed = self.find_optimal_loiter_speed_sizing(self, w1_w0 * w2_w1 * w3_w2)
         loiter_wing_loading = self.wing_loading * w1_w0 * w2_w1 * w3_w2
+        self.loiter_speed = self.find_optimal_loiter_speed_sizing(loiter_wing_loading)
         loiter_lift_to_drag = self.calculate_lift_to_drag(loiter_wing_loading,
-                                                     self.cd_0_loiter,
-                                                     loiter_speed,
-                                                     self.aspect_ratio,
-                                                     self.mission_altitude,
-                                                     self.oswald_factor)
+                                                          self.CD0,
+                                                          self.loiter_speed,
+                                                          self.aspect_ratio,
+                                                          self.mission_altitude,
+                                                          self.oswald_factor)
 
         if self.engine_type == "Jet":
             w4_w3 = np.exp(-loiter_time * (self.specific_fuel / 3600) / loiter_lift_to_drag)
-        elif self.engine_type == "Propeller":
-            w4_w3 = np.exp(-loiter_time * loiter_speed * (self.specific_fuel / 3600) / (self.prop_efficiency *
+        elif self.engine_type == "Turboprop" or self.engine_type == "Piston":
+            w4_w3 = np.exp(-loiter_time * self.loiter_speed * (self.specific_fuel / 3600) / (self.prop_efficiency *
                                                                                 loiter_lift_to_drag))
         #cruise back
         cruise_back_wing_loading = self.wing_loading * w1_w0 * w2_w1 * w3_w2 * w4_w3
-        cruise_back_lift_to_drag = self.calculate_lift_to_drag(self, cruise_back_wing_loading, self.cd_0,
+        cruise_back_lift_to_drag = self.calculate_lift_to_drag(cruise_back_wing_loading, self.CD0,
                                                                self.cruise_speed, self.aspect_ratio,
                                                                self.mission_altitude, self.oswald_factor)
         if self.engine_type == "Jet":
             w5_w4 = np.exp((-cruise_range * specific_fuel) / (self.cruise_speed * cruise_back_lift_to_drag))
-        elif self.engine_type == "Propeller":
+        elif self.engine_type == "Turboprop" or self.engine_type == "Piston":
             w5_w4 = np.exp((-cruise_range * specific_fuel) / (self.prop_efficiency * cruise_back_lift_to_drag))
 
         #reserve
         reserve_wing_loading = self.wing_loading * w1_w0 * w2_w1 * w3_w2 * w4_w3 * w5_w4
         reserve_lift_to_drag = self.calculate_lift_to_drag(reserve_wing_loading,
-                                                          self.cd_0_loiter,
-                                                          loiter_speed,
-                                                          self.aspect_ratio,
-                                                          self.mission_altitude,
-                                                          self.oswald_factor)
+                                                           self.CD0,
+                                                           self.loiter_speed,
+                                                           self.aspect_ratio,
+                                                           self.mission_altitude,
+                                                           self.oswald_factor)
         if self.engine_type == "Jet":
             w6_w5 = np.exp(-self.reserve_time * (self.specific_fuel / 3600) / reserve_lift_to_drag)
-        elif self.engine_type == "Propeller":
-            w6_w5 = np.exp(-self.reserve_time * loiter_speed * (self.specific_fuel / 3600) / (self.prop_efficiency *
-                                                                                              reserve_lift_to_drag))
+        elif self.engine_type == "Turboprop" or self.engine_type == "Piston":
+            w6_w5 = np.exp(-self.reserve_time * self.loiter_speed * (self.specific_fuel / 3600) /
+                           (self.prop_efficiency * reserve_lift_to_drag))
 
         #landing
         w7_w6 = 0.99
@@ -248,11 +302,13 @@ class Mission(Base):
         w8_w7 = 0.992
         #final weight
         print(f'taxi: {w1_w0}\n', f'climb: {w2_w1}\n',
-              f'cruise(300NM): {w3_w2}\n', f'Loiter: {w4_w3}\n',
+              f'cruise: {w3_w2}\n', f'Loiter: {w4_w3}\n',
               f'cruise back: {w5_w4}\n', f'reserve: {w6_w5}\n',
               f'landing: {w7_w6}\n', f'taxi: {w8_w7}\n')
-        final_weight = self.MTOW * w1_w0 * w2_w1 * w3_w2 * w4_w3 * w5_w4 * w6_w5 * w7_w6 * w8_w7
-        fuel_weight = self.MTOW - final_weight - self.payload_weight
+        wf_w0 = w1_w0 * w2_w1 * w3_w2 * w4_w3 * w5_w4 * w6_w5 * w7_w6 * w8_w7
+        print(wf_w0)
+        empty_weight = self.MTOW * w1_w0 * w2_w1 * w3_w2 * w4_w3 * w5_w4 * w6_w5 * w7_w6 * w8_w7
+        fuel_weight = self.MTOW - empty_weight - self.payload_weight
         return fuel_weight*1.01
 
 
@@ -271,7 +327,7 @@ class Mission(Base):
             specific_fuel = self.specific_fuel
             cruise_range = self.mission_range / 2
             cruise_wing_loading = self.wing_loading * weight_fraction
-            cruise_lift_to_drag = self.calculate_lift_to_drag(cruise_wing_loading, self.Cd_0, item, self.aspect_ratio,
+            cruise_lift_to_drag = self.calculate_lift_to_drag(cruise_wing_loading, self.CD0, item, self.aspect_ratio,
                                                               self.mission_altitude, self.oswald_factor)
             w3_w2 = np.exp((-cruise_range * specific_fuel) / (item * cruise_lift_to_drag))
             res.append(w3_w2)
@@ -287,15 +343,15 @@ class Mission(Base):
             loiter_time = self.mission_endurance
             loiter_wing_loading = self.wing_loading * weight_fraction
             loiter_lift_to_drag = self.calculate_lift_to_drag(loiter_wing_loading,
-                                                         self.cd_0_loiter,
-                                                         item,
-                                                         self.aspect_ratio,
-                                                         self.mission_altitude,
-                                                         self.oswald_factor)
+                                                              self.CD0,
+                                                              item,
+                                                              self.aspect_ratio,
+                                                              self.mission_altitude,
+                                                              self.oswald_factor)
             if self.engine_type == "Jet":
                 w4_w3 = np.exp(-loiter_time * (self.specific_fuel / 3600) / loiter_lift_to_drag)
                 res.append(w4_w3)
-            elif self.engine_type == "Propeller":
+            elif self.engine_type == "Turboprop" or self.engine_type == "Piston":
                 w4_w3 = np.exp(-loiter_time * item * (self.specific_fuel / 3600) / (self.prop_efficiency *
                                                                                     loiter_lift_to_drag))
                 res.append(w4_w3)
@@ -371,80 +427,84 @@ class Mission(Base):
 
 
 if __name__ == "__main__":
-    # --- Test case: Turboprop MALE-class drone ---
-    mission = Mission(
-        mission_altitude=6000,        # m, ~20,000 ft typical MALE altitude
-        mission_range=10,               # km, total range (split in half for cruise)
-        mission_endurance=20,          # hours loiter
-        payload_weight=100,           # kg
-        specific_fuel=0.5,            # lb/(hp·hr) for turboprop, Raymer table 3.3
-        maximum_mach=0.5,             # typical turboprop cruise
-        prop_efficiency=0.8,          # typical propeller efficiency
-        cruise_speed=80,        # m/s ~175 knots
-        loiter_speed=57,        # m/s ~110 knots
-        mission_objective='Endurance',
+
+    # --- Test 1: Turboprop MALE-class drone ---
+    mission_tp = Mission(
+        mission_altitude=6000,
+        mission_range=10,
+        mission_endurance=8,
+        payload_weight=100,
+        specific_fuel=0.5,
+        maximum_mach=0.5,
+        prop_efficiency=0.8,
+        cruise_speed=80,
+        loiter_speed=57,
+        mission_objective='High Endurance',
+        oswald_factor=0.8,
+        reserve_time=0.5,
     )
+    mission_tp.engine_selection()        # sets self.engine_type
+    mission_tp.estimate_wing_parameters() # sets CL_max_TO, CL_max_land, CL_max_clean, CD0
+    print(f"Engine type:    {mission_tp.engine_type}")
+    # print(f"CL_max_clean:   {mission_tp.CL_max_clean}")
+    # print(f"CL_max_TO:      {mission_tp.CL_max_TO}")
+    # print(f"CL_max_land:    {mission_tp.CL_max_land}")
+    # print(f"CD0:            {mission_tp.CD0}")
+    fuel_weight = mission_tp.fuel_weight_sizing
+    print(f"MTOW:        {mission_tp.MTOW}")
+    print(f"fuel weight: {fuel_weight}")
 
-    empty_weight_guess = 1300 # kg, initial guess
 
-    W0, We, Wf = mission.take_off_weight_estimate(empty_weight_guess)
-
-    print("=== Takeoff Weight Estimate ===")
-    print(f"  MTOW  (W0): {W0:.1f} kg")
-    print(f"  Empty (We): {We:.1f} kg")
-    print(f"  Fuel  (Wf): {Wf:.1f} kg")
-    print(f"  Fuel fraction: {Wf/W0:.3f}")
-    print(f"  Empty fraction: {We/W0:.3f}")
-    print(f"  Payload fraction: {mission.payload_weight/W0:.3f}")
-    print(f"  Fractions sum to: {(Wf + We + mission.payload_weight)/W0:.3f}  (should be ~1.0)")
-
-    # --- Sanity check: fractions should sum to 1 ---
-    assert abs((Wf + We + mission.payload_weight) / W0 - 1.0) < 0.01, \
-        "Weight fractions do not sum to 1 — check unit conversions"
-
-    # --- Second test: Jet drone ---
-    mission_jet = Mission(
-        mission_altitude=8000,        # m
-        mission_range=5000,            # km
-
-        mission_endurance=5,          # hours, jets loiter less
-        payload_weight=150,           # kg
-        specific_fuel=0.8,            # lb/(lbf·hr) for jet
-        maximum_mach=0.8,             # unused for jet, placeholder
-        cruise_speed=220,       # m/s ~430 knots
-        loiter_speed=150,       # m/s ~290 knots
-        mission_objective='Long range',
-    )
-
-    W0_j, We_j, Wf_j = mission_jet.take_off_weight_estimate(empty_weight_guess)
-
-    print("\n=== Jet Drone Takeoff Weight Estimate ===")
-    print(f"  MTOW  (W0): {W0_j:.1f} kg")
-    print(f"  Empty (We): {We_j:.1f} kg")
-    print(f"  Fuel  (Wf): {Wf_j:.1f} kg")
-    print(f"  Fuel fraction: {Wf_j/W0_j:.3f}")
-    print(f"  Empty fraction: {We_j/W0_j:.3f}")
-
-    # --- third test: small drone ---
-    mission_jet = Mission(
-        mission_altitude=3000,  # m
-        mission_range=10,  # km
-        mission_endurance=10,  # hours, jets loiter less
-        payload_weight=50,  # kg
-        maximum_mach=0.8,
-        prop_efficiency=0.8,  # unused for jet, placeholder
-        cruise_speed=100,  # m/s ~430 knots
-        loiter_speed=60,  # m/s ~290 knots
-        mission_objective='Low cost',
-    )
-
-    W0_s, We_s, Wf_s = mission_jet.take_off_weight_estimate(empty_weight_guess)
-
-    print("\n=== Small Drone Takeoff Weight Estimate ===")
-    print(f"  MTOW  (W0): {W0_s:.1f} kg")
-    print(f"  Empty (We): {We_s:.1f} kg")
-    print(f"  Fuel  (Wf): {Wf_s:.1f} kg")
-    print(f"  Fuel fraction: {Wf_s / W0_s:.3f}")
-    print(f"  Empty fraction: {We_s / W0_s:.3f}")
+    # # --- Test 2: Jet drone ---
+    # mission_jet = Mission(
+    #     mission_altitude=8000,
+    #     mission_range=1000,
+    #     mission_endurance=5,
+    #     payload_weight=150,
+    #     specific_fuel=0.8,
+    #     maximum_mach=0.8,
+    #     prop_efficiency=1.0,            # unused for jet, placeholder
+    #     cruise_speed=220,
+    #     loiter_speed=150,
+    #     mission_objective='Long range',
+    #     oswald_factor=0.8,
+    #     reserve_time=0.5,
+    # )
+    # mission_jet.engine_selection()
+    # mission_jet.estimate_wing_parameters()
+    # print(f"\nEngine type:    {mission_jet.engine_type}")
+    # # print(f"CL_max_clean:   {mission_jet.CL_max_clean}")
+    # # print(f"CL_max_TO:      {mission_jet.CL_max_TO}")
+    # # print(f"CL_max_land:    {mission_jet.CL_max_land}")
+    # # print(f"CD0:            {mission_jet.CD0}")
+    # fuel_weight = mission_jet.fuel_weight_sizing
+    # print(f"MTOW:        {mission_jet.MTOW}")
+    # print(f"fuel weight: {fuel_weight}")
+    #
+    # # --- Test 3: Piston small drone ---
+    # mission_piston = Mission(
+    #     mission_altitude=3000,
+    #     mission_range=10,
+    #     mission_endurance=10,
+    #     payload_weight=50,
+    #     specific_fuel=0.4,
+    #     maximum_mach=0.3,
+    #     prop_efficiency=0.8,
+    #     cruise_speed=60,
+    #     loiter_speed=30,
+    #     mission_objective='Low cost',
+    #     oswald_factor=0.8,
+    #     reserve_time=0.5,
+    # )
+    # mission_piston.engine_selection()
+    # mission_piston.estimate_wing_parameters()
+    # print(f"\nEngine type:    {mission_piston.engine_type}")
+    # # print(f"CL_max_clean:   {mission_piston.CL_max_clean}")
+    # # print(f"CL_max_TO:      {mission_piston.CL_max_TO}")
+    # # print(f"CL_max_land:    {mission_piston.CL_max_land}")
+    # # print(f"CD0:            {mission_piston.CD0}")
+    # fuel_weight = mission_piston.fuel_weight_sizing
+    # print(f"MTOW:        {mission_piston.MTOW}")
+    # print(f"fuel weight: {fuel_weight}")
 
 
