@@ -1,4 +1,4 @@
-function [Res, AC] = run_q3d_cst(wing_planform_geom,  wing_airfoils, wing_incidence_angle, mach, reynolds, speed, alpha_or_cl, altitude, density, use_cl)
+function [Res, AC] = run_q3d_cst(wing_planform_geom,  wing_airfoils, wing_incidence_angle, mach, reynolds, speed, alpha_or_cl, altitude, density, use_cl, viscous)
 
    % Wing planform geometry format (expects half of symmetric wing):
    %                 x     y     z   chord(m)    twist angle (deg)
@@ -20,7 +20,10 @@ function [Res, AC] = run_q3d_cst(wing_planform_geom,  wing_airfoils, wing_incide
    AC.Wing.eta = [0;1];  % Spanwise location of the airfoil sections
 
    % Viscous vs inviscid
-   AC.Visc  = 0;              % 0 for inviscid and 1 for viscous analysis
+   if viscous
+      AC.Visc  = 1;              % 0 for inviscid and 1 for viscous analysis
+   else
+      AC.Visc  = 0;
    AC.Aero.MaxIterIndex = 150;    %Maximum number of Iteration for the
                                    %convergence of viscous calculation
 

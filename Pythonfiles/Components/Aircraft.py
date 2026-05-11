@@ -14,116 +14,136 @@ from Pythonfiles.Components.Engines.Engine import Engine
 class Aircraft(GeomBase):
 
     # ============================================================ #
-    # GLOBAL
+    # MISSION  — always required, no sensible universal default
     # ============================================================ #
 
-    cruise_speed: float = Input()
-    aircraft_mass: float = Input()
+    cruise_speed:   float = Input()   # [m/s]
+    cruise_altitude: float = Input()
+    aircraft_mass:  float = Input()   # [kg]  MTOW
+    ld_required: float = Input(None)
+    maximum_load_factor: float = Input(1)
+
+    # ============================================================ #
+    # WING SIZING  — mission-driven, required
+    # ============================================================ #
+
+    effective_wing_area:      float = Input()   # [m²]  from wing loading W/S
+    effective_wing_semi_span: float = Input()   # [m]   from AR / airport constraint
+
+    # ============================================================ #
+    # FUSELAGE  — mission/payload driven, required
+    # ============================================================ #
+
+    fuselage_cylinder_start: float = Input()   # [% of fuselage length]
+    fuselage_cylinder_end:   float = Input()   # [% of fuselage length]
+
+    # ============================================================ #
+    # WING AERODYNAMICS
+    # Defaults: Raymer subsonic conventional fixed-wing UAV baseline.
+    # Override for swept/high-speed/unconventional designs.
+    # ============================================================ #
+
+    wing_taper_ratio:             float = Input(0.40)   # Raymer: efficient subsonic 0.3–0.5
+    wing_sweep_le:                float = Input(5.0)    # [deg]  low-speed, near-straight
+    wing_twist:                   float = Input(0.0)    # [deg]  0 = no washout (simple UAV)
+    wing_dihedral:                float = Input(5.0)    # [deg]  Raymer: stability rule-of-thumb
+    wing_thickness_to_chord:      float = Input(0.15)   # Raymer: subsonic structural/aero compromise
+    wing_maximum_camber:          float = Input(0.04)   # typical cambered NACA section
+    wing_maximum_camber_position: float = Input(0.40)   # NACA 4-series default
+    wing_t_factor_root:           float = Input(1.0)    # no thickness scaling
+    wing_t_factor_tip:            float = Input(1.0)
+
+    # ============================================================ #
+    # TAIL AERODYNAMICS
+    # Defaults: Raymer conventional empennage baseline.
+    # ============================================================ #
+
+    tail_taper_ratio:             float = Input(0.40)   # same logic as wing
+    tail_sweep_le:                float = Input(10.0)   # [deg]  slightly more swept for stability
+    tail_twist:                   float = Input(0.0)
+    tail_dihedral:                float = Input(0.0)
+    tail_thickness_to_chord:      float = Input(0.15)
+    tail_maximum_camber:          float = Input(0.0)    # symmetric section (standard tail)
+    tail_maximum_camber_position: float = Input(0.0)
+    tail_t_factor_root:           float = Input(1.0)
+    tail_t_factor_tip:            float = Input(1.0)
+
+    # ============================================================ #
+    # ENGINE / PROPULSION  — required
+    # ============================================================ #
+
+    thrust_to_weight: float = Input()   # performance requirement
+    rho:              float = Input()   # [kg/m³] at cruise altitude
+
+    # ============================================================ #
+    # UNDERCARRIAGE
+    # ============================================================ #
+
+    undercarriage_retractible: bool = Input(False)
+
+    # ============================================================ #
+    # COLORS  — visual only, all have defaults
+    # ============================================================ #
+
+    fuselage_cones_color:      object = Input("steelblue")
+    fuselage_cylinder_color:   object = Input("blue")
+    undercarriage_color_tyre:  str    = Input("black")
+    undercarriage_color_axle:  str    = Input("white")
+    undercarriage_color_strut: str    = Input("silver")
+
+    main_wing_color_wingbox:        str = Input("black")
+    main_wing_color_liftingsurface: str = Input("yellow")
+
+    tail_h_color_wingbox:        str = Input("black")
+    tail_h_color_liftingsurface: str = Input("silver")
+    tail_v_color_wingbox:        str = Input("black")
+    tail_v_color_liftingsurface: str = Input("white")
+
+    engine_color_nacelle: str = Input("silver")
+
+    # ============================================================ #
+    # ROSKAM / RAYMER EMPIRICAL CONSTANTS
+    # Defaults are the standard textbook values; override if needed.
+    # ============================================================ #
+
+    # --- Tail sizing (Roskam) ---
+    tail_volume_coefficient_h: float = Input(0.60)   # typical transport/UAV HT
+    tail_volume_coefficient_v: float = Input(0.04)   # typical transport/UAV VT
+    tail_aspect_ratio_h:       float = Input(4.50)   # Roskam range 3–5
+    tail_aspect_ratio_v:       float = Input(1.80)   # Roskam range 1.2–2.5
+
+    # --- Propeller/rotor sizing (Roskam / UAV empirical) ---
+    disk_loading_uav:  float = Input(80.0)    # [N/m²]  UAV empirical
+    target_solidity:   float = Input(0.15)    # Roskam: ~0.10–0.20
+
+    # --- Blade geometry ---
+    blade_sweep: float = Input(5.0)   # [deg]  empirical aero smoothing
+
+    # --- Nacelle / blade overrides (None = auto-sized) ---
+    nacelle_length_override:    float = Input(None)
+    nacelle_radius_override:    float = Input(None)
+    n_blades_override:          int   = Input(None)
+    blade_length_override:      float = Input(None)
+    blade_root_chord_override:  float = Input(None)
+
+    # ============================================================ #
+    # FIXED PHYSICAL / STRUCTURAL CONSTANTS
+    # Override only for exotic configurations.
+    # ============================================================ #
+
+    g: float = Input(9.81)   # [m/s²]
+
+    # Spar positions as fraction of local chord (structural convention)
+    wing_front_spar_position: float = Input(0.15)
+    wing_rear_spar_position:  float = Input(0.60)
+    tail_front_spar_position: float = Input(0.15)
+    tail_rear_spar_position:  float = Input(0.60)
+
+    # Inlet / nozzle geometry ratios
+    inlet_radius_ratio:  float = Input(0.85)
+    nozzle_radius_ratio: float = Input(0.70)
+
     mesh_deflection: float = Input(1e-4)
-    g: float = Input()
-
-    # ============================================================ #
-    # FUSELAGE
-    # ============================================================ #
-    fuselage_cylinder_start: float = Input()
-    fuselage_cylinder_end: float = Input()
-
-    undercarriage_retractible: bool = Input()
-
-    fuselage_cones_color = Input()
-    fuselage_cylinder_color = Input()
-
-    undercarriage_color_tyre: str = Input()
-    undercarriage_color_axle: str = Input()
-    undercarriage_color_strut: str = Input()
-
-    # ============================================================ #
-    # MAIN WING
-    # ============================================================ #
-
-    effective_wing_area: float = Input()
-    effective_wing_semi_span: float = Input()
-
-    wing_taper_ratio: float = Input() #Low sweep 0.4-0.5, most swept wings 0.2-0.3
-    wing_sweep_le: float = Input() # find critical mach number, after which we can find the wing sweep
-    wing_twist: float = Input() # -3 should be a good guess
-    wing_dihedral: float = Input() # -2 to 2 for subsonic swept wing
-    # wing incidence? Should be zero for military aircraft and I think that also applied to drones
-
-    wing_thickness_to_chord: float = Input()
-    wing_maximum_camber: float = Input()
-    wing_maximum_camber_position: float = Input()
-
-    wing_t_factor_root: float = Input()
-    wing_t_factor_tip: float = Input()
-
-    wing_front_spar_position: float = Input()
-    wing_rear_spar_position: float = Input()
-
-    main_wing_color_wingbox: str = Input()
-    main_wing_color_liftingsurface: str = Input()
-
-    # ============================================================ #
-    # TAIL INPUTS
-    # ============================================================ #
-
-    tail_area: float = Input()
-    tail_semi_span: float = Input()
-
-    tail_taper_ratio: float = Input()
-    tail_sweep_le: float = Input()
-    tail_twist: float = Input()
-    tail_dihedral: float = Input()
-
-    tail_thickness_to_chord: float = Input()
-    tail_maximum_camber: float = Input()
-    tail_maximum_camber_position: float = Input()
-
-    tail_t_factor_root: float = Input()
-    tail_t_factor_tip: float = Input()
-
-    tail_front_spar_position: float = Input()
-    tail_rear_spar_position: float = Input()
-
-    tail_volume_coefficient_h: float = Input()
-    tail_volume_coefficient_v: float = Input()
-    tail_aspect_ratio_h: float = Input()
-    tail_aspect_ratio_v: float = Input()
-
-    tail_h_color_wingbox: str = Input()
-    tail_h_color_liftingsurface: str = Input()
-    tail_v_color_wingbox: str = Input()
-    tail_v_color_liftingsurface: str = Input()
-    
-    tail_h_color_wingbox: str = Input()
-    tail_h_color_liftingsurface: str = Input()
-    tail_v_color_wingbox: str = Input()
-    tail_v_color_liftingsurface: str = Input()
-
-    # ============================================================ #
-    # ENGINE (CLEANED INTERFACE)
-    # ============================================================ #
-
-    thrust_to_weight: float = Input()
-
-    rho: float = Input()
-
-    disk_loading_uav: float = Input()
-    target_solidity: float = Input()
-
-    nacelle_length_override: float = Input(None)
-    nacelle_radius_override: float = Input(None)
-
-    n_blades_override: int = Input(None)
-    blade_length_override: float = Input(None)
-    blade_root_chord_override: float = Input(None)
-
-    blade_sweep: float = Input()
-    
-    inlet_radius_ratio: float = Input()
-    nozzle_radius_ratio: float = Input()
-
-    engine_color_nacelle: str = Input()
 
     # ============================================================ #
     # PARTS
@@ -161,9 +181,9 @@ class Aircraft(GeomBase):
             twist=self.wing_twist,
             dihedral=self.wing_dihedral,
 
-            thickness_to_chord=self.wing_thickness_to_chord,
-            maximum_camber=self.wing_maximum_camber,
-            maximum_camber_position=self.wing_maximum_camber_position,
+            thickness_to_chord_input=self.wing_thickness_to_chord,
+            maximum_camber_input=self.wing_maximum_camber,
+            maximum_camber_position_input=self.wing_maximum_camber_position,
 
             t_factor_root=self.wing_t_factor_root,
             t_factor_tip=self.wing_t_factor_tip,
@@ -175,6 +195,12 @@ class Aircraft(GeomBase):
 
             color_wingbox=self.main_wing_color_wingbox,
             color_liftingsurface=self.main_wing_color_liftingsurface,
+            
+            ld_required=self.ld_required,
+            weight=self.aircraft_mass,
+            velocity=self.cruise_speed,
+            altitude=self.cruise_altitude,
+            maximum_load_factor=self.maximum_load_factor,
         )
 
     @Part
@@ -194,9 +220,9 @@ class Aircraft(GeomBase):
             twist=self.tail_twist,
             dihedral=self.tail_dihedral,
 
-            thickness_to_chord=self.tail_thickness_to_chord,
-            maximum_camber=self.tail_maximum_camber,
-            maximum_camber_position=self.tail_maximum_camber_position,
+            thickness_to_chord_input=self.tail_thickness_to_chord,
+            maximum_camber_input=self.tail_maximum_camber,
+            maximum_camber_position_input=self.tail_maximum_camber_position,
 
             t_factor_root=self.tail_t_factor_root,
             t_factor_tip=self.tail_t_factor_tip,
@@ -208,7 +234,7 @@ class Aircraft(GeomBase):
             tail_volume_coefficient_v=self.tail_volume_coefficient_v,
             tail_aspect_ratio_h=self.tail_aspect_ratio_h,
             tail_aspect_ratio_v=self.tail_aspect_ratio_v,
-            
+
             color_wingbox=self.tail_h_color_wingbox,
             color_liftingsurface=self.tail_h_color_liftingsurface,
         )
@@ -226,14 +252,13 @@ class Aircraft(GeomBase):
             fuselage_cone_radius_fn=self.fuselage.local_radius_at,
 
             taper_ratio=self.tail_taper_ratio,
-
             sweep_le=35.0,
             twist=0.0,
             dihedral=0.0,
 
-            thickness_to_chord=self.tail_thickness_to_chord,
-            maximum_camber=0.0,
-            maximum_camber_position=self.tail_maximum_camber_position,
+            thickness_to_chord_input=self.tail_thickness_to_chord,
+            maximum_camber_input=0.0,
+            maximum_camber_position_input=self.tail_maximum_camber_position,
 
             t_factor_root=self.tail_t_factor_root,
             t_factor_tip=self.tail_t_factor_tip,
@@ -245,7 +270,7 @@ class Aircraft(GeomBase):
             tail_volume_coefficient_v=self.tail_volume_coefficient_v,
             tail_aspect_ratio_h=self.tail_aspect_ratio_h,
             tail_aspect_ratio_v=self.tail_aspect_ratio_v,
-            
+
             color_wingbox=self.tail_v_color_wingbox,
             color_liftingsurface=self.tail_v_color_liftingsurface,
         )
@@ -253,12 +278,11 @@ class Aircraft(GeomBase):
     @Part
     def engines(self):
         return Engine(
-
             cruise_speed=self.cruise_speed,
             mtow=self.aircraft_mass,
             thrust_to_weight=self.thrust_to_weight,
 
-            rho=self.rho,
+            rho=self.main_wing.density,
             g=self.g,
 
             semi_span=self.main_wing.effective_semi_span,
@@ -267,7 +291,7 @@ class Aircraft(GeomBase):
 
             fuselage_length=self.fuselage.length,
             fuselage_radius=self.fuselage.radius,
-            
+
             wing_root_x=self.main_wing._root_position.x,
             wing_root_z=self.main_wing._root_position.z,
 
@@ -276,7 +300,7 @@ class Aircraft(GeomBase):
 
             nacelle_length_override=self.nacelle_length_override,
             nacelle_radius_override=self.nacelle_radius_override,
-            
+
             inlet_radius_ratio=self.inlet_radius_ratio,
             nozzle_radius_ratio=self.nozzle_radius_ratio,
 
@@ -286,107 +310,107 @@ class Aircraft(GeomBase):
 
             blade_sweep=self.blade_sweep,
 
-            color_nacelle=self.engine_color_nacelle,  
+            color_nacelle=self.engine_color_nacelle,
         )
 
 
-# TODO: CREATE PAYLOAD GEOMETRY AND INITIAL MASS CALCULATION IN PAYLOAD.PY (TEST AND INTEGRATE IN MISSION.PY)
-# TODO: INTEGRATE Q3D IN LIFTINGSURFACE.PY TO FIND A FITTING AIRFOIL FOR THE REQUIRED L/D FOR THE MISSION (WHY IS IT FAILING WHEN FEASIBLE)
-# TODO: CREATE PROPER USER INTERFACE FOR INPUT CHOOSING
-# TODO: CREATE PROPER USER INTERFACE FOR FEEDBACK OR DECISIONS
-
-
-# ---------------------------------------------------------------------- #
-# TEST
-# ---------------------------------------------------------------------- #
+# ================================================================ #
+# ENTRY POINT
+# Only mission-specific values are required here.
+# Everything with a Raymer/Roskam or structural default is omitted
+# unless you want to override it.
+# ================================================================ #
 
 if __name__ == "__main__":
     from parapy.gui import display
 
     ac = Aircraft(
 
-        # ========================================================= #
-        # MISSION
-        # ========================================================= #
-        
-        cruise_speed=220.0,
-        aircraft_mass=2000,          # ✔ mission sizing driver (payload + fuel + structure assumption)
+        # --------------------------------------------------------- #
+        # MISSION  — required
+        # --------------------------------------------------------- #
+        cruise_speed=220.0,          # [m/s]
+        aircraft_mass=2000,          # [kg]
 
-        effective_wing_area=20.0,              # ✔ driven by wing loading requirement (W/S)
-        effective_wing_semi_span=8.0,          # ✔ aspect ratio / airport constraint / mission geometry
+        # --------------------------------------------------------- #
+        # WING SIZING  — required
+        # --------------------------------------------------------- #
+        effective_wing_area=20.0,         # [m²]  from W/S requirement
+        effective_wing_semi_span=8.0,     # [m]
 
-        thrust_to_weight=0.35,      # ✔ performance requirement (takeoff/climb requirement)
-        
-        rho=1.225,                  # ✔ ISA sea level (or mission altitude if refined later)
+        # --------------------------------------------------------- #
+        # TAIL AERODYNAMICS  — required
+        # --------------------------------------------------------- #
+        # (all tail geometry uses Raymer defaults — override below if needed)
 
-        # ========================================================= #
-        # ROSKAM
-        # ========================================================= #
-        disk_loading_uav=80.0,      # ✔ Roskam / UAV empirical disk loading range
-        target_solidity=0.15,       # ✔ Roskam propeller design rule (~0.1–0.2)
+        # --------------------------------------------------------- #
+        # PROPULSION  — required
+        # --------------------------------------------------------- #
+        thrust_to_weight=0.35,
+        #rho=1.225,                       # [kg/m³]  ISA sea level
 
-        tail_volume_coefficient_h=0.6,   # ✔ Roskam horizontal tail sizing
-        tail_volume_coefficient_v=0.04,  # ✔ Roskam vertical tail sizing
+        # --------------------------------------------------------- #
+        # FUSELAGE  — required (payload-dependent)
+        # --------------------------------------------------------- #
+        fuselage_cylinder_start=10.0,
+        fuselage_cylinder_end=70.0,
 
-        tail_aspect_ratio_h=4.5,         # ✔ Roskam typical HT range (3–5)
-        tail_aspect_ratio_v=1.8,         # ✔ Roskam vertical tail range (1.2–2.5)
+        # --------------------------------------------------------- #
+        # UNDERCARRIAGE  — required
+        # --------------------------------------------------------- #
+        #undercarriage_retractible=False,
 
-        wing_taper_ratio=0.40,           # ✔ typical efficient subsonic wing (0.3–0.5)
-        wing_sweep_le=5.0,               # ✔ low-speed aircraft assumption (almost straight wing)
-        wing_dihedral=5.0,               # ✔ stability rule-of-thumb
-        wing_twist=0.0,
-        wing_thickness_to_chord=0.15,    # ✔ subsonic structural/aero compromise
-        wing_maximum_camber=0.04,        # ✔ typical cambered airfoil range
-        wing_maximum_camber_position=0.4,# ✔ NACA-style default
+        # --------------------------------------------------------- #
+        # OPTIONAL OVERRIDES  (uncomment to change from Raymer default)
+        # --------------------------------------------------------- #
+        # --- Wing geometry (Raymer subsonic baseline) ---
+        # wing_taper_ratio=0.40,
+        # wing_sweep_le=5.0,
+        # wing_dihedral=5.0,
+        # wing_twist=0.0,
+        # wing_thickness_to_chord=0.15,
+        # wing_maximum_camber=0.04,
+        # wing_maximum_camber_position=0.4,
+        # wing_t_factor_root=1.0,
+        # wing_t_factor_tip=1.0,
 
-        tail_taper_ratio=0.40,           # ✔ same logic as wing
-        tail_sweep_le=10.0,              # ✔ slightly more swept tail (stability margin)
-        tail_thickness_to_chord=0.15,
-        tail_maximum_camber_position=0,
-        tail_maximum_camber=0,
-        tail_dihedral=0,
-        tail_twist=0,
+        # --- Tail geometry (Raymer empennage baseline) ---
+        # tail_taper_ratio=0.40,
+        # tail_sweep_le=10.0,
+        # tail_dihedral=0.0,
+        # tail_twist=0.0,
+        # tail_thickness_to_chord=0.15,
+        # tail_maximum_camber=0.0,
+        # tail_maximum_camber_position=0.0,
+        # tail_t_factor_root=1.0,
+        # tail_t_factor_tip=1.0,
 
-        blade_sweep=5.0,                 # ✔ propeller/rotor empirical aero smoothing
+        # --- Roskam tail sizing ---
+        # tail_volume_coefficient_h=0.60,
+        # tail_volume_coefficient_v=0.04,
+        # tail_aspect_ratio_h=4.5,
+        # tail_aspect_ratio_v=1.8,
 
-        # ========================================================= #
-        # USER SET
-        # ========================================================= #
-        fuselage_cylinder_start=10.0,# To be set based on payload size
-        fuselage_cylinder_end=70.0,  # Same
+        # --- Propeller ---
+        # disk_loading_uav=80.0,
+        # target_solidity=0.15,
+        # blade_sweep=5.0,
 
-        undercarriage_retractible=False,  # User specified
+        # --- Structural spar positions ---
+        # wing_front_spar_position=0.15,
+        # wing_rear_spar_position=0.60,
+        # tail_front_spar_position=0.15,
+        # tail_rear_spar_position=0.60,
 
-        # ---------------- COLORS (PURE VISUAL ONLY) ----------------
-        fuselage_cones_color="steelblue",
-        fuselage_cylinder_color="blue",
-        undercarriage_color_tyre="black",
-        undercarriage_color_axle="white",
-        undercarriage_color_strut="silver",
+        # --- Inlet / nozzle ---
+        # inlet_radius_ratio=0.85,
+        # nozzle_radius_ratio=0.70,
 
-        main_wing_color_wingbox="black",
-        main_wing_color_liftingsurface="yellow",
-
-        tail_h_color_wingbox="black",
-        tail_h_color_liftingsurface="silver",
-        tail_v_color_wingbox="black",
-        tail_v_color_liftingsurface="white",
-
-        engine_color_nacelle="Silver",
-
-        # ========================================================= #
-        # FIXED
-        # ========================================================= #
-        wing_front_spar_position=0.15,   # structural convention
-        wing_rear_spar_position=0.60,    # structural convention
-
-        tail_front_spar_position=0.15,    # structural convention
-        tail_rear_spar_position=0.60,     # structural convention
-        
-        inlet_radius_ratio=0.85,
-        nozzle_radius_ratio=0.7,
-        
-        g=9.81,                      # ✔ physical constant (always fixed on Earth)
+        # --- Colors ---
+        # fuselage_cones_color="steelblue",
+        # fuselage_cylinder_color="blue",
+        # main_wing_color_liftingsurface="yellow",
+        # engine_color_nacelle="silver",
     )
 
     display(ac)

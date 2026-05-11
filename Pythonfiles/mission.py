@@ -337,6 +337,26 @@ class Mission(Base):
         fuel_weight = MTOW * wf_w0 * 1.01
 
         return MTOW, empty_weight, fuel_weight
+    
+    @Attribute
+    def ld_cruise(self) -> float:
+        """
+        Lift-to-drag ratio at the cruise design point.
+        Uses W/S and cruise speed from thrust_and_wing_loading,
+        which is the sizing condition for the airfoil sweep.
+        fuel_weight_sizing must have run first to populate
+        self.CD0, self.aspect_ratio, and self.wing_loading.
+        """
+        # fuel_weight_sizing populates all needed state as a side effect
+        _, _, _ = self.fuel_weight_sizing
+        return self.calculate_lift_to_drag(
+            wing_loading=self.wing_loading,
+            Cd_0=self.CD0,
+            speed=self.cruise_speed,
+            aspect_ratio=self.aspect_ratio,
+            altitude=self.mission_altitude,
+            oswald_factor=self.oswald_factor,
+        )
 
     def calculate_lift_to_drag(self, wing_loading: float, Cd_0: float, speed: float,
                                aspect_ratio: float, altitude: float, oswald_factor: float) -> float:
