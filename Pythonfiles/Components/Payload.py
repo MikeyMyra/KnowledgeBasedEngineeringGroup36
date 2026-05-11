@@ -10,7 +10,7 @@ from parapy.geom import GeomBase, Box, Cylinder
 # Three classes follow the NATO STANAG 4671 / US DoD Group I–V framework:
 #
 #   small  : MTOW  1–25 kg  (Group I–II)  e.g. DJI Matrice 300, senseFly eBee X
-#   medium : MTOW 25–600 kg (Group III)   e.g. Bayraktar TB2, Elbit Hermes 450
+#   medium : MTOW 25–600 kg (Group III)   e.g. Bayraktar TB2, Elbit Hermes 450gt
 #   large  : MTOW >600 kg   (Group IV–V)  e.g. MQ-9 Reaper, IAI Heron TP
 #
 # Source: NATO STANAG 4671 Ed.2 (2009); US DoD UAS Roadmap 2005–2030.

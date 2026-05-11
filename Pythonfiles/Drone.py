@@ -73,6 +73,7 @@ class Drone(GeomBase):
 
     @Attribute
     def mission(self):
+        return 1
 
 
 ''' belangrijk dat we engine type dus ook laten afhangen van de mission, daar is nu rekening mee gehouden bij de
