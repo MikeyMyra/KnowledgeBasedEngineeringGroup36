@@ -99,6 +99,37 @@ class Fuselage(GeomBase):
         return self._roskam_radius
 
     # ------------------------------------------------------------------ #
+    # LOCAL RADIUS INTERPOLATION
+    # ------------------------------------------------------------------ #
+
+    def local_radius_at(self, x: float) -> float:
+        """
+        Return the fuselage cross-section radius [m] at longitudinal station x [m].
+
+        Covers the full fuselage:
+          - Nose cone   [0,         _x_cylinder_start] : elliptic taper profile
+          - Cylinder    [_x_cylinder_start, _x_cylinder_end] : constant = self.radius
+          - Tail cone   [_x_cylinder_end,   length]    : elliptic taper profile
+
+        Uses numpy.interp on the same position/radius arrays that drive the
+        lofted geometry, so the returned value is geometrically consistent
+        with what is actually rendered.
+
+        Callers (e.g. LiftingSurface) use this to place tail surfaces at the
+        correct z-height on the converging tailcone instead of using the
+        constant cylinder radius.
+        """
+        import numpy as np
+
+        # Build full fuselage x/r arrays once, in order nose → tail.
+        # Nose profile
+        xs = list(self._nose_positions) + list(self._cyl_positions) + list(self._tail_positions)
+        rs = list(self._nose_radii)     + list(self._cyl_radii)     + list(self._tail_radii)
+
+        # numpy.interp clamps at boundaries, which is correct here.
+        return float(np.interp(x, xs, rs))
+
+    # ------------------------------------------------------------------ #
     # POSITION HELPER
     # ------------------------------------------------------------------ #
 

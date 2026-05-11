@@ -8,6 +8,10 @@ from Pythonfiles.Components.Liftingsurfaces.Airfoil import Airfoil
 from Pythonfiles.Components.Liftingsurfaces.Wingbox import Wingbox
 from Pythonfiles.Components.Frame import Frame
 
+import matlab
+import matlab.engine
+from Pythonfiles.Matlab_start import MATLAB_Q3D_ENGINE
+
 
 class LiftingSurface(GeomBase):
     """
@@ -60,6 +64,13 @@ class LiftingSurface(GeomBase):
     fuselage_length: float = Input()
     fuselage_radius: float = Input()
 
+    # Optional callable x → local_radius [m] from Fuselage.local_radius_at.
+    # When provided, tails use the cone radius at their attach_x rather than
+    # the constant cylinder radius.  Wings always sit on the cylinder, so
+    # they are unaffected even when this is set.
+    # Pass None (default) to keep the original constant-radius behaviour.
+    fuselage_cone_radius_fn: object = Input(None)
+
     is_tail: bool = Input()
     is_vertical_tail: bool = Input()
 
@@ -107,8 +118,8 @@ class LiftingSurface(GeomBase):
     wing_ref: "LiftingSurface" = Input(None)
 
     # Kept for compatibility — ignored when Roskam sizing is active
-    wing_area: float = Input(None)
-    semi_span: float = Input(None)
+    effective_wing_area: float = Input(None)
+    effective_semi_span: float = Input(None)
 
     # ------------------------------------------------------------ #
     # ATTACH POSITION
@@ -123,6 +134,19 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def attach_z(self):
+        """
+        Z-position of the surface root attachment on the fuselage [m].
+
+        Wing            : 0.0  (mid-fuselage on the cylinder — no z offset needed)
+        Horizontal tail : 0.0  (symmetric about the fuselage centreline)
+        Vertical tail   : +fuselage_wall_radius  (sits on TOP of the cone surface)
+
+        fuselage_wall_radius is the local cone radius at attach_x, so the VT
+        root chord begins flush with the fuselage skin rather than floating in
+        mid-air at a fixed cylinder radius.
+        """
+        if self.is_tail and self.is_vertical_tail:
+            return self.fuselage_wall_radius
         return 0.0
 
     # ------------------------------------------------------------ #
@@ -136,6 +160,32 @@ class LiftingSurface(GeomBase):
         wing_x = self.wing_ref.attach_x
         max_arm = self.fuselage_length - wing_x
         return min(0.65 * self.wing_ref._effective_span * 2, max_arm)
+
+    # ------------------------------------------------------------ #
+    # LOCAL FUSELAGE WALL RADIUS AT ATTACH POINT
+    # ------------------------------------------------------------ #
+
+    @Attribute
+    def fuselage_wall_radius(self):
+        """
+        Fuselage cross-section radius [m] at this surface's attach_x.
+
+        Wing  : always fuselage_radius (attaches on the constant cylinder).
+        Tails : uses fuselage_cone_radius_fn(attach_x) when the callable is
+                supplied, so the skin root and VT base track the converging
+                tailcone profile exactly.  Falls back to fuselage_radius if
+                the callable is not provided (preserves old behaviour).
+
+        This value drives:
+          - The y-offset of the HT skin root (±fuselage_wall_radius in y)
+          - The z-offset of the VT skin root (+fuselage_wall_radius in z)
+          - The wingbox burial depth (_geometric_span = _effective_span
+            + fuselage_wall_radius) so the box reaches all the way to the
+            structural centreline.
+        """
+        if self.is_tail and self.fuselage_cone_radius_fn is not None:
+            return self.fuselage_cone_radius_fn(self.attach_x + self.c_root_aero)
+        return self.fuselage_radius
 
     # ------------------------------------------------------------ #
     # RESOLVED EFFECTIVE AREA AND SPAN
@@ -182,9 +232,9 @@ class LiftingSurface(GeomBase):
         VT    : sqrt(AR_v * S_v)
         """
         if not self.is_tail:
-            if self.effective_span is None:
+            if self.effective_semi_span is None:
                 raise ValueError("Wing requires effective_span input.")
-            return self.effective_span
+            return self.effective_semi_span
 
         if self.is_vertical_tail:
             return np.sqrt(self.tail_aspect_ratio_v * self._effective_area)
@@ -218,16 +268,15 @@ class LiftingSurface(GeomBase):
         """
         Chord at the structural root [m] — wingbox starts here.
 
-        Wing : extrapolate the linear taper inward from the fuselage wall to
-               the centreline (y = 0):
-               c_root_geom = c_root_aero + (c_root_aero - c_tip)
-                             / _effective_span * fuselage_radius
-        Tail : the tail attaches at the fuselage wall; the wingbox extends
-               inward by fuselage_radius along the fuselage side, so apply
-               the same extrapolation as the wing.
+        Extrapolates the taper inward from the fuselage wall by
+        fuselage_wall_radius (the local cone radius at attach_x).
+        For the wing this equals fuselage_radius; for tails on the
+        converging tailcone it is the smaller local radius, so the
+        buried chord length is correctly proportioned to the actual
+        burial depth.
         """
         slope = (self.c_root_aero - self.c_tip) / self._effective_span
-        return self.c_root_aero + slope * self.fuselage_radius
+        return self.c_root_aero + slope * self.fuselage_wall_radius
 
     # ------------------------------------------------------------ #
     # FULL GEOMETRIC SEMI-SPAN  (including fuselage burial)
@@ -235,8 +284,16 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def _geometric_span(self):
-        """Semi-span from centreline (or fuselage-side root) to tip [m]."""
-        return self._effective_span + self.fuselage_radius
+        """
+        Semi-span from structural centreline to tip [m].
+
+        = _effective_span + fuselage_wall_radius
+
+        fuselage_wall_radius is the local cone radius at attach_x, so the
+        wingbox burial depth matches the actual fuselage cross-section at
+        that station rather than the constant cylinder radius.
+        """
+        return self._effective_span + self.fuselage_wall_radius
 
     # ------------------------------------------------------------ #
     # DERIVED AERO PROPERTIES
@@ -266,41 +323,62 @@ class LiftingSurface(GeomBase):
 
     def _spanwise_offsets(self, y_sign: float):
         """
-        x/y/z offsets when moving from centreline to the fuselage wall,
-        following sweep and dihedral.  y_sign = +1 starboard, -1 port.
+        x/y/z offsets when stepping one fuselage_wall_radius outboard from
+        the centreline attachment, following sweep and dihedral.
+        y_sign = +1 for starboard, -1 for port.
+
+        Uses fuselage_wall_radius (= local cone radius at attach_x) so that
+        the skin root sits exactly on the fuselage surface at that station.
+        For the wing this equals fuselage_radius; for tails it is smaller.
         """
-        dx = self.fuselage_radius * tan(radians(self.sweep_le))
-        dy = y_sign * self.fuselage_radius
-        dz = self.fuselage_radius * np.sin(radians(self.dihedral))
+        R  = self.fuselage_wall_radius
+        dx = R * tan(radians(self.sweep_le))
+        dy = y_sign * R
+        dz = R * sin(radians(self.dihedral))
         return dx, dy, dz
 
     @Attribute
     def _root_position_wingbox(self):
         """
-        Structural root position — one fuselage_radius INBOARD of the
-        fuselage wall, following sweep/dihedral in reverse.
+        Structural root position — at (attach_x, 0, attach_z) with NO
+        sweep or dihedral pre-offset.
 
-        For the wing this is the aircraft centreline (y = 0).
-        For tails it is the fuselage wall shifted inward by fuselage_radius,
-        which lets the wingbox penetrate the fuselage skin.
+        Why no offset?  The Wingbox Part internally propagates sweep and
+        dihedral over its full semi_span = _geometric_span.  It starts from
+        this position and arrives at the same tip z/x as the skin, because:
+
+            wb_root_z + geometric_span * sin(dihedral)
+          = attach_z  + (effective_span + R) * sin(dihedral)
+          = (attach_z + R*sin(d)) + effective_span * sin(d)
+          = skin_root_z + effective_span * sin(d)
+          = skin_tip_z                                         ✓
+
+        Adding a -dz_out offset to wb_root_z would cause the wingbox tip to
+        undershoot skin_tip_z by fuselage_radius * sin(dihedral), producing
+        the misalignment that was observed.  The same cancellation holds for x.
+
+        For the VT (no dihedral/twist): same logic, just rotated upright.
         """
         if not self.is_vertical_tail:
-            # move inboard from attach_x (which sits at the fuselage wall)
-            dx = -self.fuselage_radius * tan(radians(self.sweep_le))
-            dz = -self.fuselage_radius * np.sin(radians(self.dihedral))
             return translate(
                 self.position,
-                "x", self.attach_x + dx,
-                "z", self.attach_z + dz,
-                # y = 0: centreline for wing, centreline-equivalent for tail
+                "x", self.attach_x,
+                "y", 0.0,
+                "z", self.attach_z,
             )
-        # VT: inboard means downward along z before rotation
+        # VT: root at fuselage centreline, rotated upright
         base = translate(self.position, "x", self.attach_x, "z", self.attach_z)
         return rotate(base, "x", radians(90))
 
     @Attribute
     def _root_position(self):
-        """Starboard fuselage-wall position — aero surface starts here."""
+        """
+        Starboard fuselage-wall position — aero surface (skin) starts here.
+
+        Moves one fuselage_radius outboard from the centreline attachment
+        following sweep (dx) and dihedral (dz), so this position is exactly
+        one fuselage_radius further outboard than _root_position_wingbox.
+        """
         if not self.is_vertical_tail:
             dx, dy, dz = self._spanwise_offsets(+1)
             return translate(
@@ -309,15 +387,24 @@ class LiftingSurface(GeomBase):
                 "y", dy,
                 "z", self.attach_z + dz,
             )
-        # VT root is at the fuselage wall, rotated upright
-        dx = self.fuselage_radius * tan(radians(self.sweep_le))
-        dz = self.fuselage_radius 
+        # VT root is at the top of the fuselage wall, rotated upright.
+        # attach_z is already set to fuselage_wall_radius by attach_z attribute,
+        # so the base translate lands on the cone surface.  The small sweep dx
+        # along x is also scaled by the local wall radius.
+        R  = self.fuselage_wall_radius
+        dx = R * tan(radians(self.sweep_le))
+        dz = R  # step up to cone surface top — same as fuselage_wall_radius
         base = translate(self.position, "x", self.attach_x + dx, "z", self.attach_z + dz)
         return rotate(base, "x", radians(90))
 
     @Attribute
     def _root_position_mirrored(self):
-        """Port fuselage-wall position."""
+        """
+        Port fuselage-wall position — mirror of _root_position.
+
+        y is negated (port side), but dz is identical: dihedral raises
+        both wing panels upward symmetrically.
+        """
         if self.is_vertical_tail:
             return self._root_position
         dx, dy, dz = self._spanwise_offsets(-1)
@@ -500,6 +587,27 @@ class LiftingSurface(GeomBase):
             color=self.color_wingbox,
             suppress=self.is_vertical_tail,
         )
+    
+    # ---------------------------------------------------------------------- #
+    # AERODYNAMIC ANALYSIS
+    # ---------------------------------------------------------------------- #
+    @Attribute
+    def q3d_data(self):
+        """All inputs and results from running Q3D (MATLAB)"""
+        #! Note: The file `runq3d.m` hard-codes the airfoil shapes a,d a lot of other things
+        #! To make this fully operational, you'd need to update the Matlab code such that it
+        #! accepts all relevant information (airfoil shape, flight speed, M, Re…) as input
+        return MATLAB_Q3D_ENGINE.run_q3d(matlab.double([[0, 0, 0, self.c_root_aero, 0],
+                                                        [self.effective_semi_span*np.cos(self.dihedral),
+                                                         self.effective_semi_span,
+                                                         self.effective_semi_span*np.cos(self.dihedral),
+                                                         self.c_tip, self.twist]
+                                                       ]),
+                                                       # in MATLAB 2021, double values are defined as
+                                                       # rectangular nested sequence
+                                         matlab.double([1]),
+                                         nargout=2 # specify number of outputs if >1
+                                        )
 
 
 # ---------------------------------------------------------------------- #
@@ -514,7 +622,7 @@ if __name__ == "__main__":
         label="main_wing",
 
         effective_area=18.0,
-        effective_span=7.4,
+        effective_semi_span=7.4,
 
         fuselage_length=10.0,
         fuselage_radius=0.6,

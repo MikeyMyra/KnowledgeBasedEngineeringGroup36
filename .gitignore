@@ -34,4 +34,8 @@ Pythonfiles/Components/Engines/__pycache__/PropellerEngine.cpython-312.pyc
 Pythonfiles/Components/Fuselage/__pycache__/__init__.cpython-312.pyc
 Pythonfiles/Components/Fuselage/__pycache__/Undercarriage.cpython-312.pyc
 Pythonfiles/Components/Liftingsurfaces/__pycache__/Wingbox.cpython-312.pyc
+Pythonfiles/Testfiles/test_aircraft/__pycache__/fuselage.cpython-312.pyc
+Pythonfiles/Testfiles/test_aircraft/__pycache__/__init__.cpython-312.pyc
+Pythonfiles/__pycache__/Matlab_start.cpython-312.pyc
+Pythonfiles/Testfiles/test_aircraft/__pycache__/fuselage.cpython-312.pyc
 

@@ -31,6 +31,21 @@ from Pythonfiles.Components.Aircraft import Aircraft
 
 class Drone(GeomBase):
     """main class for drone"""
+    # ==========================
+    # Inputs
+    # ==========================
+    mission_altitude: float = Input(6000)  # [m]
+    mission_range: float = Input(10)  # [km]
+    mission_endurance: float = Input(8)  # [hr]
+    specific_fuel: float = Input(0.5)  # [1/hr]
+    maximum_mach: float = Input(0.5)
+    prop_efficiency: float = Input(0.8)
+    cruise_speed: float = Input(80)  # [m/s]
+    loiter_speed: float = Input(57)
+    mission_objective: str = Input("High Endurance")
+    oswald_factor: float = Input(0.8)
+    reserve_time: float = Input(0.5)  # [hr]
+
 
     # ============================================================ #
     # CALCULATIONS
@@ -40,23 +55,8 @@ class Drone(GeomBase):
 
     # ADD PAYLOAD WEIGHT CALCULATION (Mike)
 
-    # ADD MTOW ESTIMATION CALL MISSION.PY
 
-    # ==========================
-    # Mission input parameters
-    # ==========================
-    mission_altitude: float = Input(6000)       # [m]
-    mission_range: float = Input(10)           # [km]
-    mission_endurance: float = Input(8)        # [hr]
-    payload_weight: float = Input(100)         # [kg]
-    specific_fuel: float = Input(0.5)          # [1/hr]
-    maximum_mach: float = Input(0.5)
-    prop_efficiency: float = Input(0.8)
-    cruise_speed: float = Input(80)            # [m/s]
-    loiter_speed: float = Input(57)
-    mission_objective: str = Input("High Endurance")
-    oswald_factor: float = Input(0.8)
-    reserve_time: float = Input(0.5)           # [hr]
+    # ADD MTOW ESTIMATION CALL MISSION.PY
 
     # ==========================
     # Mission object + results
