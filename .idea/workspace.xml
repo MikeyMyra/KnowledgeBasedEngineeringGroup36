@@ -4,9 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="871c42f2-8ed7-4502-b344-e4de8b26f833" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/tutorial_python_matlab.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/tutorial_python_matlab.iml" afterDir="false" />
+    <list default="true" id="871c42f2-8ed7-4502-b344-e4de8b26f833" name="Changes" comment="It now returns fuel weight T/W and MTOW">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -115,11 +114,36 @@
       <option name="presentableId" value="Default" />
       <updated>1711121157514</updated>
       <workItem from="1778313297577" duration="18543000" />
+      <workItem from="1778502949885" duration="356000" />
     </task>
+    <task id="LOCAL-00001" summary="It now returns fuel weight T/W and MTOW">
+      <option name="closed" value="true" />
+      <created>1778503066633</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1778503066633</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="It now returns fuel weight T/W and MTOW" />
+    <option name="LAST_COMMIT_MESSAGE" value="It now returns fuel weight T/W and MTOW" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/KnowledgeBasedEngineeringGroup36$mission.coverage" NAME="mission Coverage Results" MODIFIED="1778502455682" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/Pythonfiles" />
