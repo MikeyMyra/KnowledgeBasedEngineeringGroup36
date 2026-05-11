@@ -8,6 +8,10 @@ from Pythonfiles.Components.Liftingsurfaces.Airfoil import Airfoil
 from Pythonfiles.Components.Liftingsurfaces.Wingbox import Wingbox
 from Pythonfiles.Components.Frame import Frame
 
+import matlab
+import matlab.engine
+from Pythonfiles.Matlab_start import MATLAB_Q3D_ENGINE
+
 
 class LiftingSurface(GeomBase):
     """
@@ -583,6 +587,27 @@ class LiftingSurface(GeomBase):
             color=self.color_wingbox,
             suppress=self.is_vertical_tail,
         )
+    
+    # ---------------------------------------------------------------------- #
+    # AERODYNAMIC ANALYSIS
+    # ---------------------------------------------------------------------- #
+    @Attribute
+    def q3d_data(self):
+        """All inputs and results from running Q3D (MATLAB)"""
+        #! Note: The file `runq3d.m` hard-codes the airfoil shapes a,d a lot of other things
+        #! To make this fully operational, you'd need to update the Matlab code such that it
+        #! accepts all relevant information (airfoil shape, flight speed, M, Re…) as input
+        return MATLAB_Q3D_ENGINE.run_q3d(matlab.double([[0, 0, 0, self.c_root_aero, 0],
+                                                        [self.effective_semi_span*np.cos(self.dihedral),
+                                                         self.effective_semi_span,
+                                                         self.effective_semi_span*np.cos(self.dihedral),
+                                                         self.c_tip, self.twist]
+                                                       ]),
+                                                       # in MATLAB 2021, double values are defined as
+                                                       # rectangular nested sequence
+                                         matlab.double([1]),
+                                         nargout=2 # specify number of outputs if >1
+                                        )
 
 
 # ---------------------------------------------------------------------- #
@@ -597,7 +622,7 @@ if __name__ == "__main__":
         label="main_wing",
 
         effective_area=18.0,
-        effective_span=7.4,
+        effective_semi_span=7.4,
 
         fuselage_length=10.0,
         fuselage_radius=0.6,
