@@ -10,7 +10,7 @@ from parapy.geom import GeomBase
 
 from Pythonfiles.Components.Aircraft import Aircraft
 from mission import Mission
-from Pythonfiles.Components.Payload import Payload
+from Pythonfiles.Components.Payload.Payload import Payload
 
 
 class Drone(GeomBase):
@@ -42,8 +42,7 @@ class Drone(GeomBase):
 
     specific_fuel:    float = Input(0.5)    # [1/hr]  SFC
     prop_efficiency:  float = Input(0.8)
-    maximum_mach:     float = Input(0.5)
-    rho:              float = Input(1.225)  # [kg/m³]  ISA sea level; override for altitude
+    #rho:              float = Input(1.225)  # [kg/m³]  ISA sea level; override for altitude
 
     # ============================================================ #
     # PERFORMANCE
@@ -152,6 +151,10 @@ class Drone(GeomBase):
     tail_v_color_wingbox:           str    = Input("black")
     tail_v_color_liftingsurface:    str    = Input("white")
     engine_color_nacelle:           str    = Input("silver")
+    
+    @Attribute
+    def maximum_mach(self) -> float:
+        return 1.5 * self.cruise_speed 
 
     # ============================================================ #
     # PAYLOAD

@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 class WP_WS_Diagram:
     
     def __init__(self, aspect_ratio, CL_max_clean, CL_max_land, CL_max_TO, cruise_speed, CD0, prop_eff, engine_type,
-                 oswald_factor, x_max=1000, y_max=1, plot=True):
+                 oswald_factor, n_max, x_max=1000, y_max=1, plot=True):
 
         self.plot = plot
         self.x_max = x_max
@@ -32,6 +32,7 @@ class WP_WS_Diagram:
         
         self.e = oswald_factor
         self.CD0 = CD0
+        self.n_max = n_max
         
         self.f = 0.97 * 0.985
         
@@ -217,6 +218,16 @@ class WP_WS_Diagram:
                 results.append((T_W_range, W_S_range, A))
 
         return results
+    
+    def maneuver_loading(self, rho=1.225):
+        """
+        Structural / maneuver constraint.
+        At load factor n, stall speed increases: V_stall_n = V_stall * sqrt(n)
+        Wing loading must satisfy: W/S <= 0.5 * rho * V_stall^2 * CL_max / n
+        Or expressed as a vertical line on the diagram.
+        """
+        W_S_limit = 0.5 * rho * self.V_cruise**2 * self.CL_max_clean[0] / self.n_max
+        return W_S_limit
 
     def find_design_point(self, rho=1.225):
         """
@@ -244,6 +255,10 @@ class WP_WS_Diagram:
         for CL in self.CL_max_land:
             WL_land = self.landing_loading(CL, rho=rho)
             vertical_limits.append(WL_land)
+        
+        # Maneuver limit
+        WL_maneuver = self.maneuver_loading(rho=rho)
+        vertical_limits.append(WL_maneuver)
 
         W_S_design = min(vertical_limits)  # most restrictive = leftmost
 
@@ -360,6 +375,23 @@ class WP_WS_Diagram:
                 ax.fill_between(W_S_range, 0, W_P_or_T_W, color='red', alpha=0.15)
             else:
                 ax.fill_between(W_S_range, W_P_or_T_W, self.y_max, color='red', alpha=0.15)
+            
+            # Maneuver constraint
+            WL_maneuver = self.maneuver_loading(rho=rho)
+
+            ax.axvline(
+                x=WL_maneuver,
+                color='purple',
+                linestyle='-.',
+                label=f"Maneuver n={self.n_max} @ {round(WL_maneuver, 2)}"
+            )
+
+            ax.axvspan(
+                WL_maneuver,
+                self.x_max,
+                color='red',
+                alpha=0.15
+            )
 
             # Axis setup
             ax.set_xlim(0, self.x_max)
@@ -401,4 +433,3 @@ if __name__ == "__main__":
 
     )
     wpws.plot_wing_loading_constraints()
-
