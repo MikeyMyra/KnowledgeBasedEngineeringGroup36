@@ -45,6 +45,7 @@ class PropellerEngine(GeomBase):
     mtow: float = Input()
     n_engines: int = Input()
     thrust_to_weight: float = Input()
+    cruise_speed: float = Input()
 
     rho: float = Input()
     g: float = Input()
@@ -120,9 +121,40 @@ class PropellerEngine(GeomBase):
         return self.thrust_per_engine / self.disk_loading_uav
 
     @Attribute
+    def _power_required_cruise(self) -> float:
+        """Cruise power from thrust × velocity / propeller efficiency."""
+        eta_prop = 0.82   # Roskam Vol. I §3.6: typical cruise propeller efficiency
+        return self.thrust_per_engine * self.cruise_speed / eta_prop
+
+    @Attribute
+    def _power_required_climb(self) -> float:
+        """
+        Climb power requirement.
+        Roskam Vol. I §4.5: P_climb = W * ROC / eta_prop
+        ROC target: ~3 m/s for large UAV (Raymer Table 3.6)
+        """
+        eta_prop = 0.75   # lower efficiency in climb
+        roc      = 3.0    # [m/s] — rate of climb target
+        return (self.mtow * self.g * roc) / (self.n_engines * eta_prop)
+
+    @Attribute
+    def _power_required_takeoff(self) -> float:
+        """
+        Static thrust at takeoff — propeller momentum theory at V=0.
+        P = T^1.5 / sqrt(2 * rho_sl * A)
+        Uses sea-level density (takeoff condition).
+        """
+        rho_sl = 1.225
+        return (self.thrust_per_engine ** 1.5) / sqrt(2.0 * rho_sl * self._disk_area)
+
+    @Attribute
     def shaft_power(self) -> float:
-        T = self.thrust_per_engine
-        return T * sqrt(T / (2.0 * self.rho * self._disk_area))
+        """Design shaft power — maximum across all sizing conditions."""
+        return max(
+            self._power_required_cruise,
+            self._power_required_climb,
+            self._power_required_takeoff,
+        )
 
     @Attribute
     def _max_blade_length(self) -> float:

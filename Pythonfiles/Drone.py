@@ -1,23 +1,7 @@
 """
 drone.py
 ========
-Top-level drone class.  Engineering rules derive UAV class,
-mission objective, and payload variant selection automatically from the
-mission performance inputs, so the user only needs to specify:
-
-  REQUIRED
-  --------
-  cruise_speed, mission_altitude, mission_range, mission_endurance
-  maximum_load_factor
-
-  OPTIONAL  (sensible defaults or inferred)
-  -----------------------------------------
-  payload_categories     : ["ISR"] / ["Strike"] / ["Mapping"] / etc.
-                      If omitted → inferred from mission parameters.
-  weapon_count      : int (default 0)
-  mission_objective : override string (default → inferred)
-  uav_class         : override string (default → inferred)
-  ... all geometry / propulsion / structural constants
+Top-level drone class.
 """
 
 import math
@@ -32,6 +16,8 @@ from Pythonfiles.Components.Payload.Payload import Payload
 from Pythonfiles.Components.Payload.Payloadrules import PayloadRules
 from ISA_calculator import ISA_calculator
 
+from Pythonfiles.metric_imperial_conversions import kilograms_to_pounds, feet_to_meters
+
 
 class Drone(GeomBase):
 
@@ -39,140 +25,46 @@ class Drone(GeomBase):
     # REQUIRED MISSION INPUTS
     # ================================================================ #
 
-    cruise_speed:        float = Input()   # [m/s]
-    mission_altitude:    float = Input()   # [m]
-    mission_range:       float = Input()   # [km]
-    mission_endurance:   float = Input()   # [hr]
+    cruise_speed:      float = Input()   # [m/s]
+    mission_altitude:  float = Input()   # [m]
+    mission_range:     float = Input()   # [km]
+    mission_endurance: float = Input()   # [hr]
 
     # ================================================================ #
-    # PAYLOAD INTENT  — only what you want, not how to build it
+    # PAYLOAD INTENT
     # ================================================================ #
 
     payload_role: str = Input("ISR")
     weapon_count: int = Input(0)
 
     # ================================================================ #
-    # ENGINEERING RULE OVERRIDES  (optional — inferred when not set)
+    # ENGINEERING RULE OVERRIDES
     # ================================================================ #
 
-    uav_class_override:         Optional[str] = Input(None)
-    mission_objective_override: Optional[str] = Input(None)
+    uav_class_override:          Optional[str] = Input(None)
+    mission_objective_override:  Optional[str] = Input(None)
 
     # ================================================================ #
-    # PROPULSION / ATMOSPHERE
+    # FUSELAGE LAYOUT
     # ================================================================ #
 
-    specific_fuel:   float = Input(0.5)    # [1/hr]  SFC
-    prop_efficiency: float = Input(0.8)
-    oswald_factor:   float = Input(0.8)
-    reserve_time:    float = Input(0.5)    # [hr]
+    fuselage_cylinder_start: float = Input(10.0)   # [% of fuselage length]
+    fuselage_cylinder_end:   float = Input(70.0)   # [% of fuselage length]
 
     # ================================================================ #
-    # WING GEOMETRY
-    # ================================================================ #
-
-    wing_taper_ratio:             float = Input(0.40)
-    wing_sweep_le:                float = Input(5.0)    # [deg]
-    wing_twist:                   float = Input(0.0)    # [deg]
-    wing_dihedral:                float = Input(5.0)    # [deg]
-    wing_thickness_to_chord:      float = Input(0.15)
-    wing_maximum_camber:          float = Input(0.04)
-    wing_maximum_camber_position: float = Input(0.40)
-    wing_t_factor_root:           float = Input(1.0)
-    wing_t_factor_tip:            float = Input(1.0)
-
-    # ================================================================ #
-    # TAIL GEOMETRY
-    # ================================================================ #
-
-    tail_taper_ratio:             float = Input(0.40)
-    tail_sweep_le:                float = Input(10.0)
-    tail_twist:                   float = Input(0.0)
-    tail_dihedral:                float = Input(0.0)
-    tail_thickness_to_chord:      float = Input(0.15)
-    tail_maximum_camber:          float = Input(0.0)
-    tail_maximum_camber_position: float = Input(0.0)
-    tail_t_factor_root:           float = Input(1.0)
-    tail_t_factor_tip:            float = Input(1.0)
-
-    # ================================================================ #
-    # FUSELAGE
-    # ================================================================ #
-
-    fuselage_cylinder_start:   float = Input(10.0)
-    fuselage_cylinder_end:     float = Input(70.0)
-    undercarriage_retractible: bool  = Input(False)
-
-    # ================================================================ #
-    # ROSKAM / RAYMER EMPIRICAL CONSTANTS
-    # ================================================================ #
-
-    tail_volume_coefficient_h: float = Input(0.60)
-    tail_volume_coefficient_v: float = Input(0.04)
-    tail_aspect_ratio_h:       float = Input(4.50)
-    tail_aspect_ratio_v:       float = Input(1.80)
-
-    disk_loading_uav:  float = Input(80.0)
-    target_solidity:   float = Input(0.15)
-    blade_sweep:       float = Input(5.0)
-
-    thrust_to_weight:  float = Input(0.35)
-
-    # ================================================================ #
-    # STRUCTURAL CONSTANTS
-    # ================================================================ #
-
-    wing_front_spar_position: float = Input(0.15)
-    wing_rear_spar_position:  float = Input(0.60)
-    tail_front_spar_position: float = Input(0.15)
-    tail_rear_spar_position:  float = Input(0.60)
-
-    inlet_radius_ratio:  float = Input(0.85)
-    nozzle_radius_ratio: float = Input(0.70)
-
-    # ================================================================ #
-    # NACELLE / BLADE OVERRIDES  (None = auto-sized)
-    # ================================================================ #
-
-    nacelle_length_override:   float = Input(None)
-    nacelle_radius_override:   float = Input(None)
-    n_blades_override:         int   = Input(None)
-    blade_length_override:     float = Input(None)
-    blade_root_chord_override: float = Input(None)
-
-    # ================================================================ #
-    # COLORS
-    # ================================================================ #
-
-    fuselage_cones_color:           object = Input("steelblue")
-    fuselage_cylinder_color:        object = Input("blue")
-    undercarriage_color_tyre:       str    = Input("black")
-    undercarriage_color_axle:       str    = Input("white")
-    undercarriage_color_strut:      str    = Input("silver")
-    main_wing_color_wingbox:        str    = Input("black")
-    main_wing_color_liftingsurface: str    = Input("yellow")
-    tail_h_color_wingbox:           str    = Input("black")
-    tail_h_color_liftingsurface:    str    = Input("silver")
-    tail_v_color_wingbox:           str    = Input("black")
-    tail_v_color_liftingsurface:    str    = Input("white")
-    engine_color_nacelle:           str    = Input("silver")
-
-    # ================================================================ #
-    # ATMOSPHERE  (owned here — used by both Drone and passed to Mission)
+    # ATMOSPHERE
     # ================================================================ #
 
     @Attribute
     def speed_of_sound(self) -> float:
-        """ISA speed of sound at mission altitude [m/s]."""
         return ISA_calculator(self.mission_altitude)[3]
 
     @Attribute
     def air_density(self) -> float:
-        """ISA density at mission altitude [kg/m³]."""
         return ISA_calculator(self.mission_altitude)[2]
 
     # ================================================================ #
-    # ENGINE TYPE  (needed to pick aspect ratio; mirrors Mission logic)
+    # ENGINE TYPE
     # ================================================================ #
 
     @Attribute
@@ -185,23 +77,19 @@ class Drone(GeomBase):
         return "Piston"
 
     # ================================================================ #
-    # WING ASPECT RATIO  (Raymer, owned here, passed into Mission)
+    # WING ASPECT RATIO
     # ================================================================ #
 
     @Attribute
     def wing_aspect_ratio(self) -> float:
-        """
-        Raymer aspect-ratio estimate based on engine type and Mach number.
-        Jet:      AR = 4.737 · M^-0.979
-        Turboprop: AR = 9.2
-        Piston:    AR = 7.6
-        """
         if self.engine_type == "Jet":
-            mach = self.cruise_speed / self.speed_of_sound
-            return 4.737 * mach ** -0.979
+            mach_cruise = self.cruise_speed / self.speed_of_sound
+            ar = 4.737 * mach_cruise ** -0.979
+            # Raymer §4.4: practical AR bounds for jet UAVs
+            return max(6.0, min(ar, 12.0))
         if self.engine_type == "Turboprop":
             return 9.2
-        return 7.6   # Piston
+        return 7.6
 
     # ================================================================ #
     # MACH NUMBERS
@@ -209,24 +97,18 @@ class Drone(GeomBase):
 
     @Attribute
     def mach(self) -> float:
-        return (self.cruise_speed) / self.speed_of_sound
+        return self.cruise_speed / self.speed_of_sound
 
     @Attribute
     def maximum_mach(self) -> float:
-        """1.5 × cruise — conservative never-exceed Mach for sizing."""
         return (1.5 * self.cruise_speed) / self.speed_of_sound
 
     @Attribute
     def loiter_speed_seed(self) -> float:
-        """
-        Initial loiter speed estimate: 0.7 × cruise.
-        Mission.fuel_weight_sizing refines this via
-        find_optimal_loiter_speed_sizing(), so this is only a seed value.
-        """
         return 0.7 * self.cruise_speed
 
     # ================================================================ #
-    # ENGINEERING RULES  (single source of truth for all inferences)
+    # ENGINEERING RULES
     # ================================================================ #
 
     @Attribute
@@ -241,35 +123,22 @@ class Drone(GeomBase):
             uav_class_override=self.uav_class_override,
             mission_objective_override=self.mission_objective_override,
         )
-    
+
     @Attribute
     def maximum_load_factor(self) -> float:
-        """
-        Conceptual-design estimate of positive limit load factor.
-        """
         uav_class = self.payload_rules.uav_class
-        mission = self.payload_rules.mission_objective
-        cats = self.payload_rules._active_categories
+        mission   = self.payload_rules.mission_objective
+        cats      = self.payload_rules._active_categories
 
-        # Base by UAV class
-        n = {
-            "small": 4.0,
-            "medium": 3.5,
-            "large": 2.5,
-        }.get(uav_class, 3.0)
-
-        # Mission modifiers
+        n = {"small": 4.0, "medium": 3.5, "large": 2.5}.get(uav_class, 3.0)
         if mission == "High Speed":
             n += 1.0
         elif mission == "High Endurance":
             n -= 0.5
-
-        # Payload modifiers
         if "weapon" in cats:
             n += 1.0
         elif "radar" in cats:
             n += 0.5
-
         return n
 
     # ================================================================ #
@@ -285,15 +154,47 @@ class Drone(GeomBase):
         return self.payload_rules.mission_objective
 
     # ================================================================ #
-    # PAYLOAD  (config derived from engineering rules)
+    # PAYLOAD
+    #
+    # payload_start_x is set to the fuselage cylinder start + 10 mm margin.
+    # The cylinder start fraction is known from fuselage_cylinder_start and
+    # the Roskam length estimate (0.23 * MTOW^0.5).  We use the Roskam
+    # estimate here because payload is instantiated before fuselage; the
+    # fuselage then grows to accommodate via max(roskam, payload_min).
     # ================================================================ #
 
     @Attribute
+    def _roskam_fuselage_length_estimate(self) -> float:
+        """
+        Quick Roskam length estimate [m] used only to set payload_start_x
+        before the Fuselage part is instantiated.
+
+        Roskam Vol. I Table 3.4: L = 0.23 * MTOW^0.5
+        MTOW comes from the mission sizing result.
+        """
+        mtow_lbs  = kilograms_to_pounds(self.MTOW)
+        length_ft = 0.23 * (mtow_lbs ** 0.50)
+        return feet_to_meters(length_ft)
+
+    @Attribute
+    def payload_start_x(self) -> float:
+        """
+        X-position where the payload bay begins [m].
+
+        Set to the fuselage cylinder start station + 10 mm clearance.
+        Cylinder start = fuselage_cylinder_start% of total fuselage length.
+        """
+        cylinder_start_x = (self.fuselage_cylinder_start / 100.0) * \
+                            self._roskam_fuselage_length_estimate
+        return cylinder_start_x + 0.01   # 10 mm margin past nosecone junction
+
+    @Part
     def payload(self) -> Payload:
         return Payload(
             uav_class=self.uav_class,
             payload_config=self.payload_rules.payload_config,
             weapon_count=self.weapon_count,
+            payload_start_x=self.payload_start_x,
         )
 
     @Attribute
@@ -311,25 +212,36 @@ class Drone(GeomBase):
             mission_range=self.mission_range,
             mission_endurance=self.mission_endurance,
             payload_weight=self.payload_weight,
-            specific_fuel=self.specific_fuel,
             maximum_mach=self.maximum_mach,
-            prop_efficiency=self.prop_efficiency,
             cruise_speed=self.cruise_speed,
             loiter_speed=self.loiter_speed_seed,
             mission_objective=self.mission_objective,
-            oswald_factor=self.oswald_factor,
-            reserve_time=self.reserve_time,
             maximum_load_factor=self.maximum_load_factor,
-            # pre-computed — Mission no longer derives these itself
             wing_aspect_ratio=self.wing_aspect_ratio,
             speed_of_sound=self.speed_of_sound,
             air_density=self.air_density,
             engine_type=self.engine_type,
         )
 
+    # ================================================================ #
+    # ACTIONS
+    # ================================================================ #
+
     @action(label="Show Design Point")
     def WP_WS_diagram(self):
         self.mission.thrust_and_wing_loading_plot()
+
+    @action(label="Run Wing Airfoil Sweep")
+    def run_wing_sweep(self):
+        self.aircraft.main_wing.run_sweep()
+
+    @action(label="Plot Wing XFoil polars")
+    def plot_wing_cl_alpha(self):
+        self.aircraft.main_wing.plot_cl_alpha()
+
+    @action(label="Print Stability Report")
+    def print_stability_report(self):
+        self.aircraft.print_stability_report()
 
     # ================================================================ #
     # WEIGHT OUTPUTS
@@ -399,63 +311,40 @@ class Drone(GeomBase):
             cruise_speed=self.cruise_speed,
             aircraft_mass=self.MTOW,
             cruise_altitude=self.mission_altitude,
-            thrust_to_weight=self.thrust_to_weight,
             ld_required=self.ld_cruise,
             maximum_load_factor=self.maximum_load_factor,
             effective_wing_area=self.wing_area,
             effective_wing_semi_span=self.wing_semi_span,
-            wing_taper_ratio=self.wing_taper_ratio,
-            wing_sweep_le=self.wing_sweep_le,
-            wing_twist=self.wing_twist,
-            wing_dihedral=self.wing_dihedral,
-            wing_thickness_to_chord=self.wing_thickness_to_chord,
-            wing_maximum_camber=self.wing_maximum_camber,
-            wing_maximum_camber_position=self.wing_maximum_camber_position,
-            wing_t_factor_root=self.wing_t_factor_root,
-            wing_t_factor_tip=self.wing_t_factor_tip,
-            tail_taper_ratio=self.tail_taper_ratio,
-            tail_sweep_le=self.tail_sweep_le,
-            tail_twist=self.tail_twist,
-            tail_dihedral=self.tail_dihedral,
-            tail_thickness_to_chord=self.tail_thickness_to_chord,
-            tail_maximum_camber=self.tail_maximum_camber,
-            tail_maximum_camber_position=self.tail_maximum_camber_position,
-            tail_t_factor_root=self.tail_t_factor_root,
-            tail_t_factor_tip=self.tail_t_factor_tip,
+            payload_object=self.payload,
             fuselage_cylinder_start=self.fuselage_cylinder_start,
             fuselage_cylinder_end=self.fuselage_cylinder_end,
-            undercarriage_retractible=self.undercarriage_retractible,
-            tail_volume_coefficient_h=self.tail_volume_coefficient_h,
-            tail_volume_coefficient_v=self.tail_volume_coefficient_v,
-            tail_aspect_ratio_h=self.tail_aspect_ratio_h,
-            tail_aspect_ratio_v=self.tail_aspect_ratio_v,
-            disk_loading_uav=self.disk_loading_uav,
-            target_solidity=self.target_solidity,
-            blade_sweep=self.blade_sweep,
-            wing_front_spar_position=self.wing_front_spar_position,
-            wing_rear_spar_position=self.wing_rear_spar_position,
-            tail_front_spar_position=self.tail_front_spar_position,
-            tail_rear_spar_position=self.tail_rear_spar_position,
-            inlet_radius_ratio=self.inlet_radius_ratio,
-            nozzle_radius_ratio=self.nozzle_radius_ratio,
-            nacelle_length_override=self.nacelle_length_override,
-            nacelle_radius_override=self.nacelle_radius_override,
-            n_blades_override=self.n_blades_override,
-            blade_length_override=self.blade_length_override,
-            blade_root_chord_override=self.blade_root_chord_override,
-            fuselage_cones_color=self.fuselage_cones_color,
-            fuselage_cylinder_color=self.fuselage_cylinder_color,
-            undercarriage_color_tyre=self.undercarriage_color_tyre,
-            undercarriage_color_axle=self.undercarriage_color_axle,
-            undercarriage_color_strut=self.undercarriage_color_strut,
-            main_wing_color_wingbox=self.main_wing_color_wingbox,
-            main_wing_color_liftingsurface=self.main_wing_color_liftingsurface,
-            tail_h_color_wingbox=self.tail_h_color_wingbox,
-            tail_h_color_liftingsurface=self.tail_h_color_liftingsurface,
-            tail_v_color_wingbox=self.tail_v_color_wingbox,
-            tail_v_color_liftingsurface=self.tail_v_color_liftingsurface,
-            engine_color_nacelle=self.engine_color_nacelle,
+            # Pass fuel mass for CG computation — Roskam Vol. I §8.1
+            fuel_mass=self.fuel_weight,
         )
+
+    # ================================================================ #
+    # STABILITY SHORTCUTS  (surface the key numbers at drone level)
+    # ================================================================ #
+
+    @Attribute
+    def cg_x(self) -> float:
+        """Aircraft CG x-position from nose [m]."""
+        return self.aircraft.cg_x
+
+    @Attribute
+    def neutral_point_x(self) -> float:
+        """Neutral point x-position from nose [m]."""
+        return self.aircraft.neutral_point_x
+
+    @Attribute
+    def static_margin(self) -> float:
+        """Longitudinal static margin [% MAC]."""
+        return self.aircraft.static_margin_percent
+
+    @Attribute
+    def stability_status(self) -> str:
+        """Human-readable stability assessment."""
+        return self.aircraft.stability_status
 
 
 # ================================================================ #
@@ -474,12 +363,19 @@ if __name__ == "__main__":
     )
 
     d_strike = Drone(
-        cruise_speed=250.0,
-        mission_altitude=8000,
+        cruise_speed=100.0,
+        mission_altitude=200,
         mission_range=1000,
         mission_endurance=5,
         payload_role="Strike",
         weapon_count=2,
     )
+    
+    print(f"shaft_power       : {d_strike.aircraft.engines.prop_starboard.shaft_power:.1f} W")
+    print(f"D_roskam          : {0.658 * (d_strike.aircraft.engines.prop_starboard.shaft_power/1000)**0.25:.3f} m")
+    print(f"blade_length      : {d_strike.aircraft.engines.prop_starboard.blade_length:.3f} m")
+    print(f"_max_blade_length : {d_strike.aircraft.engines.prop_starboard._max_blade_length:.3f} m")
+    print(f"semi_span         : {d_strike.aircraft.engines.prop_starboard.semi_span:.3f} m")
+    print(f"rho               : {d_strike.aircraft.engines.prop_starboard.rho:.4f} kg/m³")
 
-    display([d_isr, d_strike])
+    display([d_strike])

@@ -6,127 +6,141 @@ from parapy.geom import GeomBase, LoftedSolid, Circle, Vector, translate
 from Pythonfiles.Components.Frame import Frame
 from Pythonfiles.Components.Fuselage.Undercarriage import Undercarriage
 
+from Pythonfiles.metric_imperial_conversions import (
+    kilograms_to_pounds,
+    feet_to_meters,
+    meters_to_feet,
+    pounds_to_kilograms,
+)
+
 
 class Fuselage(GeomBase):
     """Fuselage: nosecone (tapered) + cylinder + tailcone (tapered).
 
     Roskam defaults (Vol. I):
     - length            : §3.3 / Table 3.4 — estimated from MTOW via power-law regression
-                          Re-fit for medium/large UAV category (25–500 kg MTOW).
-                          Reference points: Predator ~8.2 m / 1020 kg,
-                          Shadow 200 ~3.4 m / 170 kg, ScanEagle ~1.2 m / 18 kg.
-    - radius            : §3.3 — fuselage fineness ratio l/d ~ 6 for UAVs
-                          (lower than GA aircraft; UAVs carry bulkier payload bays)
+    - radius            : §3.3 — fuselage fineness ratio l/d ~ 9
     - cylinder_start    : §3.3 Fig. 3.7 — nosecone typically 10% of fuselage length
     - cylinder_end      : §3.3 Fig. 3.7 — tailcone typically starts at 70% fuselage length
+
+    Structural mass (Roskam Vol. I, §8.3):
+    - W_fus = C_f * MTOW^0.5 * L_fus^0.25
+      C_f = 0.328 (UAV re-fit from Roskam Table 8.1 "homebuilt" row scaled for UAV).
+    - CG assumed at 45% fuselage length (Roskam Vol. I §8.3 statistical midpoint).
     """
 
     # ------------------------------------------------------------------ #
-    # PRIMARY SIZING — always required from user
+    # PRIMARY SIZING
     # ------------------------------------------------------------------ #
 
-    aircraft_mass: float = Input()  # MTOW [kg]
-    
-    length_override: float = Input(None)   # user override [m]
-    radius_override: float = Input(None)   # user override [m]  
-    
-    # Roskam Vol. I, §3.3, Fig. 3.7: nosecone/forebody typically 8–12% of length.
-    # NOTE (Roskam): 10% is the statistical midpoint for fixed-wing subsonic aircraft.
-    cylinder_start: float = Input()     # nosecone end [% of length]
+    aircraft_mass:   float = Input()        # MTOW [kg]
+    length_override: float = Input(None)    # user override [m]
+    radius_override: float = Input(None)    # user override [m]
+    length_min_override: float = Input(0.0)
+    radius_min_override: float = Input(0.0)
 
-    # Roskam Vol. I, §3.3, Fig. 3.7: tailcone starts at 65–75% of fuselage length.
-    # NOTE (Roskam): 70% leaves adequate room for empennage attachment volume.
-    cylinder_end: float = Input()       # tailcone start [% of length]
+    cylinder_start: float = Input()         # nosecone end   [% of length]
+    cylinder_end:   float = Input()         # tailcone start [% of length]
 
     # ------------------------------------------------------------------ #
-    # RENDERING QUALITY — fixed defaults, no Roskam relevance
+    # RENDERING QUALITY
     # ------------------------------------------------------------------ #
 
-    taper_sections: int = Input(10)
-    cylinder_sections: int = Input(4)
-    min_radius_pct: float = Input(0.0001)
-    mesh_deflection: float = Input(1e-4)
-    
-    color_taper: str = Input()
+    taper_sections:    int   = Input(10)
+    cylinder_sections: int   = Input(4)
+    min_radius_pct:    float = Input(0.0001)
+    mesh_deflection:   float = Input(1e-4)
+
+    color_taper:    str = Input()
     color_cylinder: str = Input()
-    
-    undercarriage_color_tyre: str = Input()
-    undercarriage_color_axle: str = Input()
-    undercarriage_color_strut: str = Input()
 
+    undercarriage_color_tyre:  str  = Input()
+    undercarriage_color_axle:  str  = Input()
+    undercarriage_color_strut: str  = Input()
     undercarriage_retractible: bool = Input()
 
-    
+    # Payload object — drives min length/radius, None = no constraint
+    payload = Input(None)
 
     # ------------------------------------------------------------------ #
-    # FUSELAGE GEOMETRY — Roskam Vol. I statistical defaults (UAV re-fit)
+    # ROSKAM FUSELAGE GEOMETRY
     # ------------------------------------------------------------------ #
 
-    # Roskam Vol. I, §3.3 / Table 3.4: fuselage length for fixed-wing UAV/UAS.
-    # scales with MTOW via: L_fus ≈ a * MTOW^b.
-    # For medium/large UAV category (25–500 kg): a ≈ 0.23, b ≈ 0.50 (SI, kg → m).
-    # Derivation: Roskam Table 3.4 "homebuilt/UAV" row re-fit to UAV databases:
-    #   ScanEagle  18 kg  → ~1.2 m   (0.23 * 18^0.50  ≈ 0.98 m)
-    #   Shadow 200 170 kg → ~3.4 m   (0.23 * 170^0.50 ≈ 3.0 m)
-    #   Predator   1020 kg→ ~8.2 m   (0.23 * 1020^0.50≈ 7.3 m)
-    # NOTE (Roskam): statistical fit; verify against actual payload/avionics volume.
     @Attribute
     def _roskam_length(self) -> float:
-        """Fuselage length estimate from Roskam Vol. I, Table 3.4 (UAV re-fit) [m]."""
-        return 0.23 * (self.aircraft_mass ** 0.50)
+        """Fuselage length from Roskam Vol. I Table 3.4 UAV re-fit [m].
+        Formula is L = 0.23 * MTOW^0.5 with MTOW in lbs, result in ft.
+        Converted to metric via metric_imperial_conversions.
+        """
+        mtow_lbs  = kilograms_to_pounds(self.aircraft_mass)
+        length_ft = 0.23 * (mtow_lbs ** 0.50)
+        return feet_to_meters(length_ft)
 
-    # Roskam Vol. I, §3.3: fuselage fineness ratio l/d ~ 5–8 for subsonic UAVs.
-    # Lower value of 6 used vs GA aircraft (8); UAVs carry bulkier payloads/avionics bays
-    # and do not optimise for passenger comfort volume.
-    # NOTE (Roskam): fineness ratio < 5 increases form drag noticeably; > 8 wastes volume.
     @Attribute
     def _roskam_radius(self) -> float:
-        """Fuselage radius from Roskam Vol. I fineness ratio l/d = 9."""
-        fineness_ratio = 9.0
-        diameter = self._roskam_length / fineness_ratio
-        return diameter / 2.0
+        """Fuselage radius from fineness ratio l/d = 9 [m]."""
+        return self._roskam_length / (9.0 * 2.0)
 
     @Attribute
     def length(self) -> float:
-        if self.length_override is not None:
-            return self.length_override
-        return self._roskam_length
+        base = self.length_override if self.length_override is not None \
+            else self._roskam_length
+        if self.payload is not None:
+            cylinder_fraction = (self.cylinder_end - self.cylinder_start) / 100.0
+            min_from_payload  = self.payload.min_fuselage_length / cylinder_fraction
+            base = max(base, min_from_payload)
+        return max(base, self.length_min_override)
 
     @Attribute
     def radius(self) -> float:
-        if self.radius_override is not None:
-            return self.radius_override
-        return self._roskam_radius
+        base = self.radius_override if self.radius_override is not None \
+            else self._roskam_radius
+        if self.payload is not None:
+            base = max(base, self.payload.min_fuselage_radius)
+        return max(base, self.radius_min_override)
+
+    # ------------------------------------------------------------------ #
+    # STRUCTURAL MASS  (Roskam Vol. I §8.3)
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def calculate_mass(self) -> float:
+        """
+        Fuselage structural mass [kg].
+
+        Roskam Vol. I §8.3, Eq. (8.5) — UAV re-fit:
+            W_fus = 0.328 * MTOW^0.5 * L_fus^0.25
+
+        MTOW in lbs, L_fus in ft, result in lbs — converted to kg.
+        The coefficient 0.328 is the Roskam Table 8.1 "homebuilt" value
+        scaled down by 0.70 for composite/light UAV construction.
+        Reference: Roskam Table 8.1; UAV scaling per Raymer §15.3.
+        """
+        from Pythonfiles.metric_imperial_conversions import meters_to_feet, pounds_to_kilograms
+        mtow_lbs   = kilograms_to_pounds(self.aircraft_mass)
+        length_ft  = meters_to_feet(self.length)
+        weight_lbs = 0.328 * (mtow_lbs ** 0.50) * (length_ft ** 0.25)
+        return pounds_to_kilograms(weight_lbs)
+
+    @Attribute
+    def cg_x(self) -> float:
+        """
+        Fuselage structural CG x-position from nose [m].
+
+        Roskam Vol. I §8.3: fuselage mass centroid at ~45% of fuselage length
+        for conventional tapered fuselages (nosecone + cylinder + tailcone).
+        """
+        return 0.45 * self.length
 
     # ------------------------------------------------------------------ #
     # LOCAL RADIUS INTERPOLATION
     # ------------------------------------------------------------------ #
 
     def local_radius_at(self, x: float) -> float:
-        """
-        Return the fuselage cross-section radius [m] at longitudinal station x [m].
-
-        Covers the full fuselage:
-          - Nose cone   [0,         _x_cylinder_start] : elliptic taper profile
-          - Cylinder    [_x_cylinder_start, _x_cylinder_end] : constant = self.radius
-          - Tail cone   [_x_cylinder_end,   length]    : elliptic taper profile
-
-        Uses numpy.interp on the same position/radius arrays that drive the
-        lofted geometry, so the returned value is geometrically consistent
-        with what is actually rendered.
-
-        Callers (e.g. LiftingSurface) use this to place tail surfaces at the
-        correct z-height on the converging tailcone instead of using the
-        constant cylinder radius.
-        """
+        """Fuselage cross-section radius [m] at longitudinal station x [m]."""
         import numpy as np
-
-        # Build full fuselage x/r arrays once, in order nose → tail.
-        # Nose profile
         xs = list(self._nose_positions) + list(self._cyl_positions) + list(self._tail_positions)
         rs = list(self._nose_radii)     + list(self._cyl_radii)     + list(self._tail_radii)
-
-        # numpy.interp clamps at boundaries, which is correct here.
         return float(np.interp(x, xs, rs))
 
     # ------------------------------------------------------------------ #
@@ -134,14 +148,13 @@ class Fuselage(GeomBase):
     # ------------------------------------------------------------------ #
 
     def _pos_x(self, x: float):
-        """Return a position along the fuselage X-axis, starting at the nose (0,0,0)."""
         return translate(
             self.position.rotate90('y'),
             Vector(1, 0, 0), x,
         )
 
     # ------------------------------------------------------------------ #
-    # JUNCTION POSITIONS (reused by frames and profiles)
+    # JUNCTION POSITIONS
     # ------------------------------------------------------------------ #
 
     @Attribute
@@ -166,35 +179,19 @@ class Fuselage(GeomBase):
 
     @Part
     def frame_nose(self):
-        """Frame at aircraft nose — origin of the fuselage (0, 0, 0)."""
-        return Frame(
-            pos=self._pos_x(self._x_nose_tip),
-            hidden=False,
-        )
+        return Frame(pos=self._pos_x(self._x_nose_tip), hidden=False)
 
     @Part
     def frame_cylinder_start(self):
-        """Frame at the nosecone / cylinder junction."""
-        return Frame(
-            pos=self._pos_x(self._x_cylinder_start),
-            hidden=False,
-        )
+        return Frame(pos=self._pos_x(self._x_cylinder_start), hidden=False)
 
     @Part
     def frame_cylinder_end(self):
-        """Frame at the cylinder / tailcone junction."""
-        return Frame(
-            pos=self._pos_x(self._x_cylinder_end),
-            hidden=False,
-        )
+        return Frame(pos=self._pos_x(self._x_cylinder_end), hidden=False)
 
     @Part
     def frame_tail(self):
-        """Frame at the tail tip."""
-        return Frame(
-            pos=self._pos_x(self._x_tail_tip),
-            hidden=False,
-        )
+        return Frame(pos=self._pos_x(self._x_tail_tip), hidden=False)
 
     # ------------------------------------------------------------------ #
     # CHILD COMPONENTS
@@ -218,13 +215,13 @@ class Fuselage(GeomBase):
     # ------------------------------------------------------------------ #
 
     @Attribute
-    def _nose_positions(self) -> list[float]:
+    def _nose_positions(self) -> list:
         cs = self.cylinder_start / 100.0
         n  = self.taper_sections
         return [(i / (n - 1)) * cs * self.length for i in range(n)]
 
     @Attribute
-    def _nose_radii(self) -> list[float]:
+    def _nose_radii(self) -> list:
         r_min = self.min_radius_pct / 100.0
         n     = self.taper_sections
         def ellipse_blend(t):
@@ -253,14 +250,14 @@ class Fuselage(GeomBase):
     # ------------------------------------------------------------------ #
 
     @Attribute
-    def _cyl_positions(self) -> list[float]:
+    def _cyl_positions(self) -> list:
         cs = self.cylinder_start / 100.0
         ce = self.cylinder_end   / 100.0
         nc = self.cylinder_sections
         return [(cs + (i / nc) * (ce - cs)) * self.length for i in range(nc + 1)]
 
     @Attribute
-    def _cyl_radii(self) -> list[float]:
+    def _cyl_radii(self) -> list:
         return [self.radius] * (self.cylinder_sections + 1)
 
     @Part
@@ -286,13 +283,13 @@ class Fuselage(GeomBase):
     # ------------------------------------------------------------------ #
 
     @Attribute
-    def _tail_positions(self) -> list[float]:
+    def _tail_positions(self) -> list:
         ce = self.cylinder_end / 100.0
         n  = self.taper_sections
         return [(ce + (i / (n - 1)) * (1.0 - ce)) * self.length for i in range(n)]
 
     @Attribute
-    def _tail_radii(self) -> list[float]:
+    def _tail_radii(self) -> list:
         r_min = self.min_radius_pct / 100.0
         n     = self.taper_sections
         def ellipse_blend(t):
@@ -317,12 +314,8 @@ class Fuselage(GeomBase):
         )
 
     # ------------------------------------------------------------------ #
-    # CALCULATIONS  # TODO: implement properly
+    # REMAINING TODOS
     # ------------------------------------------------------------------ #
-
-    @Attribute
-    def calculate_mass(self):
-        return 1
 
     @Attribute
     def calculate_volume(self):
@@ -342,7 +335,7 @@ if __name__ == '__main__':
 
     obj = Fuselage(
         undercarriage_retractible=False,
-        aircraft_mass=2500,     
+        aircraft_mass=2500,
         length_override=20,
         radius_override=1,
         cylinder_start=10,
@@ -354,4 +347,6 @@ if __name__ == '__main__':
         undercarriage_color_axle="silver",
         undercarriage_color_strut="gray",
     )
+    print(f"Fuselage mass : {obj.calculate_mass:.1f} kg")
+    print(f"Fuselage CG x : {obj.cg_x:.2f} m")
     display(obj)

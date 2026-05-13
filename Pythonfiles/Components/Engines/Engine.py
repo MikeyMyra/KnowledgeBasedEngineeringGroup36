@@ -189,6 +189,7 @@ class Engine(GeomBase):
     def _jet_kwargs(self, position) -> dict:
         return dict(
             position=position,
+            cruise_speed=self.cruise_speed,
             mtow=self.mtow,
             n_engines=self.n_engines,
             thrust_to_weight=self.thrust_to_weight,
@@ -215,6 +216,7 @@ class Engine(GeomBase):
     def _prop_kwargs(self, position) -> dict:
         return dict(
             position=position,
+            cruise_speed=self.cruise_speed,
             mtow=self.mtow,
             n_engines=self.n_engines,
             thrust_to_weight=self.thrust_to_weight,

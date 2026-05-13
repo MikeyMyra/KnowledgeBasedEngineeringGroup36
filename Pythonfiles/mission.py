@@ -15,16 +15,15 @@ class Mission(Base):
     mission_range:       float = Input()
     mission_endurance:   float = Input()
     payload_weight:      float = Input()
-    specific_fuel:       float = Input()
+    specific_fuel:       float = Input(0.5)    # [1/hr]  SFC
     maximum_mach:        float = Input()
-    prop_efficiency:     float = Input()
+    prop_efficiency:     float = Input(0.8)
     cruise_speed:        float = Input()
     loiter_speed:        float = Input()
     mission_objective:   str   = Input()
     oswald_factor:       float = Input(0.8)
     reserve_time:        float = Input(0.5)
     maximum_load_factor: float = Input()
-    show_ws_wp_plot:     bool  = Input(False)
 
     # ================================================================ #
     # PRE-COMPUTED INPUTS FROM DRONE
@@ -57,11 +56,12 @@ class Mission(Base):
     # THRUST / WING LOADING DIAGRAM
     # ================================================================ #
 
-    @Attribute
-    def thrust_and_wing_loading(self) -> tuple[float, float]:
+    def _make_wp_ws_diagram(self, plot: bool = False, save_path: str = None):
+        """Construct a WP_WS_Diagram for the current mission parameters."""
         CL_clean, CL_TO, CL_land, CD0 = self._wing_parameters()
-        tw_ws = WP_WS_Diagram(
-            plot=self.show_ws_wp_plot,
+        return WP_WS_Diagram(
+            plot=plot,
+            save_path=save_path,
             aspect_ratio=self.wing_aspect_ratio,
             CL_max_TO=CL_TO,
             CL_max_land=CL_land,
@@ -75,13 +75,22 @@ class Mission(Base):
             x_max=2000,
             y_max=1,
         )
+
+    @Attribute
+    def thrust_and_wing_loading(self) -> tuple[float, float]:
+        tw_ws = self._make_wp_ws_diagram(plot=False)
         W_S_design, y_design = tw_ws.find_design_point(rho=self.air_density)
         return W_S_design, y_design
 
     def thrust_and_wing_loading_plot(self):
-        self.show_ws_wp_plot = True
-        _ = self.thrust_and_wing_loading
-        self.show_ws_wp_plot = False
+        """Show the W/P–W/S diagram exactly once. Called by the Drone action."""
+        self._make_wp_ws_diagram(plot=True).find_design_point(rho=self.air_density)
+
+    def save_wp_ws_figure(self, save_path: str):
+        """Save the W/P–W/S diagram to a PNG file without displaying it."""
+        self._make_wp_ws_diagram(plot=False, save_path=save_path).find_design_point(
+            rho=self.air_density
+        )
 
     # ================================================================ #
     # FUEL / WEIGHT SIZING

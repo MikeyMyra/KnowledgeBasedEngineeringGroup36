@@ -1,0 +1,254 @@
+{
+    "_comment": "UAV payload component database. Loaded by Payload.py at import time.",
+
+    "uav_classes": ["small", "medium", "large"],
+
+    "class_scale": {
+        "small":  1.0,
+        "medium": 3.0,
+        "large":  6.0
+    },
+
+    "density": {
+        "comms":            510,
+        "custom":          2000,
+        "flight_computer": 1280,
+        "radar":           1270,
+        "eo_ir":           1210,
+        "lidar":           1380,
+        "weapon":          null,
+        "battery":         2000,
+        "datalink":         510
+    },
+
+    "weapon_dims": {
+        "small": {
+            "geometry_type":    "cylinder",
+            "length":           1.07,
+            "width":            0.140,
+            "height_box":       0.140,
+            "diameter":         0.140,
+            "height_cyl":       1.07,
+            "density_override": 911,
+            "note": "Griffin B missile: ~15 kg, Ø140×1070 mm  [fas.org/man/dod-101/sys/smart/agm-176.htm]"
+        },
+        "medium": {
+            "geometry_type":    "cylinder",
+            "length":           1.63,
+            "width":            0.178,
+            "height_box":       0.178,
+            "diameter":         0.178,
+            "height_cyl":       1.63,
+            "density_override": 1208,
+            "note": "AGM-114K Hellfire: ~49 kg, Ø178×1630 mm  [fas.org/man/dod-101/sys/smart/agm-114.htm]"
+        },
+        "large": {
+            "geometry_type":    "cylinder",
+            "length":           3.25,
+            "width":            0.273,
+            "height_box":       0.273,
+            "diameter":         0.273,
+            "height_cyl":       3.25,
+            "density_override": 1194,
+            "note": "GBU-12 Paveway II: ~227 kg, Ø273×3250 mm  [fas.org/man/dod-101/sys/munitions/gbu-12.htm]"
+        }
+    },
+
+    "mandatory_payloads": ["flight_computer", "battery"],
+
+    "payload_library": {
+
+        "flight_computer": {
+
+            "flight_computer_pixhawk_6c": {
+                "geometry_type": "box",
+                "length":        0.085,
+                "width":         0.044,
+                "height_box":    0.012,
+                "density":       1280,
+                "label":         "Pixhawk 6C Flight Computer",
+                "source":        "Holybro Pixhawk 6C datasheet – docs.px4.io/main/en/flight_controller/pixhawk6c.html",
+                "default_for":   ["small"]
+            },
+
+            "flight_computer_cube_orange": {
+                "geometry_type": "box",
+                "length":        0.094,
+                "width":         0.044,
+                "height_box":    0.022,
+                "density":       1300,
+                "label":         "Cube Orange+ Flight Computer",
+                "source":        "CubePilot Cube Orange+ – docs.cubepilot.org/user-guides/autopilot/the-cube-module-overview",
+                "default_for":   ["medium", "large"]
+            }
+        },
+
+        "battery": {
+
+            "battery_small_lipo": {
+                "geometry_type": "box",
+                "length":        0.177,
+                "width":         0.066,
+                "height_box":    0.058,
+                "density":       2000,
+                "label":         "6S 10 Ah LiPo Battery",
+                "source":        "Tattu 6S 10 000 mAh 25C LiPo – amazon.com/dp/B0928QZ9FC",
+                "default_for":   ["small"]
+            },
+
+            "battery_large_lipo": {
+                "geometry_type": "box",
+                "length":        0.300,
+                "width":         0.120,
+                "height_box":    0.100,
+                "density":       2000,
+                "label":         "Large UAV LiPo Battery",
+                "source":        "Generic large-format UAV LiPo (no single datasheet; rho assumed = 2000 kg/m3)",
+                "default_for":   ["medium", "large"]
+            }
+        },
+
+        "eo_ir": {
+
+            "eo_ir_flir_tau2": {
+                "geometry_type": "cylinder",
+                "diameter":      0.045,
+                "height_cyl":    0.030,
+                "density":       1210,
+                "label":         "FLIR Tau 2 EO/IR Camera",
+                "source":        "FLIR Tau 2 brochure – unmannedsystemstechnology.com/wp-content/uploads/2012/04/FLIR-Tau2-Brochure.pdf",
+                "default_for":   ["small"]
+            },
+
+            "eo_ir_gimbal_hd": {
+                "geometry_type": "cylinder",
+                "diameter":      0.120,
+                "height_cyl":    0.160,
+                "density":       1500,
+                "label":         "HD EO/IR Gimbal Camera",
+                "source":        "Representative HD gimbal (DJI Zenmuse X7-class); rho assumed = 1500 kg/m3",
+                "default_for":   ["medium", "large"]
+            }
+        },
+
+        "radar": {
+
+            "radar_small_fmcw": {
+                "geometry_type": "cylinder",
+                "diameter":      0.090,
+                "height_cyl":    0.025,
+                "density":       1270,
+                "label":         "77 GHz FMCW Radar (small)",
+                "source":        "Baspinar et al. (2023) Drones 7(2):86 – doi:10.3390/drones7020086",
+                "default_for":   ["small"]
+            },
+
+            "radar_sar_medium": {
+                "geometry_type": "box",
+                "length":        0.350,
+                "width":         0.250,
+                "height_box":    0.120,
+                "density":       480,
+                "label":         "Medium SAR Radar",
+                "source":        "HUSSAR DRONE SAR/GMTI – spaceforest.pl/hussar-radar-series/hussar-drone",
+                "default_for":   ["medium"]
+            },
+
+            "radar_maritime_large": {
+                "geometry_type": "box",
+                "length":        0.800,
+                "width":         0.500,
+                "height_box":    0.350,
+                "density":       350,
+                "label":         "Maritime Surveillance Radar (large)",
+                "source":        "IAI ELM-2058 – breakingdefense.com, 31 Mar 2025",
+                "default_for":   ["large"]
+            }
+        },
+
+        "lidar": {
+
+            "lidar_vlp16": {
+                "geometry_type": "cylinder",
+                "diameter":      0.103,
+                "height_cyl":    0.072,
+                "density":       1380,
+                "label":         "Velodyne VLP-16 LiDAR (Puck)",
+                "source":        "Velodyne VLP-16 datasheet – mapix.com/lidar-sensors/velodyne-lidar/velodyne-vlp-16",
+                "default_for":   ["small", "medium", "large"]
+            }
+        },
+
+        "comms": {
+
+            "comms_sik_radio": {
+                "geometry_type": "box",
+                "length":        0.065,
+                "width":         0.040,
+                "height_box":    0.015,
+                "density":       510,
+                "label":         "SiK Telemetry Radio V3",
+                "source":        "Holybro SiK Telemetry Radio V3 – holybro.com/products/sik-telemetry-radio-v3",
+                "default_for":   ["small", "medium", "large"]
+            }
+        },
+
+        "datalink": {
+
+            "datalink_small_terminal": {
+                "geometry_type": "box",
+                "length":        0.120,
+                "width":         0.080,
+                "height_box":    0.040,
+                "density":       800,
+                "label":         "Small Data-link Terminal",
+                "source":        "Representative compact data-link (Microhard pDDL-class); rho assumed = 800 kg/m3",
+                "default_for":   ["small", "medium"]
+            },
+
+            "datalink_satcom_terminal": {
+                "geometry_type": "box",
+                "length":        0.450,
+                "width":         0.300,
+                "height_box":    0.180,
+                "density":       600,
+                "label":         "SATCOM Data-link Terminal",
+                "source":        "Representative SATCOM terminal (Iridium Certus 9770-class); rho assumed = 600 kg/m3",
+                "default_for":   ["large"]
+            }
+        },
+
+        "weapon": {
+
+            "weapon_griffin_b": {
+                "geometry_type": "cylinder",
+                "diameter":      0.140,
+                "height_cyl":    1.07,
+                "density":       911,
+                "label":         "Griffin B Missile",
+                "source":        "FAS AGM-176 Griffin – fas.org/man/dod-101/sys/smart/agm-176.htm",
+                "default_for":   ["small"]
+            },
+
+            "weapon_hellfire": {
+                "geometry_type": "cylinder",
+                "diameter":      0.178,
+                "height_cyl":    1.63,
+                "density":       1208,
+                "label":         "AGM-114 Hellfire Missile",
+                "source":        "FAS AGM-114 Hellfire – fas.org/man/dod-101/sys/smart/agm-114.htm",
+                "default_for":   ["medium"]
+            },
+
+            "weapon_gbu12": {
+                "geometry_type": "cylinder",
+                "diameter":      0.273,
+                "height_cyl":    3.25,
+                "density":       1194,
+                "label":         "GBU-12 Paveway II Guided Bomb",
+                "source":        "FAS GBU-12 Paveway II – fas.org/man/dod-101/sys/munitions/gbu-12.htm",
+                "default_for":   ["large"]
+            }
+        }
+    }
+}

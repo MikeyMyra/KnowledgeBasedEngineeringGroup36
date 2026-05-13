@@ -30,6 +30,12 @@ class LiftingSurface(GeomBase):
         the feasible NACA 4-series shape with the highest L/D margin above
         ld_required.  Results are stored in sweep_result_* and picked up
         automatically by the resolved Attributes below.
+
+    Structural mass (Roskam Vol. I §8.4 / §8.5):
+    - Wing : W_w  = 0.036 * S^0.758 * AR^0.6 * (t/c)^-0.3   (Roskam Table 8.1)
+    - HT   : W_ht = 0.016 * S_ht^0.873 * AR_ht^0.357         (Roskam Table 8.1)
+    - VT   : W_vt = 0.073 * S_vt^0.873 * AR_vt^0.357         (Roskam Table 8.1)
+    CG of each surface at 40% MAC from the LE of MAC (Roskam §8.4 statistical).
     """
 
     # ------------------------------------------------------------------ #
@@ -40,7 +46,7 @@ class LiftingSurface(GeomBase):
     velocity: float = Input(100)
     altitude: float = Input(10000)
     use_cl:   bool  = Input(True)
-    alpha:    float = Input(0.0)   # [deg] used only when use_cl=False)
+    alpha:    float = Input(0.0)
     maximum_load_factor: float = Input(1)
 
     # ------------------------------------------------------------------ #
@@ -48,7 +54,7 @@ class LiftingSurface(GeomBase):
     # ------------------------------------------------------------------ #
 
     effective_area:      float  = Input(None)
-    effective_semi_span: float  = Input(None)   # renamed from effective_span
+    effective_semi_span: float  = Input(None)
 
     fuselage_length: float  = Input()
     fuselage_radius: float  = Input()
@@ -73,19 +79,17 @@ class LiftingSurface(GeomBase):
     dihedral:    float = Input()
 
     # ------------------------------------------------------------------ #
-    # AIRFOIL PARAMETERS  (direct inputs)
+    # AIRFOIL PARAMETERS
     # ------------------------------------------------------------------ #
 
     maximum_camber_input:          float = Input(0.04)
     maximum_camber_position_input: float = Input(0.40)
     thickness_to_chord_input:      float = Input(0.12)
 
-    # Stored sweep results (None = not yet swept)
     sweep_result_camber:    float = Input(None)
     sweep_result_position:  float = Input(None)
     sweep_result_thickness: float = Input(None)
 
-    # Snapshot of inputs before a sweep (used by the CL-α plot)
     pre_sweep_camber:    float = Input(None)
     pre_sweep_position:  float = Input(None)
     pre_sweep_thickness: float = Input(None)
@@ -96,12 +100,9 @@ class LiftingSurface(GeomBase):
 
     run_airfoil_sweep: bool  = Input(False)
     ld_required:       float = Input(None)
-    camber_range:      list  = Input([0.0, 0.02, 0.04, 0.06])
-    position_range:    list  = Input([0.3, 0.4, 0.5])
-    thickness_range:   list  = Input([0.10, 0.12, 0.15, 0.18])
-    #cm_min:            float = Input(-0.50)
-    #cm_max:            float = Input(0.00)
-    #t_min:             float = Input(0.10)
+    camber_range:    list = Input([0.0, 0.02, 0.04, 0.06, 0.08, 0.09])
+    position_range:  list = Input([0.2, 0.3, 0.4, 0.5, 0.6])
+    thickness_range: list = Input([0.06, 0.08, 0.10, 0.12, 0.15, 0.18, 0.21])
     g: float = Input(9.81)
 
     # ------------------------------------------------------------------ #
@@ -119,7 +120,7 @@ class LiftingSurface(GeomBase):
     rear_spar_position:  float = Input()
 
     # ------------------------------------------------------------------ #
-    # TAIL SIZING (Roskam volume coefficients)
+    # TAIL SIZING
     # ------------------------------------------------------------------ #
 
     tail_volume_coefficient_h: float = Input(None)
@@ -131,7 +132,6 @@ class LiftingSurface(GeomBase):
 
     # ------------------------------------------------------------------ #
     # RESOLVED AIRFOIL PARAMETERS
-    # Parts read these — they transparently switch between sweep and manual.
     # ------------------------------------------------------------------ #
 
     @Attribute
@@ -152,7 +152,6 @@ class LiftingSurface(GeomBase):
 
     @action(label="Run Airfoil Sweep")
     def run_sweep(self):
-        # snapshot current inputs so the CL-α plot can compare
         self.pre_sweep_camber    = self.maximum_camber_input
         self.pre_sweep_position  = self.maximum_camber_position_input
         self.pre_sweep_thickness = self.thickness_to_chord_input
@@ -167,11 +166,6 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def best_airfoil_params(self):
-        """
-        Q3D sweep over NACA 4-series parameter space.
-        Returns the feasible candidate dict with the highest L/D margin.
-        Only evaluated when run_airfoil_sweep=True (ParaPy caches the result).
-        """
         if not self.run_airfoil_sweep:
             raise RuntimeError("best_airfoil_params called but run_airfoil_sweep=False.")
         if self.ld_required is None:
@@ -182,8 +176,6 @@ class LiftingSurface(GeomBase):
         print(f"\nAirfoil sweep: {n} Q3D evaluations")
         print(f"  Required L/D : {self.ld_required}")
         print(f"  Target CL    : {self.target_cl:.4f}")
-        #print(f"  Cm bounds    : [{self.cm_min}, {self.cm_max}]")
-        #print(f"  t/c minimum  : {self.t_min}\n")
 
         results = []
         for i, (m, p, t) in enumerate(combos):
@@ -222,28 +214,21 @@ class LiftingSurface(GeomBase):
                 if i == 0:
                     print(f"\n  [DEBUG] Res keys: {list(Res.keys())}\n")
 
-                cl  = float(Res["CLwing"])
-                cd  = float(Res["CDiwing"])
-                cm  = float(Res["CMwing"])
+                cl    = float(Res["CLwing"])
+                cd    = float(Res["CDiwing"])
+                cm    = float(Res["CMwing"])
                 alpha = float(Res["Alpha"])
-                ld  = cl / cd if cd > 1e-10 else 0.0
-
-                ld_met    = ld  >= self.ld_required
-                #t_ok      = t   >= self.t_min
-                feasible  = ld_met #and t_ok
+                ld    = cl / cd if cd > 1e-10 else 0.0
+                feasible = ld >= self.ld_required
 
                 print(f"L/D={ld:.2f}  CL={cl:.4f}  Cm={cm:.4f}  "
-                      f"{'FEASIBLE' if feasible else 'FAIL'}"
-                      f"  [ld={'OK' if ld_met else 'X'} "
-                      #f"cm={'OK' if cm_stable else 'X'} "
-                      #f"t={'OK' if t_ok else 'X'}]"
-                      )
+                      f"{'FEASIBLE' if feasible else 'FAIL'}")
 
                 results.append({
                     "camber": m, "position": p, "thickness": t,
                     "CL": cl, "CD": cd, "Cm": cm, "L/D": ld,
                     "L/D_margin": ld - self.ld_required,
-                    "feasible": feasible, "ld_met": ld_met, "alpha": alpha
+                    "feasible": feasible, "ld_met": feasible, "alpha": alpha
                 })
             except Exception as e:
                 import traceback
@@ -255,15 +240,10 @@ class LiftingSurface(GeomBase):
             best = max(feasible_results, key=lambda r: r["L/D_margin"])
             print(f"\nBest airfoil: camber={best['camber']:.3f}  "
                   f"pos={best['position']:.2f}  t/c={best['thickness']:.3f}  "
-                  f"L/D={best['L/D']:.2f}  margin=+{best['L/D_margin']:.2f}")
-            self.alpha = best['alpha']
-            self.cd = best['CD']
-            self.cm = best['CM']
+                  f"L/D={best['L/D']:.2f}  margin=+{best['L/D_margin']:.2f}  "
+                  f"alpha={best['alpha']:.2f}°")
             return best
 
-        print(f"\nNo feasible airfoil found.")
-        print(f"  L/D failed : {sum(1 for r in results if not r['ld_met'])}/{n}")
-        #print(f"  Cm  failed : {sum(1 for r in results if not r['cm_stable'])}/{n}")
         raise ValueError(
             f"Airfoil sweep found no feasible candidate. "
             f"Check ld_required={self.ld_required}."
@@ -377,6 +357,64 @@ class LiftingSurface(GeomBase):
     @Attribute
     def mac_x_offset(self):
         return self.mac_spanwise_position * tan(radians(self.sweep_le))
+
+    # ------------------------------------------------------------------ #
+    # AERODYNAMIC CENTRE x-position (from nose)
+    #
+    # Roskam Vol. II §3.2: x_ac = attach_x + LE sweep offset to MAC + 0.25 * MAC
+    # The sweep offset brings us to the LE of the MAC spanwise station.
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def x_ac(self) -> float:
+        """
+        Aerodynamic centre x-position from aircraft nose [m].
+
+        Roskam Vol. II §3.2: AC of a swept tapered wing lies at 25% MAC,
+        measured from the leading edge of the MAC.
+        x_ac = attach_x + mac_x_offset + 0.25 * MAC
+        """
+        return self.attach_x + self.mac_x_offset + 0.25 * self.mean_aerodynamic_chord
+
+    # ------------------------------------------------------------------ #
+    # STRUCTURAL MASS  (Roskam Vol. I §8.4 / §8.5)
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def calculate_mass(self) -> float:
+        """
+        Lifting surface structural mass [kg].
+
+        Roskam Vol. I, Table 8.1:
+        - Wing : W_w  = 0.036 * S_w^0.758 * AR_w^0.6  * (t/c)^-0.3
+        - HT   : W_ht = 0.016 * S_ht^0.873 * AR_ht^0.357
+        - VT   : W_vt = 0.073 * S_vt^0.873 * AR_vt^0.357
+
+        S in [m²], AR dimensionless, t/c dimensionless.
+        All three equations from Roskam Vol. I Table 8.1 UAV/homebuilt row.
+        """
+        S  = self._effective_area
+        AR = self.aspect_ratio
+        tc = self.thickness_to_chord
+
+        if not self.is_tail:
+            # Wing — thickness correction included (thicker wing = lighter structurally)
+            return 0.036 * (S ** 0.758) * (AR ** 0.6) * (tc ** -0.3)
+        elif self.is_vertical_tail:
+            return 0.073 * (S ** 0.873) * (AR ** 0.357)
+        else:
+            return 0.016 * (S ** 0.873) * (AR ** 0.357)
+
+    @Attribute
+    def cg_x(self) -> float:
+        """
+        Structural CG x-position from aircraft nose [m].
+
+        Roskam Vol. I §8.4: wing/tail structural mass centroid at 40% MAC
+        from the leading edge of the MAC — consistent with the wingbox
+        spanning ~15–60% chord (front_spar to rear_spar midpoint ≈ 38%).
+        """
+        return self.attach_x + self.mac_x_offset + 0.40 * self.mean_aerodynamic_chord
 
     # ------------------------------------------------------------------ #
     # POSITIONING HELPERS
@@ -615,7 +653,8 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def target_cl(self):
-        return (2.0 * self.weight * self.maximum_load_factor * self.g) / (self.density * self.velocity**2 * self._effective_area)
+        return (2.0 * self.weight * self.maximum_load_factor * self.g) / (
+            self.density * self.velocity**2 * self._effective_area)
 
     # ------------------------------------------------------------------ #
     # Q3D MATRICES
@@ -654,12 +693,12 @@ class LiftingSurface(GeomBase):
             matlab.logical([False]),
             nargout=2,
         )
-    
+
     # ------------------------------------------------------------------ #
     # UI
     # ------------------------------------------------------------------ #
-    
-    @action(label="Plot XFoil CL-alpha curve")
+
+    @action(label="Plot XFoil polars")
     def plot_cl_alpha(self):
         self.root_airfoil.plot_cl_alpha()
 

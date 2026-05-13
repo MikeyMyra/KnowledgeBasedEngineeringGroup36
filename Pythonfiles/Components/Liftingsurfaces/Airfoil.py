@@ -291,7 +291,7 @@ class Airfoil(GeomBase):
             print("XFoil stderr:\n", result.stderr)
             raise RuntimeError(f"XFoil exited with code {result.returncode}")
 
-        # 4. Parse and return
+        # 4. Parse and return (alphas, cls, cds, cms)
         return self._parse_polar(polar_path)
 
     # ------------------------------------------------------------------ #
@@ -301,133 +301,163 @@ class Airfoil(GeomBase):
     @staticmethod
     def _parse_polar(polar_path: str):
         """
-        Read an XFoil polar file and return (alphas, cls).
+        Read an XFoil polar file and return (alphas, cls, cds, cms).
 
-        XFoil polar header looks like:
+        XFoil polar column layout:
           alpha    CL        CD       CDp       CM     Top_Xtr  Bot_Xtr
           ------  -------   -------  -------  -------  -------  -------
+        Indices:  [0]       [1]      [2]      [3]      [4]
         Data starts after the dashed separator line.
         """
-        alphas, cls = [], []
+        alphas, cls, cds, cms = [], [], [], []
 
         if not os.path.exists(polar_path):
             print(f"WARNING: polar file not found: {polar_path}")
-            return alphas, cls
+            return alphas, cls, cds, cms
 
         with open(polar_path) as fh:
             past_header = False
             for line in fh:
                 s = line.strip()
-                # The separator line looks like "------  -------  ..."
                 if not past_header:
                     if s.startswith("---"):
                         past_header = True
                     continue
-
                 if not s:
                     continue
-
                 parts = s.split()
-                if len(parts) >= 2:
+                if len(parts) >= 5:
                     try:
                         alphas.append(float(parts[0]))
                         cls.append(float(parts[1]))
+                        cds.append(float(parts[2]))
+                        cms.append(float(parts[4]))
                     except ValueError:
                         pass
 
         print(f"Parsed {len(alphas)} polar points from {polar_path}")
-        return alphas, cls
+        return alphas, cls, cds, cms
 
     # ------------------------------------------------------------------ #
     # PLOT  (reads saved polar file)
     # ------------------------------------------------------------------ #
 
-    @action(label="Plot XFoil CL-alpha curve")
-    def plot_cl_alpha(self):
-        """Plot CL-alpha curve with cruise (input α) and stall (from data)."""
+    # ------------------------------------------------------------------ #
+    # POLAR FIGURE BUILDER  (shared by action and save method)
+    # ------------------------------------------------------------------ #
 
-        self.run_xfoil()
-        alphas, cls = self._parse_polar(self.polar_file_path)
+    def _build_polar_figure(self):
+        """
+        Run XFoil, build and return the 4-panel polar figure (without showing
+        or saving it).  Returns None if XFoil produced no data.
+        """
+        alphas, cls, cds, cms = self.run_xfoil()
 
         if not alphas:
-            print("No polar data found – run XFoil first.")
-            return
+            print("No polar data – XFoil produced no output.")
+            return None
 
         alphas = np.array(alphas)
-        cls = np.array(cls)
+        cls    = np.array(cls)
+        cds    = np.array(cds)
+        cms    = np.array(cms)
 
-        fig, ax = plt.subplots(figsize=(7, 5))
+        with np.errstate(divide="ignore", invalid="ignore"):
+            ld = np.where(cds > 1e-10, cls / cds, 0.0)
 
-        # ------------------------------------------------------------
-        # MAIN CURVE
-        # ------------------------------------------------------------
-        ax.plot(alphas, cls, marker="o", linewidth=2, markersize=4, label="XFoil")
-
-        # ------------------------------------------------------------
-        # CRUISE POINT (FROM INPUT α → INTERPOLATE CL)
-        # ------------------------------------------------------------
+        # Cruise interpolation
         cruise_alpha = None
-        cruise_cl = None
+        has_cruise = (self.alpha_cruise is not None and
+                      not np.isnan(float(self.alpha_cruise)))
+        if has_cruise:
+            cruise_alpha = float(np.clip(self.alpha_cruise,
+                                         alphas.min(), alphas.max()))
+            cruise_cl = float(np.interp(cruise_alpha, alphas, cls))
+            cruise_cd = float(np.interp(cruise_alpha, alphas, cds))
+            cruise_cm = float(np.interp(cruise_alpha, alphas, cms))
+            cruise_ld = cruise_cl / cruise_cd if cruise_cd > 1e-10 else 0.0
 
-        if self.alpha_cruise is not None:
+        # Stall point
+        idx_stall   = int(np.argmax(cls))
+        alpha_stall = float(alphas[idx_stall])
+        cl_stall    = float(cls[idx_stall])
 
-            # clamp within valid range to avoid extrapolation weirdness
-            alpha_min, alpha_max = alphas.min(), alphas.max()
-            alpha_target = np.clip(self.alpha_cruise, alpha_min, alpha_max)
-
-            cruise_cl = np.interp(alpha_target, alphas, cls)
-            cruise_alpha = alpha_target
-
-            ax.scatter(
-                cruise_alpha,
-                cruise_cl,
-                color="green",
-                s=90,
-                zorder=5,
-                label="Cruise"
-            )
-
-            ax.annotate(
-                f"Cruise\nα={cruise_alpha:.2f}°\nCl={cruise_cl:.3f}",
-                (cruise_alpha, cruise_cl),
-                textcoords="offset points",
-                xytext=(10, 10)
-            )
-
-        # ------------------------------------------------------------
-        # STALL POINT (FROM MAX CL)
-        # ------------------------------------------------------------
-        idx_max = np.argmax(cls)
-        alpha_stall = alphas[idx_max]
-        cl_max = cls[idx_max]
-
-        ax.scatter(
-            alpha_stall,
-            cl_max,
-            color="red",
-            s=90,
-            zorder=5,
-            label="Stall (Clmax)"
+        fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+        fig.suptitle(
+            f"XFoil polars – {self.resolved_name.upper()}"
+            f"   (Re = {self.reynolds:.2e}, M = {self.mach:.3f})",
+            fontsize=13,
         )
 
-        ax.annotate(
-            f"Stall\nα={alpha_stall:.2f}°\nCl={cl_max:.3f}",
-            (alpha_stall, cl_max),
-            textcoords="offset points",
-            xytext=(10, -15)
+        panels = [
+            (axes[0, 0], cls,  r"$C_l$ [–]",       "CL – α"),
+            (axes[0, 1], cds,  r"$C_d$ [–]",       "CD – α"),
+            (axes[1, 0], cms,  r"$C_m$ [–]",       "Cm – α"),
+            (axes[1, 1], ld,   r"$C_l/C_d$ [–]",   "L/D – α"),
+        ]
+        cruise_vals = (
+            [cruise_cl, cruise_cd, cruise_cm, cruise_ld]
+            if has_cruise else [None] * 4
         )
 
-        # ------------------------------------------------------------
-        # AXES
-        # ------------------------------------------------------------
-        ax.set_xlabel("α [deg]")
-        ax.set_ylabel("$C_l$ [-]")
-        ax.set_title(f"XFoil polar – {self.resolved_name.upper()}")
-        ax.grid(True, linestyle="--", alpha=0.6)
-        ax.legend()
+        for (ax, ydata, ylabel, title), c_val in zip(panels, cruise_vals):
+            ax.plot(alphas, ydata,
+                    color="steelblue", linewidth=2,
+                    marker="o", markersize=3, label="XFoil")
+
+            if ydata is cls:
+                ax.scatter(alpha_stall, cl_stall,
+                           color="red", s=80, zorder=5, label="Stall (max CL)")
+                ax.annotate(
+                    f"α={alpha_stall:.1f}°\nCl={cl_stall:.3f}",
+                    (alpha_stall, cl_stall),
+                    textcoords="offset points", xytext=(8, -18),
+                    fontsize=8, color="red",
+                )
+
+            if has_cruise and c_val is not None:
+                ax.scatter(cruise_alpha, c_val,
+                           color="green", s=90, zorder=6,
+                           label=f"Cruise  α={cruise_alpha:.2f}°")
+                ax.axvline(cruise_alpha, color="green",
+                           linestyle="--", linewidth=0.8, alpha=0.5)
+                ax.annotate(
+                    f"α={cruise_alpha:.2f}°\n{c_val:.4f}",
+                    (cruise_alpha, c_val),
+                    textcoords="offset points", xytext=(8, 8),
+                    fontsize=8, color="darkgreen",
+                )
+
+            ax.axhline(0, color="black", linewidth=0.6, linestyle=":")
+            ax.set_xlabel("α [deg]")
+            ax.set_ylabel(ylabel)
+            ax.set_title(title)
+            ax.grid(True, linestyle="--", alpha=0.5)
+            ax.legend(fontsize=8)
 
         plt.tight_layout()
-        plt.show()
+        return fig
+
+    @action(label="Plot XFoil polars")
+    def plot_cl_alpha(self):
+        """
+        Run XFoil and display the 4-panel polar figure:
+          top-left   CL – α  (cruise & stall markers)
+          top-right  CD – α
+          bottom-left  Cm – α
+          bottom-right  L/D – α
+        """
+        fig = self._build_polar_figure()
+        if fig is not None:
+            plt.show()
+
+    def save_polar_figure(self, save_path: str):
+        """Save the 4-panel XFoil polar figure to *save_path* without displaying it."""
+        fig = self._build_polar_figure()
+        if fig is not None:
+            fig.savefig(save_path, dpi=150, bbox_inches='tight')
+            plt.close(fig)
+            print(f"Wing polars saved → {save_path}")
 
     # ------------------------------------------------------------------ #
     # PARAPY GEOMETRY

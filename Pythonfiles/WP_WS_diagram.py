@@ -10,9 +10,10 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 class WP_WS_Diagram:
     
     def __init__(self, aspect_ratio, CL_max_clean, CL_max_land, CL_max_TO, cruise_speed, CD0, prop_eff, engine_type,
-                 oswald_factor, n_max, x_max=1000, y_max=1, plot=True):
+                 oswald_factor, n_max, x_max=1000, y_max=1, plot=True, save_path=None):
 
         self.plot = plot
+        self.save_path = save_path
         self.x_max = x_max
         self.y_max = y_max
         # self.load_data()
@@ -48,7 +49,8 @@ class WP_WS_Diagram:
         self.rho0 = 1.225
         # self.rho = self.rho if isinstance(self.pre_rho, list) else [self.pre_rho]
         self.set_densities()
-        self.plot_wing_loading_constraints()
+        if self.plot or self.save_path:
+            self.plot_wing_loading_constraints()
     
     # def load_data(self):
     #
@@ -417,8 +419,12 @@ class WP_WS_Diagram:
                     fontsize=8,
                     arrowprops=dict(arrowstyle='->', color='black'))
 
+        if self.save_path:
+            plt.savefig(self.save_path, dpi=150, bbox_inches='tight')
         if self.plot:
             plt.show()
+        else:
+            plt.close(fig)
 
     def drag_polar(self, A=0):
         return self.CD0 + (self.CL_max_clean[len(self.CL_max_clean) - 1] ** 2) / (np.pi * A * self.e)  # Drag Coefficient
