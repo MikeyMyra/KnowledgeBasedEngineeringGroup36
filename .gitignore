@@ -2,3 +2,4 @@
 .ai/
 *.pyc
 *.xml
+__pycache__/
