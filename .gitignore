@@ -38,4 +38,5 @@ Pythonfiles/Testfiles/test_aircraft/__pycache__/fuselage.cpython-312.pyc
 Pythonfiles/Testfiles/test_aircraft/__pycache__/__init__.cpython-312.pyc
 Pythonfiles/__pycache__/Matlab_start.cpython-312.pyc
 Pythonfiles/Testfiles/test_aircraft/__pycache__/fuselage.cpython-312.pyc
-
+.idea/
+.ai/
