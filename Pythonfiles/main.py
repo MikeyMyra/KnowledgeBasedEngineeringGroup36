@@ -50,6 +50,7 @@ class Drone(GeomBase):
     reserve_time: float = Input(0.5)  # [hr]
     uav_class: int = Input()
     payload_config: int = Input()
+    weapon_count: int = Input()
 
 
     # ============================================================ #
@@ -64,6 +65,7 @@ class Drone(GeomBase):
         return Payload(
             uav_class=self.uav_class,
             payload_config=self.payload_config,
+            weapon_count = self.weapon_count
         )
 
     @Attribute
@@ -164,8 +166,105 @@ class Drone(GeomBase):
                 ...
             )
         """
-        return Aircraft()
+        return Aircraft(
+
+        # ========================================================= #
+        # MISSION
+        # ========================================================= #
+        
+        cruise_speed=220.0,
+        aircraft_mass=2000,          # ✔ mission sizing driver (payload + fuel + structure assumption)
+
+        effective_wing_area=20.0,              # ✔ driven by wing loading requirement (W/S)
+        effective_wing_semi_span=8.0,          # ✔ aspect ratio / airport constraint / mission geometry
+
+        thrust_to_weight=0.35,      # ✔ performance requirement (takeoff/climb requirement)
+        
+        rho=1.225,                  # ✔ ISA sea level (or mission altitude if refined later)
+
+        # ========================================================= #
+        # ROSKAM
+        # ========================================================= #
+        disk_loading_uav=80.0,      # ✔ Roskam / UAV empirical disk loading range
+        target_solidity=0.15,       # ✔ Roskam propeller design rule (~0.1–0.2)
+
+        tail_volume_coefficient_h=0.6,   # ✔ Roskam horizontal tail sizing
+        tail_volume_coefficient_v=0.04,  # ✔ Roskam vertical tail sizing
+
+        tail_aspect_ratio_h=4.5,         # ✔ Roskam typical HT range (3–5)
+        tail_aspect_ratio_v=1.8,         # ✔ Roskam vertical tail range (1.2–2.5)
+
+        wing_taper_ratio=0.40,           # ✔ typical efficient subsonic wing (0.3–0.5)
+        wing_sweep_le=5.0,               # ✔ low-speed aircraft assumption (almost straight wing)
+        wing_dihedral=5.0,               # ✔ stability rule-of-thumb
+        wing_twist=0.0,
+        wing_thickness_to_chord=0.15,    # ✔ subsonic structural/aero compromise
+        wing_maximum_camber=0.04,        # ✔ typical cambered airfoil range
+        wing_maximum_camber_position=0.4,# ✔ NACA-style default
+
+        tail_taper_ratio=0.40,           # ✔ same logic as wing
+        tail_sweep_le=10.0,              # ✔ slightly more swept tail (stability margin)
+        tail_thickness_to_chord=0.15,
+        tail_maximum_camber_position=0,
+        tail_maximum_camber=0,
+        tail_dihedral=0,
+        tail_twist=0,
+
+        blade_sweep=5.0,                 # ✔ propeller/rotor empirical aero smoothing
+
+        # ========================================================= #
+        # USER SET
+        # ========================================================= #
+        fuselage_cylinder_start=10.0,# To be set based on payload size
+        fuselage_cylinder_end=70.0,  # Same
+
+        undercarriage_retractible=False,  # User specified
+
+        # ---------------- COLORS (PURE VISUAL ONLY) ----------------
+        fuselage_cones_color="steelblue",
+        fuselage_cylinder_color="blue",
+        undercarriage_color_tyre="black",
+        undercarriage_color_axle="white",
+        undercarriage_color_strut="silver",
+
+        main_wing_color_wingbox="black",
+        main_wing_color_liftingsurface="yellow",
+
+        tail_h_color_wingbox="black",
+        tail_h_color_liftingsurface="silver",
+        tail_v_color_wingbox="black",
+        tail_v_color_liftingsurface="white",
+
+        engine_color_nacelle="Silver",
+
+        # ========================================================= #
+        # FIXED
+        # ========================================================= #
+        wing_front_spar_position=0.15,   # structural convention
+        wing_rear_spar_position=0.60,    # structural convention
+
+        tail_front_spar_position=0.15,    # structural convention
+        tail_rear_spar_position=0.60,     # structural convention
+        
+        inlet_radius_ratio=0.85,
+        nozzle_radius_ratio=0.7,
+        
+        g=9.81,                      # ✔ physical constant (always fixed on Earth)
+    )
 
 
 if __name__ == "__main__":
 
+    from parapy.gui import display
+
+    d = Drone(
+        uav_class="large",
+        payload_config=[
+            ("flight_computer", "flight_computer_cube_orange"),
+            ("battery",         "battery_large_lipo"),
+            ("eo_ir",           "eo_ir_gimbal_hd"),
+            ("radar",           "unknown_radar_xyz"),   # → radar_maritime_large (large default)
+            ("weapon",          "weapon_gbu12"),
+        ],
+        weapon_count=2)
+    display(d)
