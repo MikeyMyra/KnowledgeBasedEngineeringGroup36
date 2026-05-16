@@ -39,8 +39,8 @@ if __name__ == "__main__":
         # ------------------------------------------------------------------ #
         # PAYLOAD INTENT  — optional overrides
         # ------------------------------------------------------------------ #
-        payload_role="ISR",         # "ISR" | "Strike" | "Relay" | "Cargo"
-        weapon_count=0,             # 0 = unarmed; max 6
+        payload_role="Strike",         # "ISR" | "Strike" | "Relay" | "Cargo"
+        weapon_count=6,             # 0 = unarmed; max 6
 
         # ------------------------------------------------------------------ #
         # OPTIONAL OVERRIDES  (uncomment to change from Roskam/Raymer default)

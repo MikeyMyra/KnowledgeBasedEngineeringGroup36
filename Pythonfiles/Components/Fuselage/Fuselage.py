@@ -323,6 +323,7 @@ class Fuselage(GeomBase):
         return LoftedSolid(
             profiles=self.nose_profiles,
             color=self.color_taper,
+            transparency=0.3,
             mesh_deflection=self.mesh_deflection,
         )
 
@@ -391,6 +392,7 @@ class Fuselage(GeomBase):
         return LoftedSolid(
             profiles=self.tail_profiles,
             color=self.color_taper,
+            transparency=0.3,
             mesh_deflection=self.mesh_deflection,
         )
 

@@ -101,7 +101,7 @@ class Aircraft(GeomBase):
     # ============================================================ #
 
     fuselage_cones_color:      object = Input("steelblue")
-    fuselage_cylinder_color:   object = Input("blue")
+    fuselage_cylinder_color:   object = Input("steelblue")
     undercarriage_color_tyre:  str    = Input("black")
     undercarriage_color_axle:  str    = Input("white")
     undercarriage_color_strut: str    = Input("silver")

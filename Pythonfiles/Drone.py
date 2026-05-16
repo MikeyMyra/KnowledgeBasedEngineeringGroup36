@@ -462,9 +462,9 @@ class Drone(GeomBase):
         import tempfile
 
         # ── locate output directory ─────────────────────────────────── #
-        save_dir  = os.path.dirname(os.path.abspath(__file__))
+        save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        pdf_path  = os.path.join(save_dir, f"drone_report_{timestamp}.pdf")
+        pdf_path  = os.path.join(save_dir, f"Outputfiles/drone_report_{timestamp}.pdf")
 
         try:
             from reportlab.lib.pagesizes import A4
@@ -658,9 +658,9 @@ class Drone(GeomBase):
         import os
         import datetime
 
-        save_dir  = os.path.dirname(os.path.abspath(__file__))
+        save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        stp_path  = os.path.join(save_dir, f"drone_geometry_{timestamp}.stp")
+        stp_path  = os.path.join(save_dir, f"Outputfiles/drone_geometry_{timestamp}.stp")
 
         try:
             from OCC.wrapper.STEPControl import STEPControl_Writer, STEPControl_AsIs
