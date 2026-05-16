@@ -617,9 +617,6 @@ class Aircraft(GeomBase):
                        Roskam Vol. I §8.1.
         - Payload CG : from Payload.cg_x (mass-weighted item positions).
         """
-        # Fuel CG: centre of the fuel tank (uniform fill assumption).
-        # Uses _fuel_tank_sizing (not the rendered Part) to avoid triggering
-        # position evaluation.  cg_local_x = total_length / 2 (pure math).
         payload_len   = (self.payload_object.min_fuselage_length
                          if self.payload_object is not None else 0.0)
         # ── payload wingbox overlap check ──────────────────────────── #
@@ -633,14 +630,15 @@ class Aircraft(GeomBase):
                 f"(x={self._wingbox_start_x:.3f}–{self._wingbox_end_x:.3f} m). "
                 f"Consider reducing payload length or moving the wing aft."
             )
-        # ── fuel tank CG — same wingbox-aware start as _fuel_tank_position ── #
-        if self._fuel_tank_sizing is not None:
-            nominal_start = self.fuselage._x_cylinder_start + payload_len + 0.05
-            tank_start_x  = max(nominal_start, self._wingbox_end_x + 0.05)
-            tank_cg_x     = tank_start_x + self._fuel_tank_sizing.cg_local_x
-        else:
-            # No fuel — fall back to wing AC (legacy behaviour)
-            tank_cg_x = self.main_wing.x_ac
+        # ── fuel CG: wing aerodynamic centre (Roskam Vol. I §8.1) ─────────── #
+        #
+        # Roskam assumes fuel is stored in the centre wing box, so its CG
+        # coincides with the wing AC.  The rendered FuelTank Part is a fuselage
+        # capsule placed aft of the wingbox for visual clarity, but it does not
+        # represent the true structural/mass location of the fuel.  Using the
+        # rendered tank's x-position for stability would incorrectly shift the
+        # aircraft CG aft and degrade the static margin.
+        fuel_cg_x = self.main_wing.x_ac   # Roskam §8.1
 
         d = {
             "fuselage":        self.fuselage.cg_x,
@@ -648,12 +646,12 @@ class Aircraft(GeomBase):
             "horizontal_tail": self.horizontal_tail.cg_x,
             "vertical_tail":   self.vertical_tail.cg_x,
             "engine":          self.main_wing.x_ac,   # engine at wing AC
-            "fuel":            tank_cg_x,             # fuel at tank centroid
+            "fuel":            fuel_cg_x,             # fuel in centre wing box
         }
         if self.payload_object is not None:
             d["payload"] = self.payload_object.cg_x
         if self.fuel_mass > 0:
-            d["fuel_tank_structure"] = tank_cg_x      # tank structure CG ≈ fuel CG
+            d["fuel_tank_structure"] = fuel_cg_x      # tank structure CG ≈ fuel CG
         return d
 
     @Attribute
@@ -755,69 +753,98 @@ class Aircraft(GeomBase):
             return f"UNSTABLE — SM = {sm:.1f}% MAC (requires FBW or redesign)"
 
     # ------------------------------------------------------------ #
-    # Summary action
+    # Output helper
+    # ------------------------------------------------------------ #
+
+    def _save_txt_report(self, lines: list, filename_stem: str) -> str:
+        """Print *lines* to the terminal and save them to Outputfiles/<stem>_<ts>.txt.
+
+        Returns the saved file path (or an error string if saving failed).
+        """
+        import datetime
+        text = "\n".join(lines)
+        print(text)
+
+        save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'Outputfiles'))
+        os.makedirs(save_dir, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        path      = os.path.join(save_dir, f"{filename_stem}_{timestamp}.txt")
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text + "\n")
+            print(f"  → saved to {path}")
+        except Exception as e:
+            print(f"  [WARNING] could not save report: {e}")
+        return path
+
+    # ------------------------------------------------------------ #
+    # Summary actions
     # ------------------------------------------------------------ #
 
     @action(label="Print fuel tank debug")
     def print_fuel_debug(self):
-        print("=" * 50)
-        print("FUEL TANK DEBUG")
-        print(f"  fuel_mass        : {self.fuel_mass:.3f} kg")
-        print(f"  suppress would be: {self.fuel_mass <= 0.0}")
-        print(f"  _fuel_tank_sizing: {self._fuel_tank_sizing}")
+        lines = ["=" * 50, "FUEL TANK DEBUG"]
+        lines.append(f"  fuel_mass        : {self.fuel_mass:.3f} kg")
+        lines.append(f"  suppress would be: {self.fuel_mass <= 0.0}")
+        lines.append(f"  _fuel_tank_sizing: {self._fuel_tank_sizing}")
         if self._fuel_tank_sizing is not None:
             ft = self._fuel_tank_sizing
-            print(f"  tank total_length: {ft.total_length:.3f} m")
-            print(f"  tank outer_radius: {ft.outer_radius:.3f} m")
+            lines.append(f"  tank total_length: {ft.total_length:.3f} m")
+            lines.append(f"  tank outer_radius: {ft.outer_radius:.3f} m")
         try:
             pos = self._fuel_tank_position
-            print(f"  tank position    : {pos}")
+            lines.append(f"  tank position    : {pos}")
         except Exception as e:
-            print(f"  tank position ERR: {e}")
-        print("=" * 50)
+            lines.append(f"  tank position ERR: {e}")
+        lines.append("=" * 50)
+        self._save_txt_report(lines, "fuel_debug")
 
     @action(label="Print stability report")
     def print_stability_report(self):
-        print("=" * 70)
-        print("STABILITY REPORT")
-        print("=" * 70)
-        print("\nCOMPONENT MASSES & CG POSITIONS")
-        print(f"  {'Component':<20s}  {'Mass [kg]':>10s}  {'CG x [m]':>10s}  {'m*x [kg.m]':>12s}")
-        print("  " + "-" * 58)
         masses = self.mass_breakdown
         cgs    = self.cg_breakdown
+
+        lines = ["=" * 70, "STABILITY REPORT", "=" * 70]
+
+        lines.append("\nCOMPONENT MASSES & CG POSITIONS")
+        lines.append(f"  {'Component':<20s}  {'Mass [kg]':>10s}  {'CG x [m]':>10s}  {'m*x [kg.m]':>12s}")
+        lines.append("  " + "-" * 58)
         for k in masses:
             m  = masses[k]
             cx = cgs[k]
-            print(f"  {k:<20s}  {m:>10.2f}  {cx:>10.3f}  {m*cx:>12.2f}")
-        print("  " + "-" * 58)
-        print(f"  {'TOTAL':<20s}  {self.total_structural_mass:>10.2f}  "
-              f"{self.cg_x:>10.3f}  "
-              f"{sum(masses[k]*cgs[k] for k in masses):>12.2f}")
+            lines.append(f"  {k:<20s}  {m:>10.2f}  {cx:>10.3f}  {m*cx:>12.2f}")
+        lines.append("  " + "-" * 58)
+        lines.append(
+            f"  {'TOTAL':<20s}  {self.total_structural_mass:>10.2f}  "
+            f"{self.cg_x:>10.3f}  "
+            f"{sum(masses[k]*cgs[k] for k in masses):>12.2f}"
+        )
 
-        print("\nFUEL TANK")
+        lines.append("\nFUEL TANK")
         if self._fuel_tank_sizing is not None:
             ft = self._fuel_tank_sizing
-            print(f"  Fuel type          : {ft.fuel_label}")
-            print(f"  Fuel density       : {ft.fuel_density:.0f} kg/m3")
-            print(f"  Fuel mass          : {self.fuel_mass:.1f} kg")
-            print(f"  Tank outer radius  : {ft.outer_radius*1000:.1f} mm")
-            print(f"  Tank total length  : {ft.total_length*1000:.1f} mm")
+            lines.append(f"  Fuel type          : {ft.fuel_label}")
+            lines.append(f"  Fuel density       : {ft.fuel_density:.0f} kg/m3")
+            lines.append(f"  Fuel mass          : {self.fuel_mass:.1f} kg")
+            lines.append(f"  Tank outer radius  : {ft.outer_radius*1000:.1f} mm")
+            lines.append(f"  Tank total length  : {ft.total_length*1000:.1f} mm")
         else:
-            print("  No fuel tank (fuel_mass = 0)")
+            lines.append("  No fuel tank (fuel_mass = 0)")
 
-        print("\nAERODYNAMIC REFERENCE")
-        print(f"  Wing MAC              : {self.main_wing.mean_aerodynamic_chord:.3f} m")
-        print(f"  Wing AC (x_ac_w)      : {self.main_wing.x_ac:.3f} m")
-        print(f"  HT AC   (x_ac_h)      : {self.horizontal_tail.x_ac:.3f} m")
-        print(f"  Neutral Point         : {self.neutral_point_x:.3f} m")
+        lines.append("\nAERODYNAMIC REFERENCE")
+        lines.append(f"  Wing MAC              : {self.main_wing.mean_aerodynamic_chord:.3f} m")
+        lines.append(f"  Wing AC (x_ac_w)      : {self.main_wing.x_ac:.3f} m")
+        lines.append(f"  HT AC   (x_ac_h)      : {self.horizontal_tail.x_ac:.3f} m")
+        lines.append(f"  Neutral Point         : {self.neutral_point_x:.3f} m")
 
-        print("\nLONGITUDINAL STABILITY")
-        print(f"  Aircraft CG           : {self.cg_x:.3f} m from nose")
-        print(f"  Neutral Point         : {self.neutral_point_x:.3f} m from nose")
-        print(f"  Static Margin         : {self.static_margin_percent:.1f}% MAC")
-        print(f"  Assessment            : {self.stability_status}")
-        print("=" * 70)
+        lines.append("\nLONGITUDINAL STABILITY")
+        lines.append(f"  Aircraft CG           : {self.cg_x:.3f} m from nose")
+        lines.append(f"  Neutral Point         : {self.neutral_point_x:.3f} m from nose")
+        lines.append(f"  Static Margin         : {self.static_margin_percent:.1f}% MAC")
+        lines.append(f"  Assessment            : {self.stability_status}")
+        lines.append("=" * 70)
+
+        self._save_txt_report(lines, "stability_report")
 
 
 # ================================================================ #
