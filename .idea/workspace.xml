@@ -5,9 +5,16 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="871c42f2-8ed7-4502-b344-e4de8b26f833" name="Changes" comment="It now returns fuel weight T/W and MTOW">
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/tutorial_python_matlab.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/tutorial_python_matlab.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Matlabfiles/Q3D/Storage/AVLaero.dat" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Matlabfiles/Q3D/Storage/AVLinput.avl" beforeDir="false" afterPath="$PROJECT_DIR$/Matlabfiles/Q3D/Storage/AVLinput.avl" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Matlabfiles/Q3D/Storage/AVLload.dat" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/Matlabfiles/Q3D/Storage/AVLrun.dat" beforeDir="false" afterPath="$PROJECT_DIR$/Matlabfiles/Q3D/Storage/AVLrun.dat" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/Matlabfiles/Q3D/Storage/AVLstrip.dat" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/Pythonfiles/Drone.py" beforeDir="false" afterPath="$PROJECT_DIR$/Pythonfiles/Drone.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Pythonfiles/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/Pythonfiles/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Pythonfiles/mission.py" beforeDir="false" afterPath="$PROJECT_DIR$/Pythonfiles/mission.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/XFOIL6.99/Airfoils/root_airfoil_aero.dat" beforeDir="false" afterPath="$PROJECT_DIR$/XFOIL6.99/Airfoils/root_airfoil_aero.dat" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -35,7 +42,7 @@
   <component name="GithubPullRequestsUISettings">{
   &quot;selectedUrlAndAccountId&quot;: {
     &quot;url&quot;: &quot;https://github.com/MikeyMyra/KnowledgeBasedEngineeringGroup36.git&quot;,
-    &quot;accountId&quot;: &quot;34c6e209-ab89-4661-af7c-67f6c1758952&quot;
+    &quot;accountId&quot;: &quot;9e2618e0-8db8-48c4-a25a-62a6843a445f&quot;
   }
 }</component>
   <component name="McpProjectServerCommands">
@@ -53,6 +60,7 @@
   <component name="PropertiesComponent">{
   &quot;keyToString&quot;: {
     &quot;Python.liftingsurface.executor&quot;: &quot;Run&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
     &quot;Python.mission.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.MCP Project settings loaded&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.OpenProjectViewOnStart&quot;: &quot;true&quot;,
@@ -62,7 +70,7 @@
     &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
     &quot;ai.playground.ignore.import.keys.banner.in.settings&quot;: &quot;true&quot;,
     &quot;com.intellij.ml.llm.matterhorn.ej.ui.settings.DefaultModelSelectionForGA.v1&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;Foundation&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;Integration&quot;,
     &quot;junie.onboarding.icon.badge.shown&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
@@ -107,7 +115,6 @@
   <component name="SharedIndexes">
     <attachedChunks>
       <set>
-        <option value="bundled-js-predefined-d6986cc7102b-9b0f141eb926-JavaScript-PY-253.31033.139" />
         <option value="bundled-python-sdk-2653e85de345-6d6dccd035ac-com.jetbrains.pycharm.pro.sharedIndexes.bundled-PY-253.31033.139" />
       </set>
     </attachedChunks>

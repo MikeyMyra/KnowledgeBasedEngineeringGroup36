@@ -655,20 +655,6 @@ class Drone(GeomBase):
 
     @action(label="Export STP File")
     def export_stp_file(self):
-        """
-        Write a STEP (.stp) file of the complete aircraft geometry.
-
-        The file can be imported directly into CATIA, Siemens NX, Fusion 360,
-        or any other STEP-compatible CAD tool.
-
-        Implementation notes
-        ────────────────────
-        ParaPy is built on top of pythonOCC (Open CASCADE Technology).
-        Each geometric primitive (LoftedSolid, Circle, …) exposes its
-        underlying OCC TopoDS_Shape via .shape.  We collect every leaf
-        shape from the aircraft tree, assemble them into a compound, and
-        write it out with STEPControl_Writer.
-        """
         import os
         import datetime
 
@@ -677,10 +663,11 @@ class Drone(GeomBase):
         stp_path  = os.path.join(save_dir, f"drone_geometry_{timestamp}.stp")
 
         try:
-            from OCC.Core.STEPControl import STEPControl_Writer, STEPControl_AsIs
-            from OCC.Core.IFSelect    import IFSelect_RetDone
-            from OCC.Core.BRep        import BRep_Builder
-            from OCC.Core.TopoDS      import TopoDS_Compound
+            from OCC.wrapper.STEPControl import STEPControl_Writer, STEPControl_AsIs
+            from OCC.wrapper.IFSelect    import IFSelect_RetDone
+            from OCC.wrapper.BRep        import BRep_Builder
+            from OCC.wrapper.TopoDS      import TopoDS_Compound
+            from parapy.geom             import GeomBase
 
             builder  = BRep_Builder()
             compound = TopoDS_Compound()
@@ -688,44 +675,37 @@ class Drone(GeomBase):
             shapes_added = [0]
 
             def _add_shape(obj):
-                """Try to add obj.shape to the compound; return True if added."""
-                try:
-                    s = obj.shape
-                    if s is not None and not s.IsNull():
-                        builder.Add(compound, s)
-                        shapes_added[0] += 1
-                        return True
-                except Exception:
-                    pass
+                # Try TopoDS_Shape first (ParaPy 1.15), fall back to .shape
+                for attr in ("TopoDS_Shape", "shape"):
+                    try:
+                        s = getattr(obj, attr, None)
+                        if s is not None and not s.IsNull():
+                            builder.Add(compound, s)
+                            shapes_added[0] += 1
+                            return True
+                    except Exception:
+                        pass
                 return False
 
             def _collect(obj):
-                """
-                Recursively harvest shapes from a ParaPy part tree.
-                Leaf nodes (primitives) have a .shape; containers hold
-                children accessible via the ParaPy _parts list.
-                """
-                if _add_shape(obj):
-                    return   # leaf — shape already added, don't double-count
-
-                # Try the ParaPy children list (names are class-level Part attrs)
-                for attr in vars(type(obj)):
+                if not isinstance(obj, GeomBase):
+                    return
+                added = _add_shape(obj)
+                if not added:
+                    # recurse into children
                     try:
-                        child = getattr(obj, attr)
-                        # ParaPy Part instances are GeomBase subclasses
-                        from parapy.geom import GeomBase as _GB
-                        if isinstance(child, _GB) and child is not obj:
-                            _collect(child)
+                        for child in obj.children:
+                            if child is not obj:
+                                _collect(child)
                     except Exception:
                         pass
 
-            # ── walk the aircraft tree ─────────────────────────────── #
             _collect(self.aircraft)
 
             if shapes_added[0] == 0:
                 print("STP export: no shapes found — geometry may not be "
-                      "built yet.  Trigger geometry by opening the 3-D view "
-                      "first, then re-run the export.")
+                    "built yet.  Trigger geometry by opening the 3-D view "
+                    "first, then re-run the export.")
                 return
 
             writer = STEPControl_Writer()
@@ -737,12 +717,8 @@ class Drone(GeomBase):
             else:
                 print(f"STP writer returned status {status} for: {stp_path}")
 
-        except ImportError:
-            # OCC is bundled with ParaPy on Windows; this branch should not
-            # normally be reached when running inside the ParaPy GUI.
-            print("OCC / pythonOCC not found on the current Python path.\n"
-                  "Please run this action from within the ParaPy GUI where\n"
-                  "OCC is available as part of the ParaPy installation.")
+        except ImportError as e:
+            print(f"OCC import failed: {e}")
         except Exception as exc:
             import traceback
             print(f"STP export failed: {exc}")

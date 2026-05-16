@@ -214,8 +214,8 @@ class Mission(Base):
             print("Warning: did not converge after 100 iterations")
 
         MTOW         = m2i.pounds_to_kilograms(W0_lbs)
-        empty_weight = MTOW * (1 - wf_w0) - self.payload_weight
-        fuel_weight  = MTOW * wf_w0 * 1.01
+        empty_weight = MTOW * We_frac
+        fuel_weight  = MTOW * (1.0 - wf_w0) * 1.01
 
         return MTOW, empty_weight, fuel_weight
 
