@@ -156,26 +156,56 @@ class Drone(GeomBase):
     @Attribute
     def engine_type(self) -> str:
         """
-        Engine type from Mach number at cruise altitude.
+        Engine type from Mach number and cruise altitude.
 
-        Decision rule (Roskam Vol. I §3.2 / Raymer §10.2):
+        Decision rule (Roskam Vol. I §3.2 / Raymer §10.2 / §13.3):
         ──────────────────────────────────────────────────────────────
-        M ≥ 0.40 at cruise altitude → "Jet"  (compressibility drag
-            makes propeller tip speeds unacceptable above Mach 0.40)
-        M <  0.40, mission_objective == "High Endurance" → "Turboprop"
-            (Roskam Vol. I Table 3.2: turboprop preferred for MALE/HALE)
-        Otherwise → "Piston"
+        At sea level (h ≤ 9 000 m):
+            M ≥ 0.40 → "Jet"      (compressibility drag makes propeller
+                                    tip speeds unacceptable above M 0.40)
+            High Endurance objective → "Turboprop"
+            Otherwise → "Piston"
 
-        Note: altitude does NOT force a jet in this model.  At high
-        altitudes the propeller simply needs a larger disk area
-        (actuator-disk: A ∝ 1/ρ) and longer blades — this is handled
-        in PropellerEngine.blade_length via the altitude density ratio.
+        At mid altitude (9 000 < h ≤ 15 000 m):
+            Jet threshold raised to M ≥ 0.50.
+            At these altitudes the jet thrust lapse factor is ~0.25–0.45
+            (Raymer §13.3: T_alt/T_sl ≈ σ^0.75).  Below M 0.50 a
+            turboprop is more efficient and avoids the extreme sea-level
+            thrust rating a jet would need.  Predator B / Reaper operates
+            in this band using a turboprop at M ≈ 0.35.
+
+        At high altitude (h > 15 000 m):
+            Jet threshold raised to M ≥ 0.60.
+            At 20 km the lapse factor drops to ~0.12; a jet selected at
+            M 0.40 would need a sea-level rated T/W ≈ 8× the altitude
+            value — typically infeasible for a UAV.  Global Hawk uses a
+            turbofan but only because it cruises at M 0.60+.
+            Below M 0.60 at these altitudes a turboprop is selected.
+
+        Piston ceiling: the engine sub-type (Piston vs Turboprop) for
+        propeller missions is further limited to Piston only below
+        4 500 m (Roskam Vol. I §3.2 practical piston ceiling).
         ──────────────────────────────────────────────────────────────
         """
         mach = self.cruise_speed / self.speed_of_sound
-        if mach > 0.4:
+        h    = self.mission_altitude
+
+        # Altitude-graduated Mach threshold for jet selection
+        if h > 15_000.0:
+            jet_mach_min = 0.60
+        elif h > 9_000.0:
+            jet_mach_min = 0.50
+        else:
+            jet_mach_min = 0.40
+
+        if mach >= jet_mach_min:
             return "Jet"
+
+        # Propeller branch — choose sub-type
         if self.payload_rules.mission_objective == "High Endurance":
+            return "Turboprop"
+        if h > 4_500.0:
+            # Above practical piston ceiling → turboprop
             return "Turboprop"
         return "Piston"
 

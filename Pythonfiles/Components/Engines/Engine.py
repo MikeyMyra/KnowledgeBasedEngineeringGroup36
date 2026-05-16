@@ -161,10 +161,17 @@ class Engine(GeomBase):
     def _approx_nacelle_radius(self) -> float:
         """
         Nacelle radius estimate for positioning [m] (Roskam Vol. V §4).
-        Mirrors JetEngine.nacelle_radius so offsets stay consistent.
+        Mirrors JetEngine.nacelle_radius — uses lapse-corrected sea-level
+        thrust for jets so offsets scale correctly at altitude.
         """
-        T_kN = (self.thrust_to_weight * self.mtow * self.g
-                / max(self.n_engines, 1)) / 1000.0
+        T_alt_kN = (self.thrust_to_weight * self.mtow * self.g
+                    / max(self.n_engines, 1)) / 1000.0
+        if self.engine_type == "jet":
+            sigma       = max(self.rho, 0.01) / 1.225
+            lapse       = min(sigma ** 0.75, 1.0)
+            T_kN        = T_alt_kN / lapse          # sea-level equivalent
+        else:
+            T_kN        = T_alt_kN
         return 0.2284 * (T_kN ** 0.4) / 2.0
 
     @Attribute
@@ -554,7 +561,7 @@ if __name__ == "__main__":
         target_solidity=0.15,
 
         nacelle_length_override=None,
-        nacelle_radius_override=None,
+nacelle_radius_override=None,
         n_blades_override=None,
         blade_length_override=None,
         blade_root_chord_override=None,

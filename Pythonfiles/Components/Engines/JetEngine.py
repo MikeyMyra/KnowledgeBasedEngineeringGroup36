@@ -92,7 +92,43 @@ class JetEngine(GeomBase):
 
     @Attribute
     def thrust_per_engine(self) -> float:
+        """Required installed thrust per engine at cruise altitude [N]."""
         return self.total_thrust / self.n_engines
+
+    # ------------------------------------------------------------------ #
+    # ALTITUDE THRUST LAPSE
+    # ------------------------------------------------------------------ #
+
+    @Attribute
+    def thrust_lapse_factor(self) -> float:
+        """
+        Fraction of sea-level thrust available at cruise altitude [-].
+
+        For a turbofan/turbojet, thrust falls with air density as:
+            T_alt / T_sl ≈ (ρ_alt / ρ_sl)^0.75
+
+        The exponent 0.75 is the standard value for high-bypass turbofans
+        (Raymer §13.3; Roskam Vol. V §5.2).  Turbojets use ~0.9 but 0.75
+        is the conservative design assumption for mixed fleets.
+
+        At 20 km (ρ ≈ 0.089 kg/m³):  factor ≈ (0.089/1.225)^0.75 ≈ 0.12
+        → the engine produces only 12 % of its sea-level rated thrust.
+        To deliver the required altitude thrust it must therefore be rated
+        at ~8× that thrust at sea level.
+        """
+        sigma = max(self.rho, 0.01) / 1.225   # density ratio (clamp away from zero)
+        return min(sigma ** 0.75, 1.0)         # cap at 1.0 (no lapse below sea level)
+
+    @Attribute
+    def sl_thrust_per_engine(self) -> float:
+        """
+        Sea-level rated thrust per engine [N].
+
+        This is the thrust the engine must be designed to produce at
+        sea level so that, after altitude lapse, it still delivers the
+        required cruise thrust at the mission altitude.
+        """
+        return self.thrust_per_engine / self.thrust_lapse_factor
 
     # ------------------------------------------------------------------ #
     # ROSKAM NACELLE SIZING  (Vol. V §4)
@@ -100,9 +136,17 @@ class JetEngine(GeomBase):
 
     @Attribute
     def nacelle_radius(self) -> float:
+        """
+        Nacelle outer radius [m] — Roskam Vol. V §4 correlation.
+
+        The correlation is calibrated against sea-level-rated thrust, so
+        the sea-level equivalent (lapse-corrected) thrust is used here.
+        Using the altitude thrust directly would produce an unrealistically
+        small nacelle at high cruise altitudes.
+        """
         if self.nacelle_radius_override is not None:
             return self.nacelle_radius_override
-        T_kN = self.thrust_per_engine / 1000.0
+        T_kN = self.sl_thrust_per_engine / 1000.0   # ← sea-level equivalent
         return 0.2284 * (T_kN ** 0.4) / 2.0
 
     @Attribute
