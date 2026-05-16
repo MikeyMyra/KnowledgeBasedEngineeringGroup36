@@ -80,7 +80,7 @@
     &quot;to.speed.mode.migration.done&quot;: &quot;true&quot;,
     &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
   }
-}</component>
+}]]></component>
   <component name="RunManager">
     <configuration name="mission" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="tutorial_python_matlab" />
@@ -157,10 +157,11 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="It now returns fuel weight T/W and MTOW" />
-    <option name="LAST_COMMIT_MESSAGE" value="It now returns fuel weight T/W and MTOW" />
+    <MESSAGE value="Add weapon count input and Aircraft configuration parameters to Drone class" />
+    <option name="LAST_COMMIT_MESSAGE" value="Add weapon count input and Aircraft configuration parameters to Drone class" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/KnowledgeBasedEngineeringGroup36$Payload.coverage" NAME="Payload Coverage Results" MODIFIED="1778503896975" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/Pythonfiles/Components" />
+    <SUITE FILE_PATH="coverage/KnowledgeBasedEngineeringGroup36$Payload.coverage" NAME="Payload Coverage Results" MODIFIED="1778510495934" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/Pythonfiles/Components" />
     <SUITE FILE_PATH="coverage/KnowledgeBasedEngineeringGroup36$mission.coverage" NAME="mission Coverage Results" MODIFIED="1778509963269" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/Pythonfiles" />
   </component>
   <component name="hg4idea.settings">

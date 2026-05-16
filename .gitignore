@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 Pythonfiles/Components/__pycache__/Wing.cpython-312.pyc
 Pythonfiles/Testfiles/test_aircraft/__pycache__/__init__.cpython-312.pyc
 Pythonfiles/Testfiles/test_aircraft/__pycache__/aircraft.cpython-312.pyc
@@ -74,3 +75,10 @@ Pythonfiles/Components/Engines/__pycache__/JetEngine.cpython-312.pyc
 Pythonfiles/Components/Payload/__pycache__/Payload.cpython-312.pyc
 Pythonfiles/Components/Fuselage/__pycache__/Undercarriage.cpython-312.pyc
 Pythonfiles/Components/Fuselage/__pycache__/Undercarriage.cpython-312.pyc
+=======
+.idea/
+.ai/
+*.pyc
+*.xml
+__pycache__/
+>>>>>>> e567b001a7bf8c418adffc9e61b077e528bc9cb5
