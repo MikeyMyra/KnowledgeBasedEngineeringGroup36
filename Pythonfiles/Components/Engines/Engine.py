@@ -155,15 +155,103 @@ class Engine(GeomBase):
         """Spanwise station for wing-mounted engines: 35% semi-span (Roskam)."""
         return self.semi_span * 0.35
 
+    # ── Approximate sizing used only for offset geometry ─────────────── #
+
+    @Attribute
+    def _approx_nacelle_radius(self) -> float:
+        """
+        Nacelle radius estimate for positioning [m] (Roskam Vol. V §4).
+        Mirrors JetEngine.nacelle_radius so offsets stay consistent.
+        """
+        T_kN = (self.thrust_to_weight * self.mtow * self.g
+                / max(self.n_engines, 1)) / 1000.0
+        return 0.2284 * (T_kN ** 0.4) / 2.0
+
+    @Attribute
+    def _approx_nacelle_length(self) -> float:
+        """Nacelle length estimate for positioning [m]."""
+        return 2.5 * (2.0 * self._approx_nacelle_radius)
+
+    @Attribute
+    def _approx_blade_length(self) -> float:
+        """
+        Propeller blade length estimate for positioning [m].
+        Uses the same Roskam §3.6 / actuator-disk formula as PropellerEngine,
+        capped at 15 % semi-span so the offset stays proportional.
+        """
+        eta_prop = 0.82
+        T_per    = (self.thrust_to_weight * self.mtow * self.g
+                    / max(self.n_engines, 1))
+        P        = T_per * self.cruise_speed / eta_prop
+        P_kW     = max(P, 1.0) / 1000.0
+        D_sl     = 0.658 * (P_kW ** 0.25)
+        rho_sl   = 1.225
+        rho      = max(self.rho, 0.01)
+        D_alt    = D_sl * sqrt(rho_sl / rho)
+        return min(D_alt / 2.0, self.semi_span * 0.15)
+
+    # ── Per-type mount offsets ────────────────────────────────────────── #
+
+    @Attribute
+    def _prop_x_offset(self) -> float:
+        """
+        Forward shift for wing-mounted propeller engines [m].
+
+        The prop disc is placed at the wing LE of the mount station.
+        An inboard blade tip (at y = mount_y − blade_length) is behind
+        that LE by  blade_length · tan(sweep_le)  because the LE sweeps
+        aft outboard.  Moving the entire engine forward by this amount
+        (plus a 50 mm clearance margin) ensures all blade tips clear the
+        wing leading edge.
+        """
+        clearance = (self._approx_blade_length * tan(radians(self.sweep_le))
+                     + 0.05)
+        return -clearance
+
+    @Attribute
+    def _jet_x_offset(self) -> float:
+        """
+        Forward shift for wing-mounted jet engines [m].
+
+        Positions the nacelle so that roughly 35 % of its length sits
+        ahead of the wing LE (inlet forward of LE), matching the typical
+        pylon / under-wing pod arrangement (Roskam Vol. V §4).
+        """
+        return -self._approx_nacelle_length * 0.35
+
+    @Attribute
+    def _jet_z_offset(self) -> float:
+        """
+        Downward shift for wing-mounted jet engines [m].
+
+        Lowers the nacelle centreline by 2 × nacelle_radius below the
+        wing LE z-position, so the pod hangs clearly below the wing
+        rather than sitting inside it.
+        """
+        return -self._approx_nacelle_radius * 2.0
+
+    # ── Final mount coordinates ───────────────────────────────────────── #
+
     @Attribute
     def _wing_mount_x(self) -> float:
-        """X at the wing-mount station, following LE sweep."""
-        return self.wing_root_x + self._wing_mount_y * tan(radians(self.sweep_le))
+        """
+        X at the wing-mount station, with engine-type forward offset applied.
+        """
+        base_x = self.wing_root_x + self._wing_mount_y * tan(radians(self.sweep_le))
+        if self.engine_type == "propeller":
+            return base_x + self._prop_x_offset
+        else:   # jet
+            return base_x + self._jet_x_offset
 
     @Attribute
     def _wing_mount_z(self) -> float:
-        """Z at the wing-mount station, following dihedral."""
-        return self.wing_root_z + self._wing_mount_y * tan(radians(self.dihedral))
+        """
+        Z at the wing-mount station, with engine-type vertical offset applied.
+        """
+        base_z = self.wing_root_z + self._wing_mount_y * tan(radians(self.dihedral))
+        if self.engine_type == "jet":
+            return base_z + self._jet_z_offset
+        return base_z
 
     @Attribute
     def _dorsal_x(self) -> float:
@@ -389,7 +477,7 @@ if __name__ == "__main__":
         blade_length_override=None,
         blade_root_chord_override=None,
         blade_sweep=5.0,
-        
+
         inlet_radius_ratio=0.85,
         nozzle_radius_ratio=0.7,
 
@@ -430,7 +518,7 @@ if __name__ == "__main__":
         blade_length_override=None,
         blade_root_chord_override=None,
         blade_sweep=0.0,
-        
+
         inlet_radius_ratio=0.85,
         nozzle_radius_ratio=0.7,
 
@@ -471,7 +559,7 @@ if __name__ == "__main__":
         blade_length_override=None,
         blade_root_chord_override=None,
         blade_sweep=0.0,
-        
+
         inlet_radius_ratio=0.85,
         nozzle_radius_ratio=0.7,
 

@@ -87,8 +87,8 @@ class Aircraft(GeomBase):
     # ENGINE / PROPULSION
     # ============================================================ #
 
-    thrust_to_weight: float = Input(0.35)
-    rho:              float = Input(1.225)   # ISA sea-level [kg/m³]; unused — Engine uses main_wing.density
+    thrust_to_weight: float = Input()
+    rho:              float = Input()   # ISA sea-level [kg/m³]; unused — Engine uses main_wing.density
 
     # ============================================================ #
     # UNDERCARRIAGE

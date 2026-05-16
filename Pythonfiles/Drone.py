@@ -425,7 +425,16 @@ class Drone(GeomBase):
 
     @action(label="Show Design Point")
     def WP_WS_diagram(self):
+        import os, datetime
         self.mission.thrust_and_wing_loading_plot()
+        save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        png_path  = os.path.join(save_dir, f"Outputfiles/design_point_{timestamp}.png")
+        try:
+            self.mission.save_wp_ws_figure(png_path)
+            print(f"✓ Design-point diagram saved: {png_path}")
+        except Exception as exc:
+            print(f"Design-point PNG save failed: {exc}")
 
     @action(label="Run Wing Airfoil Sweep")
     def run_wing_sweep(self):
@@ -433,7 +442,16 @@ class Drone(GeomBase):
 
     @action(label="Plot Wing XFoil polars")
     def plot_wing_cl_alpha(self):
+        import os, datetime
         self.aircraft.main_wing.plot_cl_alpha()
+        save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        png_path  = os.path.join(save_dir, f"Outputfiles/wing_polars_{timestamp}.png")
+        try:
+            self.aircraft.main_wing.root_airfoil.save_polar_figure(png_path)
+            print(f"✓ Wing polar figure saved: {png_path}")
+        except Exception as exc:
+            print(f"Wing polars PNG save failed: {exc}")
 
     @action(label="Print Stability Report")
     def print_stability_report(self):
@@ -796,6 +814,8 @@ class Drone(GeomBase):
             maximum_load_factor=self.maximum_load_factor,
             effective_wing_area=self.wing_area,
             effective_wing_semi_span=self.wing_semi_span,
+            thrust_to_weight=self.thrust_loading if self.engine_type == "Jet" else self.power_loading,
+            rho=self.air_density,
             # Pass taper ratio so Aircraft/LiftingSurface and the chord-constraint
             # check in Drone both use the same value.
             wing_taper_ratio=self.wing_taper_ratio,
@@ -825,37 +845,10 @@ class Drone(GeomBase):
 
     @Attribute
     def static_margin(self) -> float:
-        """Longitudinal static margin [% MAC]."""
-        return self.aircraft.static_margin_percent
+        """Longitudinal static margin as fraction of MAC [-]."""
+        return self.aircraft.static_margin
 
     @Attribute
     def stability_status(self) -> str:
-        """Human-readable stability assessment."""
+        """Plain-English stability assessment."""
         return self.aircraft.stability_status
-
-
-# ================================================================ #
-# ENTRY POINT
-# ================================================================ #
-
-if __name__ == "__main__":
-    from parapy.gui import display
-
-    d_isr = Drone(
-        cruise_speed=80.0,
-        mission_altitude=6000,
-        mission_range=500,
-        mission_endurance=8,
-        payload_role="ISR",
-    )
-
-    d_strike = Drone(
-        cruise_speed=100.0,
-        mission_altitude=200,
-        mission_range=1000,
-        mission_endurance=5,
-        payload_role="Strike",
-        weapon_count=2,
-    )
-
-    display([d_isr, d_strike])
