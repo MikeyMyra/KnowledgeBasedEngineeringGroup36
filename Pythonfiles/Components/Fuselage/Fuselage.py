@@ -58,6 +58,9 @@ class Fuselage(GeomBase):
     undercarriage_color_axle:  str  = Input()
     undercarriage_color_strut: str  = Input()
     undercarriage_retractible: bool = Input()
+    # Largest rotating radius that must clear the ground (prop tip or nacelle).
+    # Computed by Aircraft and forwarded here so Undercarriage can size struts.
+    prop_clearance_radius: float = Input(0.0)
 
     # Payload object — drives min length/radius, None = no constraint
     payload = Input(None)
@@ -285,6 +288,7 @@ class Fuselage(GeomBase):
             aircraft_mass=self.aircraft_mass,
             fuselage_length=self.length,
             fuselage_radius=self.radius,
+            prop_clearance_radius=self.prop_clearance_radius,
             label="undercarriage",
             color_tyre=self.undercarriage_color_tyre,
             color_axle=self.undercarriage_color_axle,

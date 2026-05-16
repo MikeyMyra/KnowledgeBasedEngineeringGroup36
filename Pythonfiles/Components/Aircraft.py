@@ -243,9 +243,19 @@ class Aircraft(GeomBase):
           [nosecone end] → [payload bay] → [50 mm gap] → [fuel tank] → [tailcone start]
         """
         from parapy.geom import translate as _translate, Vector as _Vector
-        payload_len  = (self.payload_object.min_fuselage_length
-                        if self.payload_object is not None else 0.0)
-        tank_start_x = self.fuselage._x_cylinder_start + payload_len + 0.05
+        payload_len   = (self.payload_object.min_fuselage_length
+                         if self.payload_object is not None else 0.0)
+        nominal_start = self.fuselage._x_cylinder_start + payload_len + 0.05
+        # Push tank aft of wingbox rear spar to avoid structural intersection.
+        # If the payload bay already ends aft of the rear spar the wingbox term
+        # has no effect (max selects the larger value).
+        tank_start_x  = max(nominal_start, self._wingbox_end_x + 0.05)
+        if tank_start_x > nominal_start + 1e-6:
+            print(
+                f"[Aircraft] Fuel tank pushed aft by wingbox: "
+                f"nominal x={nominal_start:.3f} m → {tank_start_x:.3f} m "
+                f"(rear spar at x={self._wingbox_end_x:.3f} m)"
+            )
         return _translate(self.position, _Vector(1, 0, 0), tank_start_x)
 
     # ============================================================ #
@@ -264,6 +274,7 @@ class Aircraft(GeomBase):
             undercarriage_color_tyre=self.undercarriage_color_tyre,
             undercarriage_color_axle=self.undercarriage_color_axle,
             undercarriage_color_strut=self.undercarriage_color_strut,
+            prop_clearance_radius=self._approx_prop_clearance_radius,
             payload=self.payload_object,
             fuel_tank=self._fuel_tank_sizing,   # sizing-only Attribute, no position dep
             length_min_override=self._min_fuselage_length_from_wing,
@@ -422,6 +433,47 @@ class Aircraft(GeomBase):
         )
     
     @Attribute
+    def _approx_prop_clearance_radius(self) -> float:
+        """
+        Approximate largest rotating radius for undercarriage strut sizing [m].
+
+        Computed from mission inputs only — no dependency on Fuselage or Engine
+        Parts, so it can be passed safely into Fuselage without circular refs.
+
+        Jet engines  : nacelle outer radius, sea-level rated (lapse-corrected).
+                       Roskam Vol. V §4: D_nac = 0.2284 * T_sl_kN^0.4.
+        Prop engines : propeller blade-tip radius, altitude-corrected.
+                       Roskam Vol. I §3.6 / actuator-disk: D = 0.658 * P_kW^0.25,
+                       scaled to altitude by D_alt = D_sl * sqrt(rho_sl / rho).
+
+        Note on thrust_to_weight units:
+          • Jet  → dimensionless T/W passed from Drone (Drone.thrust_loading).
+          • Prop → power loading [kg/W] passed from Drone (Drone.power_loading),
+                   so total power P = aircraft_mass / thrust_to_weight [W].
+        """
+        from math import sqrt
+        n = 1 if self.aircraft_mass < 2700 else 2
+
+        if self.engine_type_str == "Jet":
+            # Nacelle radius (sea-level equivalent after lapse correction)
+            T_per_N  = self.thrust_to_weight * self.aircraft_mass * self.g / n
+            sigma    = max(self.rho, 0.01) / 1.225
+            lapse    = min(sigma ** 0.75, 1.0)
+            T_sl_kN  = T_per_N / lapse / 1000.0
+            return 0.2284 * (T_sl_kN ** 0.4) / 2.0
+
+        else:
+            # Propeller radius with ISA altitude density correction.
+            # thrust_to_weight = power_loading [kg/W] for prop engines;
+            # total power P = aircraft_mass / power_loading [W].
+            P_total_W  = self.aircraft_mass / max(self.thrust_to_weight, 1e-9)
+            P_per_kW   = max(P_total_W / n, 1.0) / 1000.0   # per-engine
+            D_sl_per   = 0.658 * (P_per_kW ** 0.25)          # Roskam §3.6
+            rho        = max(self.rho, 0.01)
+            D_alt_per  = D_sl_per * sqrt(1.225 / rho)        # actuator-disk scaling
+            return D_alt_per / 2.0
+
+    @Attribute
     def _min_fuselage_length_from_wing(self) -> float:
         """
         Fuselage length lower bound from wing root chord [m].
@@ -448,7 +500,7 @@ class Aircraft(GeomBase):
         c_root = 2.0 * S / (b * (1.0 + lamb))
         return 3.0 * c_root
 
-    @Attribute  
+    @Attribute
     def _min_fuselage_radius_from_wing(self) -> float:
         """
         Fuselage radius lower bound from wing root chord.
@@ -460,6 +512,37 @@ class Aircraft(GeomBase):
         lamb = self.wing_taper_ratio
         c_root = 2 * S / (b * (1 + lamb))
         return 0.08 * c_root
+
+    # ============================================================ #
+    # WINGBOX CLEARANCE
+    #
+    # The main-wing wingbox passes through the fuselage between the
+    # front and rear spar stations.  Payload and fuel tank must be
+    # placed fore or aft of this blocked zone to avoid intersection.
+    #
+    # Roskam Vol. II §4.1 / §5.1: front spar at ~15% chord,
+    # rear spar at ~60% chord (input via wing_front/rear_spar_position).
+    # ============================================================ #
+
+    @Attribute
+    def _wingbox_start_x(self) -> float:
+        """
+        X-position of the wing front spar at the fuselage centreline [m].
+
+        This is the forward edge of the zone blocked by the wingbox.
+        """
+        return self.main_wing.attach_x + self.wing_front_spar_position * self.main_wing.c_root_geometric
+
+    @Attribute
+    def _wingbox_end_x(self) -> float:
+        """
+        X-position of the wing rear spar at the fuselage centreline [m].
+
+        Nothing may be placed inside the fuselage between _wingbox_start_x
+        and _wingbox_end_x; the fuel tank and payload are pushed aft of this
+        station (or forward of it) to maintain structural clearance.
+        """
+        return self.main_wing.attach_x + self.wing_rear_spar_position * self.main_wing.c_root_geometric
 
     # ============================================================ #
     # STABILITY ANALYSIS  (Roskam Vol. II §3.2–3.3)
@@ -532,11 +615,24 @@ class Aircraft(GeomBase):
         # Fuel CG: centre of the fuel tank (uniform fill assumption).
         # Uses _fuel_tank_sizing (not the rendered Part) to avoid triggering
         # position evaluation.  cg_local_x = total_length / 2 (pure math).
-        payload_len  = (self.payload_object.min_fuselage_length
-                        if self.payload_object is not None else 0.0)
+        payload_len   = (self.payload_object.min_fuselage_length
+                         if self.payload_object is not None else 0.0)
+        # ── payload wingbox overlap check ──────────────────────────── #
+        payload_end_x = self.fuselage._x_cylinder_start + payload_len
+        if (payload_len > 0.0
+                and payload_end_x > self._wingbox_start_x
+                and self.fuselage._x_cylinder_start < self._wingbox_end_x):
+            print(
+                f"[Aircraft] WARNING: payload bay (x={self.fuselage._x_cylinder_start:.3f}"
+                f"–{payload_end_x:.3f} m) overlaps wingbox "
+                f"(x={self._wingbox_start_x:.3f}–{self._wingbox_end_x:.3f} m). "
+                f"Consider reducing payload length or moving the wing aft."
+            )
+        # ── fuel tank CG — same wingbox-aware start as _fuel_tank_position ── #
         if self._fuel_tank_sizing is not None:
-            tank_cg_x = (self.fuselage._x_cylinder_start + payload_len
-                         + 0.05 + self._fuel_tank_sizing.cg_local_x)
+            nominal_start = self.fuselage._x_cylinder_start + payload_len + 0.05
+            tank_start_x  = max(nominal_start, self._wingbox_end_x + 0.05)
+            tank_cg_x     = tank_start_x + self._fuel_tank_sizing.cg_local_x
         else:
             # No fuel — fall back to wing AC (legacy behaviour)
             tank_cg_x = self.main_wing.x_ac

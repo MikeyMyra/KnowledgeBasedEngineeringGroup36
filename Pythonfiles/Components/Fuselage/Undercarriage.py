@@ -32,6 +32,11 @@ class Undercarriage(GeomBase):
     color_axle: str = Input()
     color_strut: str = Input()
 
+    # Largest rotating radius that must clear the ground (propeller tip or
+    # nacelle radius depending on engine type).  Supplied by Aircraft via
+    # Fuselage; defaults to 0 (no external clearance constraint).
+    prop_clearance_radius: float = Input(0.0)
+
     # ------------------------------------------------------------------ #
     # SIZING MODEL — Roskam Vol. I statistical relationships
     # ------------------------------------------------------------------ #
@@ -83,22 +88,45 @@ class Undercarriage(GeomBase):
 
     @Attribute
     def strut_height(self) -> float:
-        """Strut height (extended length from fuselage attach to axle centre) [m].
+        """Strut height (extended length from fuselage attach point to axle centre) [m].
 
-        Roskam Vol. I, §8.6, Fig. 8.8: minimum ground clearance must clear the
-        propeller tip + 18 cm margin.  At UAV scale the propeller radius is not
-        available here, so strut height is derived from wheel size instead:
+        Roskam Vol. I, §8.6, Fig. 8.8: minimum ground clearance ≥ max rotating
+        radius (propeller tip or nacelle) + 18 cm safety margin.
 
-            strut_height = max(1.5 * wheel_major_radius, 0.05 + 0.015 * log10(m[kg]))
+        Ground-to-fuselage-centreline distance = fuselage_radius + strut_height
+        + wheel_major_radius.  Solving for strut_height:
 
-        The first term (1.5× wheel radius) ensures the axle clears the ground with
-        the wheel attached and provides a small stroke margin.  The second term is a
-        mass-based floor that prevents near-zero struts on very light aircraft.
-        NOTE (Roskam): override with propeller tip clearance check once propeller
-        geometry is known (Roskam Vol. I, §8.6).
+            strut_height ≥ prop_clearance_radius + 0.18
+                           − fuselage_radius − wheel_major_radius
+
+        Three competing floors are taken:
+          1. Clearance requirement  (propeller / nacelle, above)
+          2. Tyre-stroke floor      : 2.0 × wheel_major_radius  (axle above ground
+                                      with tyre and ~50 % stroke travel margin)
+          3. Mass-based floor       : 0.05 + 0.015 × log10(m)  — prevents
+                                      near-zero struts on very light aircraft
         """
-        mass_floor = 0.05 + 0.015 * math.log10(max(1.0, self.aircraft_mass))
-        return max(self.wheel_major_radius * 1.5, mass_floor)
+        mass_floor    = 0.05 + 0.015 * math.log10(max(1.0, self.aircraft_mass))
+        tyre_floor    = self.wheel_major_radius * 2.0
+        if self.prop_clearance_radius > 0.0:
+            # Roskam §8.6: strut must place fuselage-CL + clearance above ground
+            clearance_req = max(0.0,
+                                self.prop_clearance_radius + 0.18
+                                - self.fuselage_radius
+                                - self.wheel_major_radius)
+        else:
+            clearance_req = 0.0
+        return max(tyre_floor, clearance_req, mass_floor)
+
+    @Attribute
+    def _cg_height(self) -> float:
+        """Approximate CG height above ground [m].
+
+        Roskam Vol. I, §8.6: used for tip-over stability criterion.
+        Conservatively taken as the fuselage centreline height, which equals
+        fuselage_radius + strut_height + wheel outer radius.
+        """
+        return self.fuselage_radius + self.strut_height + self.wheel_major_radius
 
     @Attribute
     def strut_radius(self) -> float:
@@ -166,11 +194,19 @@ class Undercarriage(GeomBase):
     def _main_gear_positions_y(self) -> list:
         """Lateral positions of each main strut [m].
 
-        Roskam Vol. I, §8.6, Fig. 8.5: lateral track must satisfy tip-over stability —
-        track half-width ≥ 3× wheel major radius is a conservative starting point.
-        NOTE (Roskam): check 55° roll-over angle criterion (Fig. 8.5) with actual CG height.
+        Roskam Vol. I, §8.6, Fig. 8.5 — roll-over (tip-over) criterion:
+        The angle ψ from vertical to the line connecting the main gear contact
+        point to the CG must satisfy ψ ≥ 35°  (equivalently the aircraft can
+        lean 55° from the ground before tipping):
+
+            ψ = atan(half_track / cg_height) ≥ 35°
+            → half_track ≥ cg_height × tan(35°) ≈ cg_height × 0.700
+
+        A practical lower floor of 3.5 × wheel_major_radius is also kept to
+        prevent over-narrow gear on very low-CG configurations.
         """
-        spacing = self.wheel_major_radius * 3.5
+        min_tipover = self._cg_height * math.tan(math.radians(35.0))
+        spacing     = max(self.wheel_major_radius * 3.5, min_tipover)
 
         if self.n_main_struts == 2:
             return [-spacing, spacing]

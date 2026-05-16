@@ -124,10 +124,25 @@ class Engine(GeomBase):
             T = 288.15 - 0.0065 * self.mission_altitude
         else:
             T = 216.65   # ISA stratosphere isothermal layer [K]
-        a = sqrt(1.4 * 287.05 * T)                 # ISA speed of sound [m/s]
+        a    = sqrt(1.4 * 287.05 * T)   # ISA speed of sound [m/s]
         mach = self.cruise_speed / a
 
-        return "propeller" if mach < 0.40 else "jet"
+        # Altitude-graduated Mach threshold — mirrors Drone.engine_type logic.
+        # At high altitude the jet thrust lapse (σ^0.75) is so severe that jets
+        # are only practical at correspondingly high Mach numbers.
+        # Roskam Vol. I §3.2 / Raymer §13.3 / §10.2:
+        #   h > 15 000 m → jet viable only at M ≥ 0.60  (Global Hawk territory)
+        #   h >  9 000 m → jet viable only at M ≥ 0.50  (Predator-B boundary)
+        #   h ≤  9 000 m → jet viable at M ≥ 0.40       (classic compressibility limit)
+        h = self.mission_altitude
+        if h > 15_000.0:
+            jet_mach_min = 0.60
+        elif h > 9_000.0:
+            jet_mach_min = 0.50
+        else:
+            jet_mach_min = 0.40
+
+        return "propeller" if mach < jet_mach_min else "jet"
 
     @Attribute
     def n_engines(self) -> int:

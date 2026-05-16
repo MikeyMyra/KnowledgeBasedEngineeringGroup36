@@ -52,6 +52,26 @@ from parapy.geom import GeomBase, Box, Cylinder, translate, rotate, Vector
 
 
 # =============================================================================
+# PAYLOAD TYPE COLOUR MAP
+# =============================================================================
+# Each payload category gets a visually distinct colour so items are
+# immediately identifiable in the ParaPy 3-D view.
+
+PAYLOAD_TYPE_COLORS = {
+    "flight_computer": "SlateBlue",    # electronics — calm blue-violet
+    "battery":         "LimeGreen",    # power storage — bright green
+    "eo_ir":           "DeepSkyBlue",  # optical sensor — sky blue
+    "radar":           "Orange",       # radar — warning orange
+    "lidar":           "Cyan",         # laser rangefinder — cyan
+    "comms":           "Gold",         # communication — gold
+    "datalink":        "Yellow",       # data-link radio — yellow
+    "weapon":          "Firebrick",    # weapon — dark red
+}
+# Fallback for any category not listed above
+_DEFAULT_PAYLOAD_COLOR = "LightGray"
+
+
+# =============================================================================
 # LOAD DATABASE FROM JSON
 # =============================================================================
 
@@ -134,11 +154,12 @@ def weapon_grid(weapon_count: int):
 
 class WeaponSolid(GeomBase):
     """Single weapon cylinder, placed at a pre-computed (dy, dz) offset."""
-    
+
     diameter:    float = Input()
     height_cyl:  float = Input()
     dy:          float = Input()
     dz:          float = Input()
+    color:       str   = Input("Firebrick")
 
     @Part(parse=False)
     def solid(self):
@@ -146,6 +167,7 @@ class WeaponSolid(GeomBase):
             radius=self.diameter / 2.0,
             height=self.height_cyl,
             centered=True,
+            color=self.color,
             position=rotate(
                 translate(self.position, "y", self.dy, "z", self.dz),
                 "y", math.pi / 2,
@@ -169,6 +191,15 @@ class PayloadItem(GeomBase):
     payload_type: str = Input()
     model:        str = Input()
     uav_class:    str = Input(None)
+
+    # -------------------------------------------------------------------------
+    # Colour
+    # -------------------------------------------------------------------------
+
+    @Attribute
+    def color(self) -> str:
+        """Distinct colour for this payload type, from PAYLOAD_TYPE_COLORS."""
+        return PAYLOAD_TYPE_COLORS.get(self.payload_type, _DEFAULT_PAYLOAD_COLOR)
 
     # Optional overrides
     mass_override:  float = Input(None)
@@ -294,6 +325,7 @@ class PayloadItem(GeomBase):
                 height_cyl=self.final_height_cyl,
                 dy=dy,
                 dz=dz,
+                color=self.color,
                 position=self.position,
             )
             for dy, dz in self._weapon_offset_list
@@ -401,12 +433,14 @@ class PayloadItem(GeomBase):
                 width=self.final_width,
                 height=self.final_height_box,
                 centered=True,
+                color=self.color,
                 suppress=(self.payload_type == "weapon" and self.weapon_count > 1),
             )
         return Cylinder(
             radius=self.final_diameter / 2.0,
             height=self.final_height_cyl,
             centered=True,
+            color=self.color,
             position=rotate(self.position, "y", math.pi / 2),
             suppress=(self.payload_type == "weapon" and self.weapon_count > 1),
         )
