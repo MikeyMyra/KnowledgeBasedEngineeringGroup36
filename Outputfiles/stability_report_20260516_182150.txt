@@ -1,0 +1,37 @@
+======================================================================
+STABILITY REPORT
+======================================================================
+
+COMPONENT MASSES & CG POSITIONS
+  Component              Mass [kg]    CG x [m]    m*x [kg.m]
+  ----------------------------------------------------------
+  fuselage                   32.03       6.128        196.29
+  main_wing                   3.91       6.652         26.00
+  horizontal_tail             0.13      12.659          1.64
+  vertical_tail               0.45      13.671          6.15
+  engine                    314.62       6.335       1993.05
+  fuel                     3177.61       6.335      20129.78
+  payload                  1387.48       2.794       3876.23
+  fuel_tank_structure        79.44       6.335        503.24
+  ----------------------------------------------------------
+  TOTAL                    4995.67       5.351      26732.38
+
+FUEL TANK
+  Fuel type          : Jet-A / Jet-A1
+  Fuel density       : 800 kg/m3
+  Fuel mass          : 3177.6 kg
+  Tank outer radius  : 641.0 mm
+  Tank total length  : 3846.1 mm
+
+AERODYNAMIC REFERENCE
+  Wing MAC              : 2.117 m
+  Wing AC (x_ac_w)      : 6.335 m
+  HT AC   (x_ac_h)      : 12.476 m
+  Neutral Point         : 7.089 m
+
+LONGITUDINAL STABILITY
+  Aircraft CG           : 5.351 m from nose
+  Neutral Point         : 7.089 m from nose
+  Static Margin         : 82.1% MAC
+  Assessment            : STABLE — SM = 82.1% MAC (target 5-15%)
+======================================================================

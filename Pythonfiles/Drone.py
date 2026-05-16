@@ -678,11 +678,6 @@ class Drone(GeomBase):
                 ["Assessment",             stab],
             ]))
 
-            # 6. Diagram
-            if diagram_path and os.path.exists(diagram_path):
-                story += section("6 · Design Point — W/P vs W/S Diagram")
-                story.append(RLImage(diagram_path, width=14*cm, height=8*cm))
-
             # ── build PDF ────────────────────────────────────────────── #
             doc.build(story)
             print(f"✓ PDF report saved: {pdf_path}")
