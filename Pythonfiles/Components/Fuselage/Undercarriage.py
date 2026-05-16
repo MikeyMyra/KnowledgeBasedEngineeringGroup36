@@ -108,15 +108,31 @@ class Undercarriage(GeomBase):
         """
         mass_floor    = 0.05 + 0.015 * math.log10(max(1.0, self.aircraft_mass))
         tyre_floor    = self.wheel_major_radius * 2.0
+
+        # 1. Prop / nacelle ground clearance
         if self.prop_clearance_radius > 0.0:
-            # Roskam §8.6: strut must place fuselage-CL + clearance above ground
             clearance_req = max(0.0,
                                 self.prop_clearance_radius + 0.18
                                 - self.fuselage_radius
                                 - self.wheel_major_radius)
         else:
             clearance_req = 0.0
-        return max(tyre_floor, clearance_req, mass_floor)
+
+        # 2. Tailstrike clearance on takeoff rotation  (Roskam Vol. I §8.6)
+        #    The aircraft rotates nose-up about the main gear contact point.
+        #    The tail tip sweeps downward by  L_tail × sin(θ_rot).
+        #    Roskam design rotation angle: 12° (10–15° range for GA/UAV).
+        #    Constraint: CG height ≥ L_tail × sin(θ_rot) + 0.10 m margin.
+        #    Solving for strut_height:
+        #      strut_height ≥ L_tail×sin(θ) + 0.10 − fuselage_radius − wheel
+        L_tail       = self.fuselage_length * (1.0 - 0.60)   # gear at 60% L_fus
+        theta_rot    = math.radians(12.0)                     # Roskam 12° design
+        tailstrike_req = max(0.0,
+                             L_tail * math.sin(theta_rot) + 0.10
+                             - self.fuselage_radius
+                             - self.wheel_major_radius)
+
+        return max(tyre_floor, clearance_req, tailstrike_req, mass_floor)
 
     @Attribute
     def _cg_height(self) -> float:
@@ -357,7 +373,7 @@ class Undercarriage(GeomBase):
 
     @Attribute
     def _main_strut_positions_z(self):
-        return [0.0, self.strut_height*2]
+        return [0.0, self.strut_height]
 
     @Attribute
     def _main_strut_radii(self):

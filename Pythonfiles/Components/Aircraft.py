@@ -463,15 +463,20 @@ class Aircraft(GeomBase):
             return 0.2284 * (T_sl_kN ** 0.4) / 2.0
 
         else:
-            # Propeller radius with ISA altitude density correction.
+            # Propeller radius for undercarriage clearance.
             # thrust_to_weight = power_loading [kg/W] for prop engines;
             # total power P = aircraft_mass / power_loading [W].
             P_total_W  = self.aircraft_mass / max(self.thrust_to_weight, 1e-9)
-            P_per_kW   = max(P_total_W / n, 1.0) / 1000.0   # per-engine
-            D_sl_per   = 0.658 * (P_per_kW ** 0.25)          # Roskam §3.6
-            rho        = max(self.rho, 0.01)
-            D_alt_per  = D_sl_per * sqrt(1.225 / rho)        # actuator-disk scaling
-            return D_alt_per / 2.0
+            P_per_kW   = max(P_total_W / n, 1.0) / 1000.0
+            D_sl_per   = 0.658 * (P_per_kW ** 0.25)   # Roskam §3.6 sea-level
+            # Do NOT apply altitude density scaling here.
+            # PropellerEngine.blade_length caps at semi_span×0.15 (geometric /
+            # tip-speed limit), so the displayed blade is not 3.7× larger at
+            # 20 km — it is the same physical hardware.  Using the uncapped
+            # D_alt = D_sl×√(ρ_sl/ρ) would produce struts 2× fuselage diameter
+            # at HALE altitudes.  Apply the same geometric cap instead.
+            geo_cap = self.effective_wing_semi_span * 0.15
+            return min(D_sl_per / 2.0, geo_cap)
 
     @Attribute
     def _min_fuselage_length_from_wing(self) -> float:
