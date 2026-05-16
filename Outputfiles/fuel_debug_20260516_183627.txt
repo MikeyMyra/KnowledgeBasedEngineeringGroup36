@@ -1,0 +1,9 @@
+==================================================
+FUEL TANK DEBUG
+  fuel_mass        : 3177.613 kg
+  suppress would be: False
+  _fuel_tank_sizing: namespace(min_fuselage_length=np.float64(3.8461352141749945), min_fuselage_radius=np.float64(0.6602532117667075), outer_radius=np.float64(0.6410225356958325), total_length=np.float64(3.8461352141749945), cg_local_x=np.float64(1.9230676070874972), fuel_label='Jet-A / Jet-A1', fuel_density=800.0)
+  tank total_length: 3.846 m
+  tank outer_radius: 0.641 m
+  tank position    : Position(7.293897455880902, 0.0, 0.0)
+==================================================
