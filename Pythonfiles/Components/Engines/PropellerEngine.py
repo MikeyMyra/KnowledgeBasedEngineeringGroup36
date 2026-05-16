@@ -71,6 +71,9 @@ class PropellerEngine(GeomBase):
     # ROSKAM PARAMETERS
     # ------------------------------------------------------------------ #
 
+    # Mission altitude [m] — used for the altitude feasibility check below
+    mission_altitude: float = Input(0.0)
+
     disk_loading_uav: float = Input()
     target_solidity: float = Input()
 
@@ -157,6 +160,48 @@ class PropellerEngine(GeomBase):
         )
 
     @Attribute
+    def altitude_feasibility(self) -> str:
+        """
+        Altitude note for propeller propulsion.
+
+        Engine type is determined solely by Mach number (M < 0.40 → propeller).
+        At high altitude the propeller disk scales with air density via
+        actuator-disk theory (D ∝ 1/√ρ), so large props are physically
+        consistent — they are just geometrically bigger.
+
+        This attribute provides informational sizing context visible in
+        the ParaPy attribute browser.
+
+        Roskam Vol. I §3.2 practical altitude bands (for reference):
+          Piston ceiling      : ~4 500 m  (15 000 ft)
+          Turboprop ceiling   : ~9 000 m  (30 000 ft)
+          Above 9 000 m: turboprop still possible with pressure-ratio
+          controlled powerplants (e.g. Rolls-Royce AE2100 on Global Hawk
+          predecessor) and large-diameter, slow-turning props.
+        """
+        h          = self.mission_altitude
+        rho_sl     = 1.225
+        rho        = max(self.rho, 0.01)
+        alt_scale  = sqrt(rho_sl / rho)
+        P_kW       = self.shaft_power / 1000.0
+        D_sl       = 0.658 * (P_kW ** 0.25)
+        D_alt      = D_sl * alt_scale
+
+        if h > 9_000.0:
+            return (f"HIGH-ALT PROP — {h:.0f} m  |  "
+                    f"density scale ×{alt_scale:.2f}  |  "
+                    f"D_sl={D_sl:.2f} m → D_alt={D_alt:.2f} m  "
+                    f"(capped at {self._max_blade_length*2:.2f} m if > wing limit)")
+        if h > 4_500.0:
+            return (f"MID-ALT PROP — {h:.0f} m  |  "
+                    f"density scale ×{alt_scale:.2f}  |  "
+                    f"D_sl={D_sl:.2f} m → D_alt={D_alt:.2f} m  "
+                    f"(turboprop / turbo-normalised engine recommended)")
+        return (f"OK — {h:.0f} m  |  "
+                f"density scale ×{alt_scale:.2f}  |  "
+                f"D_sl={D_sl:.2f} m → D_alt={D_alt:.2f} m")
+
+    @Attribute
     def _max_blade_length(self) -> float:
         wing_limit = self.semi_span * 0.15
         fus_limit  = self.fuselage_radius * 1.5 if self.fuselage_radius > 0 else wing_limit
@@ -166,11 +211,43 @@ class PropellerEngine(GeomBase):
 
     @Attribute
     def blade_length(self) -> float:
+        """
+        Propeller blade length [m] with altitude density scaling.
+
+        Step 1 — Roskam sea-level diameter (Vol. I §3.6):
+            D_sl = 0.658 · P_kW^0.25
+
+        Step 2 — Actuator-disk altitude correction:
+            At altitude ρ the disk must sweep more area to generate the
+            same thrust T, because T = 2ρAv_i² → A ∝ 1/ρ.
+            Diameter scales as D ∝ √A ∝ 1/√ρ, so:
+                D_alt = D_sl · √(ρ_sl / ρ)
+
+            At 20 km (ρ ≈ 0.089 kg/m³) the correction factor is
+            √(1.225 / 0.089) ≈ 3.7 — props are roughly 3.7× larger
+            in diameter than at sea level.
+
+        Step 3 — Geometric cap (_max_blade_length):
+            Blades cannot exceed 15% semi-span (avoid tip vortex
+            interference) or 1.5× fuselage radius at the nose.
+            For HALE missions where the altitude correction is large,
+            the correct response is more engines or accepting the cap —
+            the n_blades Roskam formula naturally adds blades to maintain
+            target disk solidity when the disk grows.
+        """
         if self.blade_length_override is not None:
             return self.blade_length_override
-        P_kW = self.shaft_power / 1000.0
-        D_roskam = 0.658 * (P_kW ** 0.25)
-        return min(D_roskam / 2.0, self._max_blade_length)
+
+        P_kW     = self.shaft_power / 1000.0
+        D_sl     = 0.658 * (P_kW ** 0.25)     # Roskam sea-level diameter [m]
+
+        # Altitude density scaling — actuator disk theory
+        rho_sl = 1.225                          # ISA sea-level density [kg/m³]
+        rho    = max(self.rho, 0.01)            # guard against near-zero density
+        alt_scale = sqrt(rho_sl / rho)          # D_alt / D_sl = sqrt(rho_sl/rho)
+        D_alt  = D_sl * alt_scale
+
+        return min(D_alt / 2.0, self._max_blade_length)
 
     @Attribute
     def blade_root_chord(self) -> float:

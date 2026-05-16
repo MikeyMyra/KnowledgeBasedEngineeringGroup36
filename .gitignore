@@ -64,3 +64,8 @@ Pythonfiles/Components/Liftingsurfaces/__pycache__/Wingbox.cpython-312.pyc
 Pythonfiles/Components/Payload/__pycache__/Payload.cpython-312.pyc
 Pythonfiles/Components/Engines/__pycache__/PropellerEngine.cpython-312.pyc
 Pythonfiles/Components/Engines/__pycache__/JetEngine.cpython-312.pyc
+Pythonfiles/Components/Engines/__pycache__/JetEngine.cpython-312.pyc
+Pythonfiles/Components/Engines/__pycache__/PropellerEngine.cpython-312.pyc
+Pythonfiles/Components/Fuel/__pycache__/__init__.cpython-312.pyc
+Pythonfiles/Components/Fuel/__pycache__/FuelTank.cpython-312.pyc
+Pythonfiles/__pycache__/Drone.cpython-312.pyc

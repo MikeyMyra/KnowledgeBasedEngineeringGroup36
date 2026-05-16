@@ -62,6 +62,9 @@ class Engine(GeomBase):
     # ROSKAM / DESIGN PARAMETERS
     # ------------------------------------------------------------------ #
 
+    # Mission altitude [m] — drives propeller ceiling check
+    mission_altitude: float = Input(0.0)
+
     disk_loading_uav: float = Input()
     target_solidity: float = Input()
 
@@ -98,9 +101,33 @@ class Engine(GeomBase):
 
     @Attribute
     def engine_type(self) -> str:
-        """Roskam Vol. I §3.2 / §3.6: prop below Mach 0.40, jet above."""
-        return "propeller" if self.cruise_speed < 130.0 else "jet"
-    # ADD ALTITUDE CALCULATION FOR MACH
+        """
+        Engine type from Mach number at cruise altitude.
+
+        Decision rule (Roskam Vol. I §3.2 / §3.6 / Raymer §10.2):
+        ──────────────────────────────────────────────────────────────
+        M ≥ 0.40 at cruise altitude → "jet"   (compressibility drag
+            makes propeller tip speeds impractical above Mach 0.40)
+        M <  0.40                   → "propeller"
+
+        Note: altitude alone does NOT force a jet.  At high altitude the
+        propeller disk simply needs to be larger (actuator-disk theory:
+        A ∝ 1/ρ).  PropellerEngine.blade_length applies the density
+        scaling D_alt = D_sl · √(ρ_sl / ρ) automatically.
+
+        ISA speed of sound is computed inline to avoid importing
+        ISA_calculator here (Engine has no knowledge of Drone's ISA module).
+        ──────────────────────────────────────────────────────────────
+        """
+        # ISA speed of sound — troposphere up to 11 km, then isothermal
+        if self.mission_altitude <= 11_000.0:
+            T = 288.15 - 0.0065 * self.mission_altitude
+        else:
+            T = 216.65   # ISA stratosphere isothermal layer [K]
+        a = sqrt(1.4 * 287.05 * T)                 # ISA speed of sound [m/s]
+        mach = self.cruise_speed / a
+
+        return "propeller" if mach < 0.40 else "jet"
 
     @Attribute
     def n_engines(self) -> int:
@@ -222,6 +249,7 @@ class Engine(GeomBase):
             thrust_to_weight=self.thrust_to_weight,
             rho=self.rho,
             g=self.g,
+            mission_altitude=self.mission_altitude,    # ← altitude for ceiling check
             semi_span=self.semi_span,
             sweep_le=self.sweep_le,
             dihedral=self.dihedral,

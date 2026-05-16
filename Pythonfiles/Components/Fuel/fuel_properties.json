@@ -1,0 +1,63 @@
+{
+    "_comment": "Fuel and energy-storage properties for UAV propulsion sizing.",
+    "_sources": [
+        "Roskam Vol. I §3.2 — propulsion selection and fuel types",
+        "ASTM D910 — Aviation Gasoline specification",
+        "ASTM D1655 — Aviation Turbine Fuels specification",
+        "MIL-DTL-83133H — JP-8 military specification",
+        "Raymer §10.1 — propulsion system selection",
+        "NASA/CR-2011-217236 — Li-Po battery energy density survey"
+    ],
+
+    "fuels": {
+        "avgas_100ll": {
+            "label":            "Avgas 100LL",
+            "density_kg_m3":    720.0,
+            "lhv_mj_kg":        43.5,
+            "flash_point_c":    -40.0,
+            "compatible_engines": ["Piston"],
+            "notes": "Low-lead aviation gasoline (ASTM D910). Standard fuel for piston UAV engines. Density 715–725 kg/m³ at 15°C."
+        },
+
+        "jet_a": {
+            "label":            "Jet-A / Jet-A1",
+            "density_kg_m3":    800.0,
+            "lhv_mj_kg":        43.2,
+            "flash_point_c":    38.0,
+            "compatible_engines": ["Turboprop", "Jet"],
+            "notes": "Commercial aviation turbine fuel (ASTM D1655). Jet-A1 is the international variant with a lower freeze point (−47 °C vs −40 °C for Jet-A). Density 775–840 kg/m³ at 15°C."
+        },
+
+        "jp8": {
+            "label":            "JP-8 (Military Jet Fuel)",
+            "density_kg_m3":    800.0,
+            "lhv_mj_kg":        43.2,
+            "flash_point_c":    38.0,
+            "compatible_engines": ["Turboprop", "Jet"],
+            "notes": "NATO standard military turbine fuel (MIL-DTL-83133H). Broadly equivalent to Jet-A1 with added corrosion inhibitor, lubricity improver, and static dissipator. Density 775–840 kg/m³ at 15°C."
+        },
+
+        "lipo_battery": {
+            "label":            "Li-Po Battery Pack",
+            "density_kg_m3":    1600.0,
+            "lhv_mj_kg":        0.90,
+            "flash_point_c":    null,
+            "compatible_engines": ["Electric"],
+            "notes": "Lithium-polymer cells including BMS, wiring, and structural enclosure. Volumetric density ~1 500–1 700 kg/m³ for packaged modules. Specific energy ~250 Wh/kg (0.9 MJ/kg). NOTE: the mission Breguet model assumes hydrocarbon fuel; electric range/endurance requires a separate e-propulsion module."
+        }
+    },
+
+    "auto_selection": {
+        "_comment": "Maps Drone.engine_type string to a fuel key when fuel_type='auto'.",
+        "Piston":    "avgas_100ll",
+        "Turboprop": "jet_a",
+        "Jet":       "jet_a",
+        "Electric":  "lipo_battery"
+    },
+
+    "ullage_fraction": 0.05,
+    "_comment_ullage": "5 % of tank volume reserved for thermal expansion and vapour space (MIL-T-5578).",
+
+    "structure_fraction": 0.05,
+    "_comment_structure": "5 % added to geometric volume to account for tank wall thickness, baffles, and fittings. Total volume factor = 1 / (1 - ullage - structure) ≈ 1.11."
+}

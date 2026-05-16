@@ -40,6 +40,11 @@ class JetEngine(GeomBase):
     rho: float = Input()
     g: float = Input()
 
+    # cruise TAS — passed from Engine._jet_kwargs; kept here so ParaPy does
+    # not raise on the unexpected keyword argument.  Useful for future
+    # ram-drag or Mach-based thrust-lapse corrections (Roskam Vol. V §5).
+    cruise_speed: float = Input()   # [m/s]
+
     # ------------------------------------------------------------------ #
     # GEOMETRY CONTEXT
     # ------------------------------------------------------------------ #

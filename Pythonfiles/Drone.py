@@ -10,6 +10,39 @@ from typing import Optional
 from parapy.core import Input, Attribute, Part, action
 from parapy.geom import GeomBase
 
+
+# ─── Input-range validator helpers ────────────────────────────────────────── #
+# ParaPy's Input(validator=callable) expects a callable that returns True when
+# the value is acceptable and raises ValueError (or returns False) otherwise.
+
+def _between(lo: float, hi: float):
+    """Closed-interval validator: lo ≤ value ≤ hi."""
+    def _check(v):
+        if not (lo <= v <= hi):
+            raise ValueError(
+                f"Value {v} is outside the feasible range [{lo}, {hi}]."
+            )
+        return True
+    return _check
+
+
+def _positive():
+    """Strict positivity validator: value > 0."""
+    def _check(v):
+        if v <= 0:
+            raise ValueError(f"Value must be positive (got {v}).")
+        return True
+    return _check
+
+
+def _non_negative_int():
+    """Non-negative integer validator."""
+    def _check(v):
+        if not isinstance(v, int) or v < 0:
+            raise ValueError(f"Value must be a non-negative integer (got {v}).")
+        return True
+    return _check
+
 from Pythonfiles.Components.Aircraft import Aircraft
 from mission import Mission
 from Pythonfiles.Components.Payload.Payload import Payload
@@ -23,19 +56,40 @@ class Drone(GeomBase):
 
     # ================================================================ #
     # REQUIRED MISSION INPUTS
+    # Feasibility bounds are enforced by the validator= argument.
+    # ParaPy raises ValueError immediately if an out-of-range value is set,
+    # both at construction time and when the field is edited in the GUI.
     # ================================================================ #
 
-    cruise_speed:      float = Input()   # [m/s]
-    mission_altitude:  float = Input()   # [m]
-    mission_range:     float = Input()   # [km]
-    mission_endurance: float = Input()   # [hr]
+    # Cruise true airspeed [m/s]
+    # Lower bound 10 m/s (minimum controllable UAV speed).
+    # Upper bound 350 m/s ≈ Mach 1.03 at sea level — beyond this the
+    # Roskam subsonic drag polars and Breguet equations break down.
+    cruise_speed: float = Input(validator=_between(10.0, 350.0))   # [m/s]
+
+    # Mission altitude [m]
+    # 0 m  = sea level  |  20 000 m = mid-stratosphere (SR-71 ceiling ≈ 26 km;
+    # propulsion / atmospheric model is ISA troposphere + lower stratosphere).
+    mission_altitude: float = Input(validator=_between(0.0, 20_000.0))  # [m]
+
+    # Mission range [km]
+    # 1 km minimum (prevents near-zero loiter-only missions blowing up W0
+    # iteration).  25 000 km ≈ once-around-the-globe — extreme but bounded.
+    mission_range: float = Input(validator=_between(1.0, 25_000.0))   # [km]
+
+    # Mission endurance [hr]
+    # 0.1 hr prevents division-by-zero in loiter fractions.
+    # 120 hr ≈ 5-day record endurance (Global Hawk class).
+    mission_endurance: float = Input(validator=_between(0.1, 120.0))  # [hr]
 
     # ================================================================ #
     # PAYLOAD INTENT
     # ================================================================ #
 
     payload_role: str = Input("ISR")
-    weapon_count: int = Input(0)
+
+    # Weapon count [—]  0 = unarmed, 6 = maximum typical hard-point count.
+    weapon_count: int = Input(0, validator=_between(0, 6))
 
     # ================================================================ #
     # ENGINEERING RULE OVERRIDES
@@ -48,8 +102,27 @@ class Drone(GeomBase):
     # FUSELAGE LAYOUT
     # ================================================================ #
 
-    fuselage_cylinder_start: float = Input(10.0)   # [% of fuselage length]
-    fuselage_cylinder_end:   float = Input(70.0)   # [% of fuselage length]
+    # Cylinder start as % of total fuselage length.
+    # Raymer §4.2: nosecone is typically 5–30 % of fuselage length.
+    fuselage_cylinder_start: float = Input(
+        10.0, validator=_between(5.0, 30.0))   # [% of fuselage length]
+
+    # Cylinder end as % of total fuselage length.
+    # Tail-cone must begin no later than 95 % of length.
+    fuselage_cylinder_end: float = Input(
+        70.0, validator=_between(50.0, 95.0))   # [% of fuselage length]
+
+    # ================================================================ #
+    # FUEL SYSTEM
+    # ================================================================ #
+
+    # Fuel type key from fuel_properties.json, or 'auto' to select
+    # automatically from engine_type (Piston→Avgas, Turboprop/Jet→Jet-A).
+    fuel_type: str = Input("auto")
+
+    # Tank shape: length-to-diameter ratio.
+    # AR=3 is a compact wing-box tank; increase to 5+ for slender HALE fuselages.
+    fuel_tank_aspect_ratio: float = Input(3.0, validator=_between(1.1, 10.0))
 
     # ================================================================ #
     # ATMOSPHERE
@@ -64,11 +137,41 @@ class Drone(GeomBase):
         return ISA_calculator(self.mission_altitude)[2]
 
     # ================================================================ #
+    # WING PLANFORM — user-adjustable inputs
+    # ================================================================ #
+
+    # Taper ratio λ = c_tip / c_root.
+    # Raymer §4.3: 0.20 (high-speed delta) to 1.0 (un-tapered / constant chord).
+    # 0.40 is the Raymer subsonic endurance UAV default.
+    wing_taper_ratio: float = Input(0.40, validator=_between(0.20, 1.0))
+
+    # ================================================================ #
     # ENGINE TYPE
+    # Altitude limits from Roskam Vol. I §3.2 / Raymer §10.2:
+    #   Piston practical ceiling    ≈ 4 500 m  (15 000 ft)
+    #   Turboprop practical ceiling ≈ 9 000 m  (30 000 ft)
+    #   Above 9 000 m               → turbofan / turbojet required
     # ================================================================ #
 
     @Attribute
     def engine_type(self) -> str:
+        """
+        Engine type from Mach number at cruise altitude.
+
+        Decision rule (Roskam Vol. I §3.2 / Raymer §10.2):
+        ──────────────────────────────────────────────────────────────
+        M ≥ 0.40 at cruise altitude → "Jet"  (compressibility drag
+            makes propeller tip speeds unacceptable above Mach 0.40)
+        M <  0.40, mission_objective == "High Endurance" → "Turboprop"
+            (Roskam Vol. I Table 3.2: turboprop preferred for MALE/HALE)
+        Otherwise → "Piston"
+
+        Note: altitude does NOT force a jet in this model.  At high
+        altitudes the propeller simply needs a larger disk area
+        (actuator-disk: A ∝ 1/ρ) and longer blades — this is handled
+        in PropellerEngine.blade_length via the altitude density ratio.
+        ──────────────────────────────────────────────────────────────
+        """
         mach = self.cruise_speed / self.speed_of_sound
         if mach > 0.4:
             return "Jet"
@@ -77,19 +180,108 @@ class Drone(GeomBase):
         return "Piston"
 
     # ================================================================ #
-    # WING ASPECT RATIO
+    # WING ASPECT RATIO — two-stage calculation
+    #
+    # Stage 1: _wing_ar_roskam  — pure Roskam/Raymer empirical formula.
+    #          Used by the Mission object for Breguet sizing (no fuselage
+    #          feedback → no circular dependency).
+    #
+    # Stage 2: wing_aspect_ratio — geometry AR fed to Aircraft.
+    #          Starts from _wing_ar_roskam, then increases it if the
+    #          resulting root chord would exceed 40 % of the preliminary
+    #          fuselage length (Raymer §4.2 rule).  A larger AR reduces
+    #          chord without changing wing area or span.
     # ================================================================ #
 
     @Attribute
-    def wing_aspect_ratio(self) -> float:
+    def _wing_ar_roskam(self) -> float:
+        """
+        Wing AR from Roskam/Raymer empirical formula [—].
+
+        Used exclusively by the Mission sizing object so that the mission
+        loop does not depend on any fuselage geometry (which itself depends
+        on the mission MTOW result).
+
+        References
+        ----------
+        Raymer §4.4 (Eq. 4.6) — subsonic jet UAV:
+            AR = 4.737 * M_cruise^{-0.979},  clamped to [6, 12]
+        Roskam Vol. I Table 3.5 — turboprop MALE:  AR ≈ 9.2
+        Roskam Vol. I Table 3.5 — piston GA:       AR ≈ 7.6
+        """
         if self.engine_type == "Jet":
             mach_cruise = self.cruise_speed / self.speed_of_sound
             ar = 4.737 * mach_cruise ** -0.979
-            # Raymer §4.4: practical AR bounds for jet UAVs
-            return max(6.0, min(ar, 12.0))
+            return max(6.0, min(ar, 12.0))   # Raymer §4.4 practical bounds
         if self.engine_type == "Turboprop":
             return 9.2
         return 7.6
+
+    @Attribute
+    def wing_aspect_ratio(self) -> float:
+        """
+        Wing AR for geometry [—] — Roskam value adjusted upward when
+        the root chord would be too large relative to the fuselage.
+
+        Logic
+        -----
+        1.  Start with AR_roskam  (from _wing_ar_roskam).
+        2.  Compute root chord:
+                c_root = 2·S / (sqrt(AR·S) · (1 + λ))
+        3.  Compare against Raymer §4.2 limit:
+                c_root_max = 0.40 · L_fus_payload   (or Roskam if no payload)
+        4.  If c_root > c_root_max, solve for the minimum AR that
+            satisfies the constraint:
+                AR_min = 4·S / (c_root_max · (1 + λ))²
+            Capped at AR = 16 (structural realism; Raymer Fig. 4.10).
+
+        Reference length is payload.min_fuselage_length / cylinder_fraction
+        when a payload exists — this is altitude-independent, so AR increases
+        correctly at high altitude (thin air → large wing → slender chord).
+        Falls back to Roskam estimate when no payload is defined.
+
+        Reference: Raymer §4.2 — "root chord should not exceed ~40 % of
+        fuselage length to limit interference drag and aeroelastic coupling."
+        """
+        ar     = self._wing_ar_roskam
+        S      = self.wing_area          # m² — from mission (uses _wing_ar_roskam)
+        taper  = self.wing_taper_ratio   # user input
+
+        b      = math.sqrt(ar * S)
+        c_root = 2.0 * S / (b * (1.0 + taper))
+
+        # c_root_max: maximum root chord that fits the fuselage cylinder.
+        # Use the payload-driven fuselage length (altitude-independent) when a
+        # payload is defined, otherwise fall back to the Roskam estimate.
+        # Raymer §4.2: root chord ≤ 40% of fuselage length limits interference
+        # drag and aeroelastic coupling at the wing-fuselage junction.
+        #
+        # Why NOT _roskam_fuselage_length_estimate here:
+        # That estimate scales with MTOW (which rises with altitude / fuel load),
+        # so c_root_max would grow at altitude and the AR would never increase —
+        # leaving the wing with a large, inefficient chord.  The payload length
+        # is fixed regardless of altitude, giving a stable AR reference.
+        if self.payload is not None:
+            cylinder_fraction = (self.fuselage_cylinder_end - self.fuselage_cylinder_start) / 100.0
+            payload_fus_length = self.payload.min_fuselage_length / cylinder_fraction
+            c_root_max = 0.40 * payload_fus_length
+        else:
+            c_root_max = 0.40 * self._roskam_fuselage_length_estimate
+
+        if c_root <= c_root_max:
+            return ar
+
+        # Minimum AR to bring c_root within the fuselage length limit:
+        #   c_root_max = 2S / (sqrt(AR·S) · (1+λ))
+        #   → AR = 4S / (c_root_max · (1+λ))²
+        ar_min  = 4.0 * S / (c_root_max * (1.0 + taper)) ** 2
+        ar_geom = min(ar_min, 16.0)   # structural upper bound (Raymer Fig. 4.10)
+
+        print(
+            f"[Wing AR] Roskam AR={ar:.2f} → c_root={c_root:.3f} m  "
+            f"(limit {c_root_max:.3f} m) → geometry AR adjusted to {ar_geom:.2f}"
+        )
+        return ar_geom
 
     # ================================================================ #
     # MACH NUMBERS
@@ -217,7 +409,11 @@ class Drone(GeomBase):
             loiter_speed=self.loiter_speed_seed,
             mission_objective=self.mission_objective,
             maximum_load_factor=self.maximum_load_factor,
-            wing_aspect_ratio=self.wing_aspect_ratio,
+            # Use the pure Roskam AR here — avoids circular dependency:
+            # wing_aspect_ratio (geometry) depends on wing_area → mission,
+            # so passing it back into mission would create a cycle.
+            # _wing_ar_roskam is independent of fuselage geometry.
+            wing_aspect_ratio=self._wing_ar_roskam,
             speed_of_sound=self.speed_of_sound,
             air_density=self.air_density,
             engine_type=self.engine_type,
@@ -242,6 +438,315 @@ class Drone(GeomBase):
     @action(label="Print Stability Report")
     def print_stability_report(self):
         self.aircraft.print_stability_report()
+
+    # ================================================================ #
+    # EXPORT ACTIONS
+    # ================================================================ #
+
+    @action(label="Export PDF Report")
+    def export_pdf_report(self):
+        """
+        Write a design-summary PDF to the same folder as Drone.py.
+
+        The report contains:
+          • Mission parameters
+          • Weight breakdown (MTOW / empty / fuel / payload)
+          • Wing & aerodynamic sizing
+          • Engine info (type, thrust/power loading)
+          • Longitudinal stability summary
+          • The W/P – W/S design-point diagram (saved as a temporary PNG
+            and embedded in the PDF)
+        """
+        import os
+        import datetime
+        import tempfile
+
+        # ── locate output directory ─────────────────────────────────── #
+        save_dir  = os.path.dirname(os.path.abspath(__file__))
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        pdf_path  = os.path.join(save_dir, f"drone_report_{timestamp}.pdf")
+
+        try:
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.units    import cm
+            from reportlab.lib.styles  import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib          import colors
+            from reportlab.platypus     import (
+                SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+                HRFlowable, Image as RLImage,
+            )
+
+            doc    = SimpleDocTemplate(pdf_path, pagesize=A4,
+                                       leftMargin=2*cm, rightMargin=2*cm,
+                                       topMargin=2*cm, bottomMargin=2*cm)
+            styles = getSampleStyleSheet()
+
+            # ── custom styles ────────────────────────────────────────── #
+            title_style = ParagraphStyle(
+                "Title2", parent=styles["Title"],
+                fontSize=18, spaceAfter=6, textColor=colors.HexColor("#003366"),
+            )
+            h1_style = ParagraphStyle(
+                "H1", parent=styles["Heading1"],
+                fontSize=13, spaceAfter=4, textColor=colors.HexColor("#003366"),
+            )
+            body_style = styles["Normal"]
+
+            def section(title):
+                return [
+                    Spacer(1, 0.3*cm),
+                    Paragraph(title, h1_style),
+                    HRFlowable(width="100%", thickness=1,
+                               color=colors.HexColor("#003366"), spaceAfter=4),
+                ]
+
+            def data_table(rows, col_widths=None):
+                """Two-column label / value table with alternating row shading."""
+                if col_widths is None:
+                    col_widths = [9*cm, 8*cm]
+                tbl = Table(rows, colWidths=col_widths)
+                style = TableStyle([
+                    ("BACKGROUND",   (0, 0), (-1, 0),  colors.HexColor("#003366")),
+                    ("TEXTCOLOR",    (0, 0), (-1, 0),  colors.white),
+                    ("FONTNAME",     (0, 0), (-1, 0),  "Helvetica-Bold"),
+                    ("FONTSIZE",     (0, 0), (-1, 0),  10),
+                    ("ALIGN",        (1, 1), (1, -1),  "RIGHT"),
+                    ("FONTSIZE",     (0, 1), (-1, -1), 9),
+                    ("ROWBACKGROUNDS", (0, 1), (-1, -1),
+                     [colors.HexColor("#EEF3FA"), colors.white]),
+                    ("GRID",         (0, 0), (-1, -1), 0.4, colors.grey),
+                    ("TOPPADDING",   (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING",(0, 0), (-1, -1), 3),
+                    ("LEFTPADDING",  (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                ])
+                tbl.setStyle(style)
+                return tbl
+
+            # ── collect data (trigger lazy attributes once) ─────────── #
+            mtow        = self.MTOW
+            empty_wt    = self.empty_weight
+            fuel_wt     = self.fuel_weight
+            payload_wt  = self.payload_weight
+            wing_area   = self.wing_area
+            wing_span   = self.wing_semi_span * 2.0
+            wing_ar     = self.wing_aspect_ratio
+            wing_ld     = self.wing_loading
+            ld          = self.ld_cruise
+            eng_type    = self.engine_type
+            cg_x        = self.cg_x
+            np_x        = self.neutral_point_x
+            sm          = self.static_margin
+            stab        = self.stability_status
+            fus_len     = self.aircraft.fuselage.length
+            fus_rad     = self.aircraft.fuselage.radius
+
+            # ── build W/P–W/S diagram PNG ────────────────────────────── #
+            diagram_path = None
+            try:
+                tmp = tempfile.NamedTemporaryFile(
+                    suffix=".png", delete=False, dir=save_dir)
+                tmp.close()
+                self.mission.save_wp_ws_figure(tmp.name)
+                diagram_path = tmp.name
+            except Exception as _de:
+                print(f"[PDF] diagram embed skipped: {_de}")
+
+            # ── assemble flowables ───────────────────────────────────── #
+            story = []
+
+            # Title
+            story.append(Paragraph("UAV Initial Sizing — Design Report", title_style))
+            story.append(Paragraph(
+                f"Generated: {datetime.datetime.now().strftime('%d %b %Y  %H:%M')}",
+                body_style,
+            ))
+            story.append(Spacer(1, 0.4*cm))
+
+            # 1. Mission parameters
+            story += section("1 · Mission Parameters")
+            story.append(data_table([
+                ["Parameter",              "Value"],
+                ["Cruise speed",           f"{self.cruise_speed:.1f} m/s  "
+                                           f"({self.cruise_speed * 3.6:.0f} km/h)"],
+                ["Mission altitude",       f"{self.mission_altitude:.0f} m"],
+                ["Mission range",          f"{self.mission_range:.0f} km"],
+                ["Mission endurance",      f"{self.mission_endurance:.1f} hr"],
+                ["Payload role",           self.payload_role],
+                ["Mission objective",      self.mission_objective],
+                ["UAV class",              self.uav_class],
+                ["Max. load factor",       f"{self.maximum_load_factor:.2f} g"],
+                ["Engine type",            eng_type],
+            ]))
+
+            # 2. Weights
+            story += section("2 · Weight Budget")
+            story.append(data_table([
+                ["Component",              "Mass [kg]"],
+                ["MTOW",                   f"{mtow:.1f}"],
+                ["Empty weight",           f"{empty_wt:.1f}"],
+                ["Fuel weight",            f"{fuel_wt:.1f}"],
+                ["Payload weight",         f"{payload_wt:.1f}"],
+                ["Fuel fraction  Wf/W0",   f"{fuel_wt / mtow:.3f}"],
+                ["Empty fraction We/W0",   f"{empty_wt / mtow:.3f}"],
+            ]))
+
+            # 3. Wing & aero
+            story += section("3 · Wing & Aerodynamic Sizing")
+            thr_row = (
+                ["Thrust loading  T/W",    f"{self.thrust_loading:.3f}"]
+                if eng_type == "Jet"
+                else ["Power loading  W/P [kg/W]",
+                      f"{self.power_loading:.5f}  "
+                      f"({1.0/self.power_loading:.1f} W/kg)"]
+            )
+            story.append(data_table([
+                ["Parameter",              "Value"],
+                ["Wing area  S",           f"{wing_area:.2f} m²"],
+                ["Wing span  b",           f"{wing_span:.2f} m"],
+                ["Aspect ratio  AR",       f"{wing_ar:.2f}"],
+                ["Wing loading  W/S",      f"{wing_ld:.1f} N/m²"],
+                ["Cruise L/D",             f"{ld:.2f}"],
+                thr_row,
+            ]))
+
+            # 4. Fuselage
+            story += section("4 · Fuselage")
+            story.append(data_table([
+                ["Parameter",              "Value"],
+                ["Fuselage length",        f"{fus_len:.2f} m"],
+                ["Fuselage radius",        f"{fus_rad:.3f} m"],
+                ["Cylinder start",         f"{self.fuselage_cylinder_start:.1f} %"],
+                ["Cylinder end",           f"{self.fuselage_cylinder_end:.1f} %"],
+            ]))
+
+            # 5. Stability
+            story += section("5 · Longitudinal Stability")
+            story.append(data_table([
+                ["Parameter",              "Value"],
+                ["CG position  (from nose)", f"{cg_x:.3f} m"],
+                ["Neutral point (from nose)", f"{np_x:.3f} m"],
+                ["Static margin  SM",      f"{sm*100:.1f} % MAC"],
+                ["Assessment",             stab],
+            ]))
+
+            # 6. Diagram
+            if diagram_path and os.path.exists(diagram_path):
+                story += section("6 · Design Point — W/P vs W/S Diagram")
+                story.append(RLImage(diagram_path, width=14*cm, height=8*cm))
+
+            # ── build PDF ────────────────────────────────────────────── #
+            doc.build(story)
+            print(f"✓ PDF report saved: {pdf_path}")
+
+            # clean up temp diagram
+            if diagram_path and os.path.exists(diagram_path):
+                try:
+                    os.remove(diagram_path)
+                except OSError:
+                    pass
+
+        except Exception as exc:
+            import traceback
+            print(f"PDF export failed: {exc}")
+            traceback.print_exc()
+
+    # ================================================================ #
+
+    @action(label="Export STP File")
+    def export_stp_file(self):
+        """
+        Write a STEP (.stp) file of the complete aircraft geometry.
+
+        The file can be imported directly into CATIA, Siemens NX, Fusion 360,
+        or any other STEP-compatible CAD tool.
+
+        Implementation notes
+        ────────────────────
+        ParaPy is built on top of pythonOCC (Open CASCADE Technology).
+        Each geometric primitive (LoftedSolid, Circle, …) exposes its
+        underlying OCC TopoDS_Shape via .shape.  We collect every leaf
+        shape from the aircraft tree, assemble them into a compound, and
+        write it out with STEPControl_Writer.
+        """
+        import os
+        import datetime
+
+        save_dir  = os.path.dirname(os.path.abspath(__file__))
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        stp_path  = os.path.join(save_dir, f"drone_geometry_{timestamp}.stp")
+
+        try:
+            from OCC.Core.STEPControl import STEPControl_Writer, STEPControl_AsIs
+            from OCC.Core.IFSelect    import IFSelect_RetDone
+            from OCC.Core.BRep        import BRep_Builder
+            from OCC.Core.TopoDS      import TopoDS_Compound
+
+            builder  = BRep_Builder()
+            compound = TopoDS_Compound()
+            builder.MakeCompound(compound)
+            shapes_added = [0]
+
+            def _add_shape(obj):
+                """Try to add obj.shape to the compound; return True if added."""
+                try:
+                    s = obj.shape
+                    if s is not None and not s.IsNull():
+                        builder.Add(compound, s)
+                        shapes_added[0] += 1
+                        return True
+                except Exception:
+                    pass
+                return False
+
+            def _collect(obj):
+                """
+                Recursively harvest shapes from a ParaPy part tree.
+                Leaf nodes (primitives) have a .shape; containers hold
+                children accessible via the ParaPy _parts list.
+                """
+                if _add_shape(obj):
+                    return   # leaf — shape already added, don't double-count
+
+                # Try the ParaPy children list (names are class-level Part attrs)
+                for attr in vars(type(obj)):
+                    try:
+                        child = getattr(obj, attr)
+                        # ParaPy Part instances are GeomBase subclasses
+                        from parapy.geom import GeomBase as _GB
+                        if isinstance(child, _GB) and child is not obj:
+                            _collect(child)
+                    except Exception:
+                        pass
+
+            # ── walk the aircraft tree ─────────────────────────────── #
+            _collect(self.aircraft)
+
+            if shapes_added[0] == 0:
+                print("STP export: no shapes found — geometry may not be "
+                      "built yet.  Trigger geometry by opening the 3-D view "
+                      "first, then re-run the export.")
+                return
+
+            writer = STEPControl_Writer()
+            writer.Transfer(compound, STEPControl_AsIs)
+            status = writer.Write(stp_path)
+
+            if status == IFSelect_RetDone:
+                print(f"✓ STP file saved ({shapes_added[0]} shapes): {stp_path}")
+            else:
+                print(f"STP writer returned status {status} for: {stp_path}")
+
+        except ImportError:
+            # OCC is bundled with ParaPy on Windows; this branch should not
+            # normally be reached when running inside the ParaPy GUI.
+            print("OCC / pythonOCC not found on the current Python path.\n"
+                  "Please run this action from within the ParaPy GUI where\n"
+                  "OCC is available as part of the ParaPy installation.")
+        except Exception as exc:
+            import traceback
+            print(f"STP export failed: {exc}")
+            traceback.print_exc()
 
     # ================================================================ #
     # WEIGHT OUTPUTS
@@ -315,11 +820,17 @@ class Drone(GeomBase):
             maximum_load_factor=self.maximum_load_factor,
             effective_wing_area=self.wing_area,
             effective_wing_semi_span=self.wing_semi_span,
+            # Pass taper ratio so Aircraft/LiftingSurface and the chord-constraint
+            # check in Drone both use the same value.
+            wing_taper_ratio=self.wing_taper_ratio,
             payload_object=self.payload,
             fuselage_cylinder_start=self.fuselage_cylinder_start,
             fuselage_cylinder_end=self.fuselage_cylinder_end,
-            # Pass fuel mass for CG computation — Roskam Vol. I §8.1
+            # Fuel system — mass drives tank sizing, type selects density
             fuel_mass=self.fuel_weight,
+            fuel_tank_type=self.fuel_type,
+            fuel_tank_aspect_ratio=self.fuel_tank_aspect_ratio,
+            engine_type_str=self.engine_type,
         )
 
     # ================================================================ #
@@ -370,12 +881,5 @@ if __name__ == "__main__":
         payload_role="Strike",
         weapon_count=2,
     )
-    
-    print(f"shaft_power       : {d_strike.aircraft.engines.prop_starboard.shaft_power:.1f} W")
-    print(f"D_roskam          : {0.658 * (d_strike.aircraft.engines.prop_starboard.shaft_power/1000)**0.25:.3f} m")
-    print(f"blade_length      : {d_strike.aircraft.engines.prop_starboard.blade_length:.3f} m")
-    print(f"_max_blade_length : {d_strike.aircraft.engines.prop_starboard._max_blade_length:.3f} m")
-    print(f"semi_span         : {d_strike.aircraft.engines.prop_starboard.semi_span:.3f} m")
-    print(f"rho               : {d_strike.aircraft.engines.prop_starboard.rho:.4f} kg/m³")
 
-    display([d_strike])
+    display([d_isr, d_strike])

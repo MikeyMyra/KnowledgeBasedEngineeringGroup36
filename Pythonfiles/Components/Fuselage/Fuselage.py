@@ -62,6 +62,10 @@ class Fuselage(GeomBase):
     # Payload object — drives min length/radius, None = no constraint
     payload = Input(None)
 
+    # FuelTank object — placed in centre wing box, drives additional
+    # cylinder length and possibly radius.  None = no tank constraint.
+    fuel_tank = Input(None)
+
     # ------------------------------------------------------------------ #
     # ROSKAM FUSELAGE GEOMETRY
     # ------------------------------------------------------------------ #
@@ -82,22 +86,99 @@ class Fuselage(GeomBase):
         return self._roskam_length / (9.0 * 2.0)
 
     @Attribute
+    def _tank_gap(self) -> float:
+        """Structural gap between payload bay and fuel tank [m] (50 mm)."""
+        return 0.05
+
+    @Attribute
     def length(self) -> float:
-        base = self.length_override if self.length_override is not None \
-            else self._roskam_length
-        if self.payload is not None:
-            cylinder_fraction = (self.cylinder_end - self.cylinder_start) / 100.0
-            min_from_payload  = self.payload.min_fuselage_length / cylinder_fraction
-            base = max(base, min_from_payload)
+        """
+        Fuselage total length [m] — payload + fuel-tank led sizing.
+
+        Priority (highest to lowest):
+        ① Manual override  (length_override)
+        ② Combined bay length = payload bay + gap + fuel tank length,
+           scaled by 1/cylinder_fraction to get total fuselage length.
+           Both the payload bay and the fuel tank are altitude-independent
+           (payload geometry is fixed; tank depends only on fuel_mass /
+           density, not on fuselage dimensions), so the fuselage stays
+           compact even when the wing grows large at high altitude.
+        ③ Roskam power-law estimate — only when neither payload nor fuel
+           tank is defined  (L = 0.23 · MTOW^0.5, Roskam Vol. I Table 3.4).
+        ④ length_min_override  (from wing-chord constraint in Aircraft).
+
+        Fuselage cylinder layout (longitudinal):
+        ┌─────────────┬──────────────┬─────────────────┐
+        │ payload bay │  50 mm gap  │  fuel tank      │
+        └─────────────┴──────────────┴─────────────────┘
+        ← cylinder_start %           cylinder_end % →
+        """
+        if self.length_override is not None:
+            return max(self.length_override, self.length_min_override)
+
+        cylinder_fraction = (self.cylinder_end - self.cylinder_start) / 100.0
+
+        payload_len = (self.payload.min_fuselage_length
+                       if self.payload is not None else 0.0)
+        tank_len    = (self.fuel_tank.min_fuselage_length + self._tank_gap
+                       if self.fuel_tank is not None else 0.0)
+
+        combined = payload_len + tank_len
+
+        if combined > 0.0:
+            base = combined / cylinder_fraction
+        else:
+            # Neither payload nor fuel tank — fall back to Roskam estimate.
+            base = self._roskam_length
+
         return max(base, self.length_min_override)
 
     @Attribute
+    def _structural_min_radius(self) -> float:
+        """
+        Hard lower bound on fuselage radius [m] driven by structural integrity.
+
+        Raymer §6.3: minimum outer diameter for a semi-monocoque UAV fuselage
+        is approximately 6 % of fuselage length (l/d ≥ 16) with an absolute
+        floor of 50 mm to accommodate longerons and skin thickness.
+        This is intentionally conservative so a payload-driven radius can go
+        *below* the Roskam fineness-ratio estimate when the payload is small.
+        """
+        return max(self.length * 0.06, 0.05)
+
+    @Attribute
     def radius(self) -> float:
-        base = self.radius_override if self.radius_override is not None \
-            else self._roskam_radius
+        """
+        Fuselage outer radius [m] — payload + fuel-tank led sizing.
+
+        Priority (highest to lowest):
+        ① Manual override  (radius_override)
+        ② Largest of payload cross-section and fuel tank cross-section.
+           The fuselage must accommodate both: the payload bay and the
+           fuel tank share the same cylindrical section, so the fuselage
+           radius must satisfy the tighter of the two radial constraints.
+           • Payload: Payload.min_fuselage_radius  (+5 % clearance baked in)
+           • Tank:    FuelTank.min_fuselage_radius  (+3 % clearance baked in)
+        ③ Roskam fineness-ratio estimate — only when no payload OR tank defined.
+        ④ Structural minimum  (_structural_min_radius  ≈ 6 % of length)
+        ⑤ Wing-interference minimum  (radius_min_override = 8 % root chord)
+        """
+        if self.radius_override is not None:
+            return self.radius_override
+
+        candidates = [self._structural_min_radius, self.radius_min_override]
+
         if self.payload is not None:
-            base = max(base, self.payload.min_fuselage_radius)
-        return max(base, self.radius_min_override)
+            candidates.append(self.payload.min_fuselage_radius)
+
+        if self.fuel_tank is not None:
+            candidates.append(self.fuel_tank.min_fuselage_radius)
+
+        if self.payload is None and self.fuel_tank is None:
+            # No geometry driver — fall back to Roskam fineness-ratio estimate.
+            candidates.append(self._roskam_radius)
+
+        return max(candidates)
 
     # ------------------------------------------------------------------ #
     # STRUCTURAL MASS  (Roskam Vol. I §8.3)
