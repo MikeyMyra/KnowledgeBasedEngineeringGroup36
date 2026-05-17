@@ -30,7 +30,7 @@ This tool performs **initial (conceptual-level) sizing** of a fixed-wing UAV fro
 - selects engine type (Piston / Turboprop / Jet) from Mach number and altitude;
 - infers UAV class (small / medium / large) from four independent constraint floors;
 - sizes the aircraft weight (MTOW, fuel, empty, payload) via the Breguet / weight-fraction method;
-- produces a W/P – W/S design-point diagram and selects thrust and wing loading;
+- produces a W/P – W/S or T/W – W/S design-point diagram and selects thrust and wing loading;
 - sizes the wing planform (area, AR, taper, sweep) and tail surfaces;
 - builds a full 3-D geometry in the ParaPy viewer;
 - reports longitudinal static stability (static margin);
@@ -73,8 +73,6 @@ Assignment/
 Python ≥ 3.9
 ParaPy (licensed)
 numpy, scipy, matplotlib
-reportlab          (PDF export)
-xfoil              (optional — for wing airfoil analysis)
 ```
 
 Install Python dependencies:

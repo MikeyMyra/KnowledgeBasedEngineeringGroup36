@@ -1,4 +1,4 @@
-from math import radians, tan, sin, cos, pi, sqrt
+from math import radians, tan, sin, cos, pi, sqrt, isfinite
 
 from parapy.core import Input, Attribute, Part, child
 from parapy.geom import (
@@ -266,11 +266,15 @@ class PropellerEngine(GeomBase):
         if self.n_blades_override is not None:
             return self.n_blades_override
         R = self.blade_length
+        if not isfinite(R) or R <= 0:
+            return 2
         D_prop = 2.0 * R
         c_base = 0.065 * D_prop
         if c_base <= 0:
             return 2
         n_raw = self.target_solidity * pi * R / c_base
+        if not isfinite(n_raw):
+            return 2
         return max(2, min(6, round(n_raw)))
 
     # ------------------------------------------------------------------ #

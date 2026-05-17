@@ -5,6 +5,9 @@ Top-level drone class.
 """
 
 import math
+import os
+import glob
+import shutil
 from typing import Optional
 
 from parapy.core import Input, Attribute, Part, action
@@ -12,8 +15,6 @@ from parapy.geom import GeomBase
 
 
 # ─── Input-range validator helpers ────────────────────────────────────────── #
-# ParaPy's Input(validator=callable) expects a callable that returns True when
-# the value is acceptable and raises ValueError (or returns False) otherwise.
 
 def _between(lo: float, hi: float):
     """Closed-interval validator: lo ≤ value ≤ hi."""
@@ -43,6 +44,41 @@ def _non_negative_int():
         return True
     return _check
 
+
+# ─── Output file archiving helper ─────────────────────────────────────────── #
+
+def _archive_previous(output_dir: str, pattern: str) -> None:
+    """
+    Move any existing files in *output_dir* that match *pattern* into a
+    ``data/`` sub-folder, preserving their original filenames.
+
+    Parameters
+    ----------
+    output_dir : str
+        Absolute path to the ``Outputfiles`` directory.
+    pattern : str
+        Glob pattern relative to *output_dir*, e.g. ``"design_point_*.png"``.
+
+    Example
+    -------
+    Before saving ``design_point_20260517_120000.png`` call::
+
+        _archive_previous(save_dir, "design_point_*.png")
+
+    Any previously generated ``design_point_*.png`` files sitting in
+    ``Outputfiles/`` are moved to ``Outputfiles/data/`` so the root folder
+    always contains only the most-recent file.
+    """
+    archive_dir = os.path.join(output_dir, "data")
+    os.makedirs(archive_dir, exist_ok=True)
+
+    for existing in glob.glob(os.path.join(output_dir, pattern)):
+        dest = os.path.join(archive_dir, os.path.basename(existing))
+        # If a file with the same name already exists in the archive,
+        # overwrite it (identical timestamp → same run, safe to replace).
+        shutil.move(existing, dest)
+
+
 from Pythonfiles.Components.Aircraft import Aircraft
 from Pythonfiles.Components.Mission.mission import Mission
 from Pythonfiles.Components.Payload.Payload import Payload
@@ -56,15 +92,8 @@ class Drone(GeomBase):
 
     # ================================================================ #
     # REQUIRED MISSION INPUTS
-    # Feasibility bounds are enforced by the validator= argument.
-    # ParaPy raises ValueError immediately if an out-of-range value is set,
-    # both at construction time and when the field is edited in the GUI.
     # ================================================================ #
 
-    # Cruise true airspeed [m/s]
-    # Lower bound 10 m/s (minimum controllable UAV speed).
-    # Upper bound 350 m/s ≈ Mach 1.03 at sea level — beyond this the
-    # Roskam subsonic drag polars and Breguet equations break down.
     cruise_speed: float = Input(
         validator=_between(10.0, 350.0),
         doc="Cruise true airspeed  [m/s]  ·  valid: 10 – 350 m/s\n"
@@ -73,9 +102,6 @@ class Drone(GeomBase):
             "  Below threshold, h > 4 500 m → Turboprop, else → Piston",
     )   # [m/s]
 
-    # Mission altitude [m]
-    # 0 m  = sea level  |  20 000 m = mid-stratosphere (SR-71 ceiling ≈ 26 km;
-    # propulsion / atmospheric model is ISA troposphere + lower stratosphere).
     mission_altitude: float = Input(
         validator=_between(0.0, 20_000.0),
         doc="Cruise / loiter altitude  [m]  ·  valid: 0 – 20 000 m\n"
@@ -84,9 +110,6 @@ class Drone(GeomBase):
             "Above 9 000 m a jet is selected automatically if Mach threshold is met.",
     )  # [m]
 
-    # Mission range [km]
-    # 1 km minimum (prevents near-zero loiter-only missions blowing up W0
-    # iteration).  25 000 km ≈ once-around-the-globe — extreme but bounded.
     mission_range: float = Input(
         validator=_between(1.0, 25_000.0),
         doc="Total mission range (outbound + return)  [km]  ·  valid: 1 – 25 000 km\n"
@@ -94,9 +117,6 @@ class Drone(GeomBase):
             "Class floors: < 150 km → small  |  150 – 500 km → medium  |  > 500 km → large",
     )   # [km]
 
-    # Mission endurance [hr]
-    # 0.1 hr prevents division-by-zero in loiter fractions.
-    # 120 hr ≈ 5-day record endurance (Global Hawk class).
     mission_endurance: float = Input(
         validator=_between(0.1, 120.0),
         doc="Loiter / endurance duration  [hr]  ·  valid: 0.1 – 120 hr\n"
@@ -119,7 +139,6 @@ class Drone(GeomBase):
             "Patrol: EO/IR + comms",
     )
 
-    # Weapon count [—]  0 = unarmed, 6 = maximum typical hard-point count.
     weapon_count: int = Input(
         0,
         validator=_between(0, 6),
@@ -139,8 +158,6 @@ class Drone(GeomBase):
     # FUSELAGE LAYOUT
     # ================================================================ #
 
-    # Cylinder start as % of total fuselage length.
-    # Raymer §4.2: nosecone is typically 5–30 % of fuselage length.
     fuselage_cylinder_start: float = Input(
         10.0,
         validator=_between(5.0, 30.0),
@@ -149,8 +166,6 @@ class Drone(GeomBase):
             "Payload bay begins just aft of this station.",
     )   # [% of fuselage length]
 
-    # Cylinder end as % of total fuselage length.
-    # Tail-cone must begin no later than 95 % of length.
     fuselage_cylinder_end: float = Input(
         70.0,
         validator=_between(50.0, 95.0),
@@ -163,12 +178,8 @@ class Drone(GeomBase):
     # FUEL SYSTEM
     # ================================================================ #
 
-    # Fuel type key from fuel_properties.json, or 'auto' to select
-    # automatically from engine_type (Piston→Avgas, Turboprop/Jet→Jet-A).
     fuel_type: str = Input("auto")
 
-    # Tank shape: length-to-diameter ratio.
-    # AR=3 is a compact wing-box tank; increase to 5+ for slender HALE fuselages.
     fuel_tank_aspect_ratio: float = Input(
         3.0,
         validator=_between(1.1, 10.0),
@@ -190,12 +201,9 @@ class Drone(GeomBase):
         return ISA_calculator(self.mission_altitude)[2]
 
     # ================================================================ #
-    # WING PLANFORM — user-adjustable inputs
+    # WING PLANFORM
     # ================================================================ #
 
-    # Taper ratio λ = c_tip / c_root.
-    # Raymer §4.3: 0.20 (high-speed delta) to 1.0 (un-tapered / constant chord).
-    # 0.40 is the Raymer subsonic endurance UAV default.
     wing_taper_ratio: float = Input(
         0.40,
         validator=_between(0.20, 1.0),
@@ -207,10 +215,6 @@ class Drone(GeomBase):
 
     # ================================================================ #
     # ENGINE TYPE
-    # Altitude limits from Roskam Vol. I §3.2 / Raymer §10.2:
-    #   Piston practical ceiling    ≈ 4 500 m  (15 000 ft)
-    #   Turboprop practical ceiling ≈ 9 000 m  (30 000 ft)
-    #   Above 9 000 m               → turbofan / turbojet required
     # ================================================================ #
 
     @Attribute
@@ -221,36 +225,22 @@ class Drone(GeomBase):
         Decision rule (Roskam Vol. I §3.2 / Raymer §10.2 / §13.3):
         ──────────────────────────────────────────────────────────────
         At sea level (h ≤ 9 000 m):
-            M ≥ 0.40 → "Jet"      (compressibility drag makes propeller
-                                    tip speeds unacceptable above M 0.40)
+            M ≥ 0.40 → "Jet"
             High Endurance objective → "Turboprop"
             Otherwise → "Piston"
 
         At mid altitude (9 000 < h ≤ 15 000 m):
             Jet threshold raised to M ≥ 0.50.
-            At these altitudes the jet thrust lapse factor is ~0.25–0.45
-            (Raymer §13.3: T_alt/T_sl ≈ σ^0.75).  Below M 0.50 a
-            turboprop is more efficient and avoids the extreme sea-level
-            thrust rating a jet would need.  Predator B / Reaper operates
-            in this band using a turboprop at M ≈ 0.35.
 
         At high altitude (h > 15 000 m):
             Jet threshold raised to M ≥ 0.60.
-            At 20 km the lapse factor drops to ~0.12; a jet selected at
-            M 0.40 would need a sea-level rated T/W ≈ 8× the altitude
-            value — typically infeasible for a UAV.  Global Hawk uses a
-            turbofan but only because it cruises at M 0.60+.
-            Below M 0.60 at these altitudes a turboprop is selected.
 
-        Piston ceiling: the engine sub-type (Piston vs Turboprop) for
-        propeller missions is further limited to Piston only below
-        4 500 m (Roskam Vol. I §3.2 practical piston ceiling).
+        Piston ceiling: limited to below 4 500 m (Roskam Vol. I §3.2).
         ──────────────────────────────────────────────────────────────
         """
         mach = self.cruise_speed / self.speed_of_sound
         h    = self.mission_altitude
 
-        # Altitude-graduated Mach threshold for jet selection
         if h > 15_000.0:
             jet_mach_min = 0.60
         elif h > 9_000.0:
@@ -261,36 +251,20 @@ class Drone(GeomBase):
         if mach >= jet_mach_min:
             return "Jet"
 
-        # Propeller branch — choose sub-type
         if self.payload_rules.mission_objective == "High Endurance":
             return "Turboprop"
         if h > 4_500.0:
-            # Above practical piston ceiling → turboprop
             return "Turboprop"
         return "Piston"
 
     # ================================================================ #
-    # WING ASPECT RATIO — two-stage calculation
-    #
-    # Stage 1: _wing_ar_roskam  — pure Roskam/Raymer empirical formula.
-    #          Used by the Mission object for Breguet sizing (no fuselage
-    #          feedback → no circular dependency).
-    #
-    # Stage 2: wing_aspect_ratio — geometry AR fed to Aircraft.
-    #          Starts from _wing_ar_roskam, then increases it if the
-    #          resulting root chord would exceed 40 % of the preliminary
-    #          fuselage length (Raymer §4.2 rule).  A larger AR reduces
-    #          chord without changing wing area or span.
+    # WING ASPECT RATIO
     # ================================================================ #
 
     @Attribute
     def _wing_ar_roskam(self) -> float:
         """
         Wing AR from Roskam/Raymer empirical formula [—].
-
-        Used exclusively by the Mission sizing object so that the mission
-        loop does not depend on any fuselage geometry (which itself depends
-        on the mission MTOW result).
 
         References
         ----------
@@ -302,7 +276,7 @@ class Drone(GeomBase):
         if self.engine_type == "Jet":
             mach_cruise = self.cruise_speed / self.speed_of_sound
             ar = 4.737 * mach_cruise ** -0.979
-            return max(6.0, min(ar, 12.0))   # Raymer §4.4 practical bounds
+            return max(6.0, min(ar, 12.0))
         if self.engine_type == "Turboprop":
             return 9.2
         return 7.6
@@ -312,45 +286,14 @@ class Drone(GeomBase):
         """
         Wing AR for geometry [—] — Roskam value adjusted upward when
         the root chord would be too large relative to the fuselage.
-
-        Logic
-        -----
-        1.  Start with AR_roskam  (from _wing_ar_roskam).
-        2.  Compute root chord:
-                c_root = 2·S / (sqrt(AR·S) · (1 + λ))
-        3.  Compare against Raymer §4.2 limit:
-                c_root_max = 0.40 · L_fus_payload   (or Roskam if no payload)
-        4.  If c_root > c_root_max, solve for the minimum AR that
-            satisfies the constraint:
-                AR_min = 4·S / (c_root_max · (1 + λ))²
-            Capped at AR = 16 (structural realism; Raymer Fig. 4.10).
-
-        Reference length is payload.min_fuselage_length / cylinder_fraction
-        when a payload exists — this is altitude-independent, so AR increases
-        correctly at high altitude (thin air → large wing → slender chord).
-        Falls back to Roskam estimate when no payload is defined.
-
-        Reference: Raymer §4.2 — "root chord should not exceed ~40 % of
-        fuselage length to limit interference drag and aeroelastic coupling."
         """
         ar     = self._wing_ar_roskam
-        S      = self.wing_area          # m² — from mission (uses _wing_ar_roskam)
-        taper  = self.wing_taper_ratio   # user input
+        S      = self.wing_area
+        taper  = self.wing_taper_ratio
 
         b      = math.sqrt(ar * S)
         c_root = 2.0 * S / (b * (1.0 + taper))
 
-        # c_root_max: maximum root chord that fits the fuselage cylinder.
-        # Use the payload-driven fuselage length (altitude-independent) when a
-        # payload is defined, otherwise fall back to the Roskam estimate.
-        # Raymer §4.2: root chord ≤ 40% of fuselage length limits interference
-        # drag and aeroelastic coupling at the wing-fuselage junction.
-        #
-        # Why NOT _roskam_fuselage_length_estimate here:
-        # That estimate scales with MTOW (which rises with altitude / fuel load),
-        # so c_root_max would grow at altitude and the AR would never increase —
-        # leaving the wing with a large, inefficient chord.  The payload length
-        # is fixed regardless of altitude, giving a stable AR reference.
         if self.payload is not None:
             cylinder_fraction = (self.fuselage_cylinder_end - self.fuselage_cylinder_start) / 100.0
             payload_fus_length = self.payload.min_fuselage_length / cylinder_fraction
@@ -361,30 +304,19 @@ class Drone(GeomBase):
         if c_root <= c_root_max:
             return ar
 
-        # Minimum AR to bring c_root within the fuselage length limit:
-        #   c_root_max = 2S / (sqrt(AR·S) · (1+λ))
-        #   → AR = 4S / (c_root_max · (1+λ))²
         ar_min  = 4.0 * S / (c_root_max * (1.0 + taper)) ** 2
-        ar_geom = min(ar_min, 16.0)   # structural upper bound (Raymer Fig. 4.10)
+        ar_geom = min(ar_min, 16.0)
 
-        # ── Span / fuselage-length ratio cap ──────────────────────────── #
-        # If the span would grow beyond 4× the estimated fuselage length
-        # (Global Hawk ≈ 2.75×; here we allow generous HALE proportions up to 4×),
-        # reduce AR so the semi-span stays at most 2× the fuselage length.
-        # This prevents the horizontal tail from overlapping the wing at
-        # extreme altitudes where the fuselage is short but the wing is large.
-        #
-        # AR_span_cap = (2 · span_max)² / S  where span_max = 4 · L_fus
         L_fus_est    = self._roskam_fuselage_length_estimate
-        span_max     = 4.0 * L_fus_est          # total span limit
-        ar_span_cap  = span_max ** 2 / S        # AR that gives span = span_max
+        span_max     = 4.0 * L_fus_est
+        ar_span_cap  = span_max ** 2 / S
         if ar_geom > ar_span_cap and ar_span_cap > ar:
             print(
                 f"[Wing AR] span cap: AR {ar_geom:.2f} → {ar_span_cap:.2f}  "
                 f"(semi-span would be {math.sqrt(ar_geom * S)/2:.1f} m vs "
                 f"fuselage {L_fus_est:.1f} m)"
             )
-            ar_geom = max(ar_span_cap, ar)   # never go below Roskam estimate
+            ar_geom = max(ar_span_cap, ar)
 
         print(
             f"[Wing AR] Roskam AR={ar:.2f} → c_root={c_root:.3f} m  "
@@ -456,22 +388,14 @@ class Drone(GeomBase):
 
     # ================================================================ #
     # PAYLOAD
-    #
-    # payload_start_x is set to the fuselage cylinder start + 10 mm margin.
-    # The cylinder start fraction is known from fuselage_cylinder_start and
-    # the Roskam length estimate (0.23 * MTOW^0.5).  We use the Roskam
-    # estimate here because payload is instantiated before fuselage; the
-    # fuselage then grows to accommodate via max(roskam, payload_min).
     # ================================================================ #
 
     @Attribute
     def _roskam_fuselage_length_estimate(self) -> float:
         """
-        Quick Roskam length estimate [m] used only to set payload_start_x
-        before the Fuselage part is instantiated.
+        Quick Roskam length estimate [m].
 
         Roskam Vol. I Table 3.4: L = 0.23 * MTOW^0.5
-        MTOW comes from the mission sizing result.
         """
         mtow_lbs  = kilograms_to_pounds(self.MTOW)
         length_ft = 0.23 * (mtow_lbs ** 0.50)
@@ -479,12 +403,7 @@ class Drone(GeomBase):
 
     @Attribute
     def payload_start_x(self) -> float:
-        """
-        X-position where the payload bay begins [m].
-
-        Set to the fuselage cylinder start station + 10 mm clearance.
-        Cylinder start = fuselage_cylinder_start% of total fuselage length.
-        """
+        """X-position where the payload bay begins [m]."""
         cylinder_start_x = (self.fuselage_cylinder_start / 100.0) * \
                             self._roskam_fuselage_length_estimate
         return cylinder_start_x + 0.01   # 10 mm margin past nosecone junction
@@ -506,9 +425,9 @@ class Drone(GeomBase):
     # MISSION SIZING
     # ================================================================ #
 
-    @Attribute
+    @property
     def mission(self) -> Mission:
-        return Mission(
+        m = Mission(
             mission_altitude=self.mission_altitude,
             mission_range=self.mission_range,
             mission_endurance=self.mission_endurance,
@@ -518,15 +437,13 @@ class Drone(GeomBase):
             loiter_speed=self.loiter_speed_seed,
             mission_objective=self.mission_objective,
             maximum_load_factor=self.maximum_load_factor,
-            # Use the pure Roskam AR here — avoids circular dependency:
-            # wing_aspect_ratio (geometry) depends on wing_area → mission,
-            # so passing it back into mission would create a cycle.
-            # _wing_ar_roskam is independent of fuselage geometry.
             wing_aspect_ratio=self._wing_ar_roskam,
             speed_of_sound=self.speed_of_sound,
             air_density=self.air_density,
             engine_type=self.engine_type,
         )
+        m.performance_margins_summary()
+        return m
 
     # ================================================================ #
     # ACTIONS
@@ -534,11 +451,15 @@ class Drone(GeomBase):
 
     @action(label="Show Design Point")
     def WP_WS_diagram(self):
-        import os, datetime
+        import datetime
+
         self.mission.thrust_and_wing_loading_plot()
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         png_path  = os.path.join(save_dir, f"Outputfiles/design_point_{timestamp}.png")
+
+        _archive_previous(os.path.join(save_dir, "Outputfiles"), "design_point_*.png")
+
         try:
             self.mission.save_wp_ws_figure(png_path)
             print(f"✓ Design-point diagram saved: {png_path}")
@@ -551,11 +472,15 @@ class Drone(GeomBase):
 
     @action(label="Plot Wing XFoil polars")
     def plot_wing_cl_alpha(self):
-        import os, datetime
+        import datetime
+
         self.aircraft.main_wing.plot_cl_alpha()
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         png_path  = os.path.join(save_dir, f"Outputfiles/wing_polars_{timestamp}.png")
+
+        _archive_previous(os.path.join(save_dir, "Outputfiles"), "wing_polars_*.png")
+
         try:
             self.aircraft.main_wing.root_airfoil.save_polar_figure(png_path)
             print(f"✓ Wing polar figure saved: {png_path}")
@@ -573,25 +498,18 @@ class Drone(GeomBase):
     @action(label="Export PDF Report")
     def export_pdf_report(self):
         """
-        Write a design-summary PDF to the same folder as Drone.py.
-
-        The report contains:
-          • Mission parameters
-          • Weight breakdown (MTOW / empty / fuel / payload)
-          • Wing & aerodynamic sizing
-          • Engine info (type, thrust/power loading)
-          • Longitudinal stability summary
-          • The W/P – W/S design-point diagram (saved as a temporary PNG
-            and embedded in the PDF)
+        Write a design-summary PDF to the Outputfiles folder.
+        Any previously generated drone_report_*.pdf is moved to
+        Outputfiles/data/ before the new file is written.
         """
-        import os
         import datetime
         import tempfile
 
-        # ── locate output directory ─────────────────────────────────── #
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         pdf_path  = os.path.join(save_dir, f"Outputfiles/drone_report_{timestamp}.pdf")
+
+        _archive_previous(os.path.join(save_dir, "Outputfiles"), "drone_report_*.pdf")
 
         try:
             from reportlab.lib.pagesizes import A4
@@ -608,7 +526,6 @@ class Drone(GeomBase):
                                        topMargin=2*cm, bottomMargin=2*cm)
             styles = getSampleStyleSheet()
 
-            # ── custom styles ────────────────────────────────────────── #
             title_style = ParagraphStyle(
                 "Title2", parent=styles["Title"],
                 fontSize=18, spaceAfter=6, textColor=colors.HexColor("#003366"),
@@ -628,7 +545,6 @@ class Drone(GeomBase):
                 ]
 
             def data_table(rows, col_widths=None):
-                """Two-column label / value table with alternating row shading."""
                 if col_widths is None:
                     col_widths = [9*cm, 8*cm]
                 tbl = Table(rows, colWidths=col_widths)
@@ -650,7 +566,6 @@ class Drone(GeomBase):
                 tbl.setStyle(style)
                 return tbl
 
-            # ── collect data (trigger lazy attributes once) ─────────── #
             mtow        = self.MTOW
             empty_wt    = self.empty_weight
             fuel_wt     = self.fuel_weight
@@ -668,21 +583,19 @@ class Drone(GeomBase):
             fus_len     = self.aircraft.fuselage.length
             fus_rad     = self.aircraft.fuselage.radius
 
-            # ── build W/P–W/S diagram PNG ────────────────────────────── #
             diagram_path = None
             try:
                 tmp = tempfile.NamedTemporaryFile(
-                    suffix=".png", delete=False, dir=save_dir)
+                    suffix=".png", delete=False,
+                    dir=os.path.join(save_dir, "Outputfiles"))
                 tmp.close()
                 self.mission.save_wp_ws_figure(tmp.name)
                 diagram_path = tmp.name
             except Exception as _de:
                 print(f"[PDF] diagram embed skipped: {_de}")
 
-            # ── assemble flowables ───────────────────────────────────── #
             story = []
 
-            # Title
             story.append(Paragraph("UAV Initial Sizing — Design Report", title_style))
             story.append(Paragraph(
                 f"Generated: {datetime.datetime.now().strftime('%d %b %Y  %H:%M')}",
@@ -690,7 +603,6 @@ class Drone(GeomBase):
             ))
             story.append(Spacer(1, 0.4*cm))
 
-            # 1. Mission parameters
             story += section("1 · Mission Parameters")
             story.append(data_table([
                 ["Parameter",              "Value"],
@@ -706,7 +618,6 @@ class Drone(GeomBase):
                 ["Engine type",            eng_type],
             ]))
 
-            # 2. Weights
             story += section("2 · Weight Budget")
             story.append(data_table([
                 ["Component",              "Mass [kg]"],
@@ -718,7 +629,6 @@ class Drone(GeomBase):
                 ["Empty fraction We/W0",   f"{empty_wt / mtow:.3f}"],
             ]))
 
-            # 3. Wing & aero
             story += section("3 · Wing & Aerodynamic Sizing")
             thr_row = (
                 ["Thrust loading  T/W",    f"{self.thrust_loading:.3f}"]
@@ -737,7 +647,6 @@ class Drone(GeomBase):
                 thr_row,
             ]))
 
-            # 4. Fuselage
             story += section("4 · Fuselage")
             story.append(data_table([
                 ["Parameter",              "Value"],
@@ -747,7 +656,6 @@ class Drone(GeomBase):
                 ["Cylinder end",           f"{self.fuselage_cylinder_end:.1f} %"],
             ]))
 
-            # 5. Stability
             story += section("5 · Longitudinal Stability")
             story.append(data_table([
                 ["Parameter",              "Value"],
@@ -757,11 +665,9 @@ class Drone(GeomBase):
                 ["Assessment",             stab],
             ]))
 
-            # ── build PDF ────────────────────────────────────────────── #
             doc.build(story)
             print(f"✓ PDF report saved: {pdf_path}")
 
-            # clean up temp diagram
             if diagram_path and os.path.exists(diagram_path):
                 try:
                     os.remove(diagram_path)
@@ -777,12 +683,13 @@ class Drone(GeomBase):
 
     @action(label="Export STP File")
     def export_stp_file(self):
-        import os
         import datetime
 
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         stp_path  = os.path.join(save_dir, f"Outputfiles/drone_geometry_{timestamp}.stp")
+
+        _archive_previous(os.path.join(save_dir, "Outputfiles"), "drone_geometry_*.stp")
 
         try:
             from OCC.wrapper.STEPControl import STEPControl_Writer, STEPControl_AsIs
@@ -797,7 +704,6 @@ class Drone(GeomBase):
             shapes_added = [0]
 
             def _add_shape(obj):
-                # Try TopoDS_Shape first (ParaPy 1.15), fall back to .shape
                 for attr in ("TopoDS_Shape", "shape"):
                     try:
                         s = getattr(obj, attr, None)
@@ -814,7 +720,6 @@ class Drone(GeomBase):
                     return
                 added = _add_shape(obj)
                 if not added:
-                    # recurse into children
                     try:
                         for child in obj.children:
                             if child is not obj:
@@ -826,8 +731,8 @@ class Drone(GeomBase):
 
             if shapes_added[0] == 0:
                 print("STP export: no shapes found — geometry may not be "
-                    "built yet.  Trigger geometry by opening the 3-D view "
-                    "first, then re-run the export.")
+                      "built yet.  Trigger geometry by opening the 3-D view "
+                      "first, then re-run the export.")
                 return
 
             writer = STEPControl_Writer()
@@ -851,19 +756,21 @@ class Drone(GeomBase):
     # ================================================================ #
 
     @Attribute
+    def _mission_sizing(self) -> tuple:
+        """Single cached call to fuel_weight_sizing."""
+        return self.mission.fuel_weight_sizing()
+
+    @Attribute
     def MTOW(self) -> float:
-        MTOW, _, _ = self.mission.fuel_weight_sizing
-        return MTOW
+        return self._mission_sizing[0]
 
     @Attribute
     def empty_weight(self) -> float:
-        _, empty_weight, _ = self.mission.fuel_weight_sizing
-        return empty_weight
+        return self._mission_sizing[1]
 
     @Attribute
     def fuel_weight(self) -> float:
-        _, _, fuel_weight = self.mission.fuel_weight_sizing
-        return fuel_weight
+        return self._mission_sizing[2]
 
     # ================================================================ #
     # LOADING OUTPUTS
@@ -871,20 +778,20 @@ class Drone(GeomBase):
 
     @Attribute
     def wing_loading(self) -> float:
-        W_S, _ = self.mission.thrust_and_wing_loading
+        W_S, _ = self.mission.thrust_and_wing_loading()
         return W_S
 
     @Attribute
     def power_loading(self) -> Optional[float]:
         if self.engine_type in ("Turboprop", "Piston"):
-            _, W_P = self.mission.thrust_and_wing_loading
+            _, W_P = self.mission.thrust_and_wing_loading()
             return W_P
         return None
 
     @Attribute
     def thrust_loading(self) -> Optional[float]:
         if self.engine_type == "Jet":
-            _, T_W = self.mission.thrust_and_wing_loading
+            _, T_W = self.mission.thrust_and_wing_loading()
             return T_W
         return None
 
@@ -902,7 +809,7 @@ class Drone(GeomBase):
 
     @Attribute
     def ld_cruise(self) -> float:
-        return self.mission.ld_cruise
+        return self.mission.ld_cruise()
 
     # ================================================================ #
     # PERFORMANCE MARGINS
@@ -910,17 +817,11 @@ class Drone(GeomBase):
 
     @Attribute
     def performance_margins(self) -> dict:
-        """
-        Which of range / endurance is the sizing driver, and how much
-        surplus capability exists for the non-limiting metric.
-        See Mission.performance_margins for full documentation.
-        """
-        return self.mission.performance_margins
+        return self.mission.performance_margins()
 
     @Attribute
     def performance_margins_summary(self) -> str:
-        """Formatted one-block string ready to print."""
-        return self.mission.performance_margins_summary
+        return self.mission.performance_margins_summary()
 
     # ================================================================ #
     # GEOMETRY
@@ -938,13 +839,10 @@ class Drone(GeomBase):
             effective_wing_semi_span=self.wing_semi_span,
             thrust_to_weight=self.thrust_loading if self.engine_type == "Jet" else self.power_loading,
             rho=self.air_density,
-            # Pass taper ratio so Aircraft/LiftingSurface and the chord-constraint
-            # check in Drone both use the same value.
             wing_taper_ratio=self.wing_taper_ratio,
             payload_object=self.payload,
             fuselage_cylinder_start=self.fuselage_cylinder_start,
             fuselage_cylinder_end=self.fuselage_cylinder_end,
-            # Fuel system — mass drives tank sizing, type selects density
             fuel_mass=self.fuel_weight,
             fuel_tank_type=self.fuel_type,
             fuel_tank_aspect_ratio=self.fuel_tank_aspect_ratio,
@@ -952,7 +850,7 @@ class Drone(GeomBase):
         )
 
     # ================================================================ #
-    # STABILITY SHORTCUTS  (surface the key numbers at drone level)
+    # STABILITY SHORTCUTS
     # ================================================================ #
 
     @Attribute

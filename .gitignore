@@ -39,7 +39,7 @@ Pythonfiles/Testfiles/test_aircraft/__pycache__/fuselage.cpython-312.pyc
 Pythonfiles/Testfiles/test_aircraft/__pycache__/__init__.cpython-312.pyc
 Pythonfiles/__pycache__/Matlab_start.cpython-312.pyc
 Pythonfiles/Testfiles/test_aircraft/__pycache__/fuselage.cpython-312.pyc
-
+Outputfiles/
 Pythonfiles/__pycache__/__init__.cpython-312.pyc
 Pythonfiles/__pycache__/ISA_calculator.cpython-312.pyc
 Pythonfiles/__pycache__/metric_imperial_conversions.cpython-312.pyc
@@ -75,15 +75,16 @@ Pythonfiles/Components/Engines/__pycache__/JetEngine.cpython-312.pyc
 Pythonfiles/Components/Payload/__pycache__/Payload.cpython-312.pyc
 Pythonfiles/Components/Fuselage/__pycache__/Undercarriage.cpython-312.pyc
 Pythonfiles/Components/Fuselage/__pycache__/Undercarriage.cpython-312.pyc
-=======
 .idea/
 .ai/
 *.pyc
 *.xml
 __pycache__/
->>>>>>> e567b001a7bf8c418adffc9e61b077e528bc9cb5
 Pythonfiles/Components/Engines/__pycache__/PropellerEngine.cpython-312.pyc
 Pythonfiles/Components/Engines/__pycache__/JetEngine.cpython-312.pyc
 Pythonfiles/Components/Fuselage/__pycache__/Undercarriage.cpython-312.pyc
 Pythonfiles/Components/Payload/__pycache__/Payload.cpython-312.pyc
 Pythonfiles/Components/Payload/__pycache__/Payloadrules.cpython-312.pyc
+Pythonfiles/Components/Engines/__pycache__/PropellerEngine.cpython-312.pyc
+Pythonfiles/Components/Engines/__pycache__/PropellerEngine.cpython-312.pyc
+XFOIL6.99/Airfoils

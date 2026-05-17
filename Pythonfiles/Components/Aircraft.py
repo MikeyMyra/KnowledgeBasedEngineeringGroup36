@@ -782,7 +782,10 @@ class Aircraft(GeomBase):
         print(text)
 
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', 'Outputfiles'))
-        os.makedirs(save_dir, exist_ok=True)
+        archive_dir = os.path.join(save_dir, "data")
+        os.makedirs(archive_dir, exist_ok=True)
+        for existing in glob.glob(os.path.join(save_dir, f"{filename_stem}_*.txt")):
+            shutil.move(existing, os.path.join(archive_dir, os.path.basename(existing)))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         path      = os.path.join(save_dir, f"{filename_stem}_{timestamp}.txt")
         try:
