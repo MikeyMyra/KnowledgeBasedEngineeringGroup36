@@ -75,7 +75,7 @@ _DEFAULT_PAYLOAD_COLOR = "LightGray"
 # LOAD DATABASE FROM JSON
 # =============================================================================
 
-_DATA_FILE = os.path.join(os.path.dirname(__file__), "payload_library.json")
+_DATA_FILE = os.path.join(os.path.dirname(__file__), "..", "..", ".." , "Inputfiles", "payload_library.json")
 
 with open(_DATA_FILE, encoding="utf-8") as _f:
     _DB = json.load(_f)
