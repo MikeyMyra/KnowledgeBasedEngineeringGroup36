@@ -56,7 +56,7 @@ from parapy.geom  import GeomBase, LoftedSolid, Circle, translate, Vector
 
 # ─── load fuel database ───────────────────────────────────────────────────── #
 
-_DB_PATH = os.path.join(os.path.dirname(__file__), "fuel_properties.json")
+_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "Inputfiles", "fuel_properties.json")
 
 with open(_DB_PATH, encoding="utf-8") as _f:
     _FUEL_DB = json.load(_f)

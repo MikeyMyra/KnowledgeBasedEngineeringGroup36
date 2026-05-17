@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import os
 import sys
 import json
-from ISA_calculator import *
+from Pythonfiles.Components.Mission.ISA_calculator import *
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
