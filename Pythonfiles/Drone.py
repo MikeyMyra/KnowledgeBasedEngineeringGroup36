@@ -44,10 +44,10 @@ def _non_negative_int():
     return _check
 
 from Pythonfiles.Components.Aircraft import Aircraft
-from mission import Mission
+from Pythonfiles.Components.Mission.mission import Mission
 from Pythonfiles.Components.Payload.Payload import Payload
 from Pythonfiles.Components.Payload.Payloadrules import PayloadRules, PayloadRole, ROLE_CATEGORIES
-from ISA_calculator import ISA_calculator
+from Pythonfiles.Components.Mission.ISA_calculator import ISA_calculator
 
 from Pythonfiles.metric_imperial_conversions import kilograms_to_pounds, feet_to_meters
 

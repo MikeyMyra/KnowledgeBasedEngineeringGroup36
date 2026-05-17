@@ -1,8 +1,8 @@
 from parapy.core import Base, Input, Attribute
-from ISA_calculator import ISA_calculator
+from Pythonfiles.Components.Mission.ISA_calculator import ISA_calculator
 import numpy as np
 import metric_imperial_conversions as m2i
-from Pythonfiles.WP_WS_diagram import WP_WS_Diagram
+from Pythonfiles.Components.Mission.WP_WS_diagram import WP_WS_Diagram
 
 
 class Mission(Base):
@@ -536,7 +536,7 @@ class Mission(Base):
 # ================================================================ #
 
 if __name__ == "__main__":
-    from ISA_calculator import ISA_calculator
+    from Pythonfiles.Components.Mission.ISA_calculator import ISA_calculator
 
     def make_mission(altitude, range_km, endurance, payload,
                      sfc, mach_max, prop_eff, v_cruise, objective,
