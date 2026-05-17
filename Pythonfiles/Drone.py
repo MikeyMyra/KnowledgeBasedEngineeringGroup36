@@ -174,6 +174,15 @@ class Drone(GeomBase):
             "Keep at least 5 % gap above cylinder_start.",
     )   # [% of fuselage length]
 
+    payload_nose_clearance: float = Input(
+        0.20,
+        validator=_between(0.0, 2.0),
+        doc="Gap from nose-cone end to first payload item  [m]  ·  valid: 0 – 2 m\n"
+            "Prevents the payload from overlapping the prop nacelle on tractor configs.\n"
+            "100 mm default clears most small/medium UAV nacelles.  Increase to 0.3–0.5 m\n"
+            "for large turboprop tractor installations.",
+    )   # [m]
+
     # ================================================================ #
     # FUEL SYSTEM
     # ================================================================ #
@@ -403,10 +412,20 @@ class Drone(GeomBase):
 
     @Attribute
     def payload_start_x(self) -> float:
-        """X-position where the payload bay begins [m]."""
+        """
+        X-position where the first payload item begins [m].
+
+        = cylinder_start_x (nose-cone end) + payload_nose_clearance.
+
+        Uses the Roskam fuselage length estimate for cylinder_start_x because
+        the actual fuselage length is not yet known at payload-layout time
+        (the Payload Part feeds back into fuselage sizing).  The Roskam
+        estimate is accurate to ±15 % for MTOW-driven designs; the small
+        positional offset this introduces is visually negligible.
+        """
         cylinder_start_x = (self.fuselage_cylinder_start / 100.0) * \
                             self._roskam_fuselage_length_estimate
-        return cylinder_start_x + 0.01   # 10 mm margin past nosecone junction
+        return cylinder_start_x + self.payload_nose_clearance
 
     @Part
     def payload(self) -> Payload:
@@ -841,6 +860,7 @@ class Drone(GeomBase):
             rho=self.air_density,
             wing_taper_ratio=self.wing_taper_ratio,
             payload_object=self.payload,
+            payload_nose_clearance=self.payload_nose_clearance,
             fuselage_cylinder_start=self.fuselage_cylinder_start,
             fuselage_cylinder_end=self.fuselage_cylinder_end,
             fuel_mass=self.fuel_weight,

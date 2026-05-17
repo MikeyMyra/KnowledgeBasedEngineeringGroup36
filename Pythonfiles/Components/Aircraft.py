@@ -1,5 +1,6 @@
 import sys
 import os
+import math
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -38,6 +39,11 @@ class Aircraft(GeomBase):
     fuselage_cylinder_start: float = Input(10.0)
     fuselage_cylinder_end:   float = Input(70.0)
     payload_object = Input(None)
+
+    # Gap from nose-cone/cylinder junction to first payload item [m].
+    # Prevents payload overlapping the prop nacelle (tractor configurations).
+    # Default 100 mm — increase if the nacelle is long.
+    payload_nose_clearance: float = Input(0.20)
 
     # Fuel and engine mass fractions for CG computation
     # Roskam Vol. I §8.1: fuel CG assumed at wing AC (tanks in centre wing box).
@@ -187,7 +193,9 @@ class Aircraft(GeomBase):
             FUELS, AUTO_SELECTION, _VOLUME_FACTOR,
         )
 
-        if self.fuel_mass <= 0.0:
+        # Treat NaN fuel_mass (from an infeasible mission) the same as zero —
+        # no tank should be rendered when sizing failed.
+        if math.isnan(self.fuel_mass) or self.fuel_mass <= 0.0:
             return None
 
         # ── resolve fuel type ──────────────────────────────────────── #
@@ -219,6 +227,10 @@ class Aircraft(GeomBase):
             fuel_density  = density,
         )
 
+    @Attribute
+    def _fm_safe(self):
+        return self.fuel_mass if (not math.isnan(self.fuel_mass) and self.fuel_mass > 0.0) else 0.0
+
     @Part
     def fuel_tank(self):
         """
@@ -227,9 +239,11 @@ class Aircraft(GeomBase):
         Fuselage uses _fuel_tank_sizing (above) for sizing, so this Part's
         position can safely read fuselage._x_cylinder_start with no cycle.
         """
+        # Suppress when fuel_mass is zero OR NaN (failed mission sizing).
+        # max(NaN, 0.01) returns NaN in Python, so we must guard explicitly.
         return FuelTank(
-            suppress=self.fuel_mass <= 0.0,
-            fuel_mass=max(self.fuel_mass, 0.01),   # guard against suppress=False/0
+            suppress=self._fm_safe <= 0.0,
+            fuel_mass=max(self._fm_safe, 0.01),   # guard against suppress=False/0
             fuel_type=self.fuel_tank_type,
             engine_type=self.engine_type_str,
             tank_aspect_ratio=self.fuel_tank_aspect_ratio,
@@ -251,7 +265,11 @@ class Aircraft(GeomBase):
         from parapy.geom import translate as _translate, Vector as _Vector
         payload_len   = (self.payload_object.min_fuselage_length
                          if self.payload_object is not None else 0.0)
-        nominal_start = self.fuselage._x_cylinder_start + payload_len + 0.05
+        # payload_nose_clearance + payload_bay + 50mm structural gap → tank nose
+        nominal_start = (self.fuselage._x_cylinder_start
+                         + self.payload_nose_clearance
+                         + payload_len
+                         + 0.05)
         # Push tank aft of wingbox rear spar to avoid structural intersection.
         # If the payload bay already ends aft of the rear spar the wingbox term
         # has no effect (max selects the larger value).
@@ -282,6 +300,7 @@ class Aircraft(GeomBase):
             undercarriage_color_strut=self.undercarriage_color_strut,
             prop_clearance_radius=self._approx_prop_clearance_radius,
             payload=self.payload_object,
+            payload_nose_clearance=self.payload_nose_clearance,
             fuel_tank=self._fuel_tank_sizing,   # sizing-only Attribute, no position dep
             length_min_override=self._min_fuselage_length_from_wing,
             radius_min_override=self._min_fuselage_radius_from_wing,
@@ -636,12 +655,14 @@ class Aircraft(GeomBase):
         payload_len   = (self.payload_object.min_fuselage_length
                          if self.payload_object is not None else 0.0)
         # ── payload wingbox overlap check ──────────────────────────── #
-        payload_end_x = self.fuselage._x_cylinder_start + payload_len
+        # payload starts at cylinder_start + payload_nose_clearance
+        payload_start_x = self.fuselage._x_cylinder_start + self.payload_nose_clearance
+        payload_end_x   = payload_start_x + payload_len
         if (payload_len > 0.0
                 and payload_end_x > self._wingbox_start_x
-                and self.fuselage._x_cylinder_start < self._wingbox_end_x):
+                and payload_start_x < self._wingbox_end_x):
             print(
-                f"[Aircraft] WARNING: payload bay (x={self.fuselage._x_cylinder_start:.3f}"
+                f"[Aircraft] WARNING: payload bay (x={payload_start_x:.3f}"
                 f"–{payload_end_x:.3f} m) overlaps wingbox "
                 f"(x={self._wingbox_start_x:.3f}–{self._wingbox_end_x:.3f} m). "
                 f"Consider reducing payload length or moving the wing aft."
@@ -665,7 +686,7 @@ class Aircraft(GeomBase):
             "fuel":            fuel_cg_x,             # fuel in centre wing box
         }
         if self.payload_object is not None:
-            d["payload"] = self.payload_object.cg_x
+            d["payload"] = self.payload_object.cg_x   # item positions already in world frame
         if self.fuel_mass > 0:
             d["fuel_tank_structure"] = fuel_cg_x      # tank structure CG ≈ fuel CG
         return d

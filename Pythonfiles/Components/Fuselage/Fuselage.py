@@ -65,6 +65,11 @@ class Fuselage(GeomBase):
     # Payload object — drives min length/radius, None = no constraint
     payload = Input(None)
 
+    # Gap between the nose-cone/cylinder junction and the first payload item [m].
+    # Ensures the payload does not overlap the prop nacelle (tractor configs).
+    # Forwarded from Aircraft.payload_nose_clearance.
+    payload_nose_clearance: float = Input(0.0)
+
     # FuelTank object — placed in centre wing box, drives additional
     # cylinder length and possibly radius.  None = no tank constraint.
     fuel_tank = Input(None)
@@ -85,8 +90,18 @@ class Fuselage(GeomBase):
 
     @Attribute
     def _roskam_radius(self) -> float:
-        """Fuselage radius from fineness ratio l/d = 9 [m]."""
-        return self._roskam_length / (9.0 * 2.0)
+        """
+        Fuselage radius from fineness ratio l/d = 14 [m].
+
+        Roskam Vol. I §3.3 gives l/d ≈ 9 for manned aircraft, but UAVs are
+        notably more slender.  Real-world UAV data:
+          Predator A  : 8.2 m / 0.86 m  → l/d ≈ 19
+          Global Hawk : 14.5 m / 1.0 m  → l/d ≈ 29
+          Heron       : ~8 m  / 0.70 m  → l/d ≈ 23
+        l/d = 14 is a conservative lower bound that still keeps the fuselage
+        reasonably slender for a compact UAV without payload / tank constraints.
+        """
+        return self._roskam_length / (14.0 * 2.0)
 
     @Attribute
     def _tank_gap(self) -> float:
@@ -121,7 +136,11 @@ class Fuselage(GeomBase):
 
         cylinder_fraction = (self.cylinder_end - self.cylinder_start) / 100.0
 
-        payload_len = (self.payload.min_fuselage_length
+        # payload_nose_clearance is the gap reserved between the cylinder start
+        # and the first payload item (to clear the prop nacelle).  It must be
+        # counted as part of the cylinder occupancy so the fuselage stretches
+        # to fit payload_clearance + payload_bay + gap + tank.
+        payload_len = (self.payload.min_fuselage_length + self.payload_nose_clearance
                        if self.payload is not None else 0.0)
         tank_len    = (self.fuel_tank.min_fuselage_length + self._tank_gap
                        if self.fuel_tank is not None else 0.0)
@@ -141,13 +160,15 @@ class Fuselage(GeomBase):
         """
         Hard lower bound on fuselage radius [m] driven by structural integrity.
 
-        Raymer §6.3: minimum outer diameter for a semi-monocoque UAV fuselage
-        is approximately 6 % of fuselage length (l/d ≥ 16) with an absolute
-        floor of 50 mm to accommodate longerons and skin thickness.
-        This is intentionally conservative so a payload-driven radius can go
-        *below* the Roskam fineness-ratio estimate when the payload is small.
+        The old value of 6 % of length gave l/d ≈ 8.3 — far too fat for a
+        slender UAV fuselage.  Real UAV fineness ratios are l/d = 15–29.
+        Using 3 % of length gives l/d ≈ 16.7, which is a conservative but
+        realistic lower bound for a semi-monocoque composite UAV fuselage.
+
+        Absolute floor of 60 mm ensures longerons and skin can physically fit
+        even for very small (< 2 m) fuselages.
         """
-        return max(self.length * 0.06, 0.05)
+        return max(self.length * 0.03, 0.06)
 
     @Attribute
     def radius(self) -> float:

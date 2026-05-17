@@ -213,6 +213,11 @@ class Airfoil(GeomBase):
     # XFOIL
     # ------------------------------------------------------------------ #
 
+    # Xfoil's panel method / viscous coupling becomes unreliable above this Mach
+    # number (transonic shock formation, diverging BL iterations).  We cap the
+    # value passed to Xfoil and print a warning so the user knows.
+    XFOIL_MACH_MAX: float = 0.70
+
     def run_xfoil(
         self,
         reynolds:    float = None,
@@ -228,9 +233,17 @@ class Airfoil(GeomBase):
 
         ``reynolds`` and ``mach`` default to the values set on the instance
         (Input attributes) so callers never need to repeat them.
+
+        Mach is capped at ``XFOIL_MACH_MAX`` (0.70) — Xfoil's panel method
+        diverges for transonic flows and returns no data above that limit.
         """
-        reynolds = reynolds if reynolds is not None else self.reynolds
-        mach     = mach     if mach     is not None else self.mach
+        reynolds     = reynolds if reynolds is not None else self.reynolds
+        mach_actual  = mach     if mach     is not None else self.mach
+        if mach_actual > self.XFOIL_MACH_MAX:
+            print(f"[Xfoil] Mach {mach_actual:.3f} exceeds Xfoil validity limit "
+                  f"(M = {self.XFOIL_MACH_MAX}).  Capping to M = {self.XFOIL_MACH_MAX} "
+                  f"for viscous polar computation.")
+        mach = min(mach_actual, self.XFOIL_MACH_MAX)
 
         # 1. Make sure the .dat file exists
         _ = self.write_dat_file

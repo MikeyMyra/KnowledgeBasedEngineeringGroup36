@@ -443,9 +443,9 @@ class PropellerEngine(GeomBase):
     def _blade_root_positions(self) -> list:
         return [
             translate(
-                rotate(self._engine_base, 'x', radians(a)),
+                rotate(self._engine_base, 'x', -radians(a)),
                 Vector(0, sin(radians(a)), cos(radians(a))), self.spinner_radius,
-            ).rotate90('y')
+            )#.rotate90('y')
             for a in self._blade_angles_deg
         ]
 
@@ -454,11 +454,11 @@ class PropellerEngine(GeomBase):
         x_sweep = self.blade_length * tan(radians(self.blade_sweep))
         return [
             translate(
-                rotate(self._engine_base, 'x', radians(a)),
+                rotate(self._engine_base, 'x', -radians(a)),
                 Vector(1, 0, 0), x_sweep,
                 Vector(0, sin(radians(a)), cos(radians(a))),
                 self.spinner_radius + self.blade_length,
-            ).rotate90('y')
+            )#.rotate90('y')
             for a in self._blade_angles_deg
         ]
 

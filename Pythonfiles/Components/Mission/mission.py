@@ -262,45 +262,115 @@ class Mission:
               f"taxi out:    {fr['w8_w7']:.4f}\n"
               f"wf_w0:       {wf_w0:.4f}\n")
 
-        # Raymer empty-weight fraction coefficients
+        # Raymer empty-weight fraction coefficients (Table 3.1).
+        # NOTE: These were derived from large manned aircraft.  For small UAVs
+        # (MTOW < ~2 000 kg) the power-law extrapolates badly, producing
+        # We_frac > 0.80.  We_frac_max caps the result at a physically
+        # reasonable upper bound derived from real UAV data.
         if self.engine_type == "Jet":
             A, C_exp = 1.67, -0.16
+            We_frac_max = 0.65   # jet UAV (e.g. Global Hawk ≈ 0.47)
         elif self.engine_type == "Turboprop":
             A, C_exp = 2.75, -0.18
+            We_frac_max = 0.68   # turboprop UAV (e.g. Predator A ≈ 0.50)
         else:
             A, C_exp = 0.97, -0.06
+            We_frac_max = 0.72   # piston UAV (typical GA piston ≈ 0.55–0.65)
 
         payload_lbs  = m2i.kilograms_to_pounds(self.payload_weight)
 
-        # Initial guess from a nominal empty-weight fraction
-        We_frac_init = 0.55 if self.engine_type == "Turboprop" else \
-                       0.50 if self.engine_type == "Jet" else 0.60
-        denom_init   = 1.0 - wf_w0 - We_frac_init
-        if denom_init <= 0.0:
-            print("Warning: mission infeasible at initial estimate — "
-                  f"wf_w0={wf_w0:.3f} + We_frac_est={We_frac_init:.3f} >= 1")
+        # Fuel fraction of take-off weight (Raymer §3.5 — trapped fuel adds 1%)
+        fuel_frac = (1.0 - wf_w0) * 1.01
+
+        # ── absolute feasibility: fuel alone must fit in the aircraft ────── #
+        if fuel_frac >= 1.0:
+            print("Warning: mission physically infeasible — "
+                  f"fuel_frac={fuel_frac:.3f} >= 1.0  (wf_w0={wf_w0:.3f})\n"
+                  f"  (Try reducing range, endurance, or SFC.)")
             print(self.performance_margins_summary())
             return float("nan"), float("nan"), float("nan")
 
-        W0_guess = payload_lbs / denom_init
+        # ── Raymer sizing equation (robust root-find) ─────────────────────── #
+        #
+        #   f(W0) = W0 * (1 - fuel_frac - We_frac(W0)) - W_payload = 0
+        #
+        # where  We_frac(W0) = min(A * W0^C_exp, We_frac_max)
+        #
+        # The simple Picard iteration W0 ← payload/denom is unstable when the
+        # slope of We_frac exceeds the slope of the payload line (common for
+        # small UAVs with demanding missions).  We use bisection instead,
+        # which is unconditionally convergent given a bracket [lo, hi] with
+        # opposite signs of f.
 
-        for i in range(100):
-            if W0_guess <= 0.0:
-                W0_guess = m2i.kilograms_to_pounds(100.0)
-            We_frac = A * (W0_guess ** C_exp)
-            denom   = 1.0 - wf_w0 - We_frac
-            if denom <= 0.05:
-                print("Warning: mission infeasible — "
-                      f"wf_w0={wf_w0:.3f} + We_frac={We_frac:.3f} >= 1")
-                print(self.performance_margins_summary())
-                return float("nan"), float("nan"), float("nan")
-            W0_lbs = payload_lbs / denom
-            if abs(W0_lbs - W0_guess) / max(W0_guess, 1.0) < 0.01:
-                print(f"Converged in {i + 1} iterations")
+        def _f(W0_lbs_: float) -> float:
+            we = min(A * (W0_lbs_ ** C_exp), We_frac_max)
+            return W0_lbs_ * (1.0 - fuel_frac - we) - payload_lbs
+
+        # ── Hard MTOW cap ───────────────────────────────────────────── #
+        #
+        # When fuel_frac approaches (1 - We_frac_max), the denominator
+        # (1 - fuel_frac - We_frac) → 0 and MTOW → ∞.  The bisection
+        # can still find a "root" at millions of kg by expanding hi
+        # geometrically — technically correct but completely unphysical.
+        #
+        # Fix: evaluate _f at the 100-tonne cap FIRST.  If f(hi_max) ≤ 0
+        # the root lies beyond 100 t, which is outside the scope of any
+        # UAV this tool is designed to size.  Return NaN immediately with
+        # a clear diagnostic instead of converging to an absurd value.
+        _MTOW_MAX_KG  = 100_000.0   # [kg] — hard UAV scope limit
+        hi_max_lbs    = m2i.kilograms_to_pounds(_MTOW_MAX_KG)
+
+        denom_at_cap = 1.0 - fuel_frac - min(A * hi_max_lbs ** C_exp, We_frac_max)
+        if _f(hi_max_lbs) <= 0.0:
+            print(
+                f"\n[Mission] INFEASIBLE — mission requires MTOW > {_MTOW_MAX_KG/1000:.0f} t,\n"
+                f"  which is outside the scope of this UAV sizing tool.\n"
+                f"  fuel_frac = {fuel_frac:.3f}   We_frac_max = {We_frac_max:.3f}"
+                f"   denom @ cap = {denom_at_cap:.4f}\n"
+                f"  Root cause: very low L/D from high cruise speed causes excessive fuel burn.\n"
+                f"  Fixes: ↓ cruise speed  |  ↓ range  |  ↓ endurance  |  ↑ cruise altitude"
+            )
+            print(self.performance_margins_summary())
+            return float("nan"), float("nan"), float("nan")
+
+        # ── Find bracket [lo, hi] with f(lo) < 0 < f(hi) ─────────────── #
+        # hi is now capped at hi_max_lbs because we already verified
+        # f(hi_max_lbs) > 0 above.
+        lo, hi = payload_lbs * 0.5, min(payload_lbs * 200.0, hi_max_lbs)
+        for _ in range(40):
+            if _f(hi) > 0:
                 break
-            W0_guess = 0.5 * W0_guess + 0.5 * W0_lbs
+            hi = min(hi * 5.0, hi_max_lbs)
         else:
-            print("Warning: did not converge after 100 iterations")
+            # Should not reach here (we verified f(hi_max) > 0 above).
+            print("[Mission] Bracket search failed unexpectedly — "
+                  "mission likely infeasible.")
+            return float("nan"), float("nan"), float("nan")
+
+        if _f(lo) > 0:
+            # Both ends positive → payload is very small; shrink lo
+            lo = payload_lbs * 0.01
+
+        # Bisection
+        for i in range(60):
+            mid = 0.5 * (lo + hi)
+            if _f(mid) < 0:
+                lo = mid
+            else:
+                hi = mid
+            if (hi - lo) / max(hi, 1.0) < 1e-4:
+                break
+
+        W0_lbs  = 0.5 * (lo + hi)
+        We_frac = min(A * (W0_lbs ** C_exp), We_frac_max)
+        denom   = 1.0 - fuel_frac - We_frac
+        print(f"Converged in {i + 1} bisection steps  "
+              f"(We_frac={We_frac:.3f}, payload_frac={denom:.3f})")
+
+        if denom < 0.02:
+            print(f"Warning: payload fraction is very small ({denom:.1%}) — "
+                  f"mission is technically feasible but very demanding.\n"
+                  f"  Consider reducing range/endurance or payload weight.")
 
         MTOW         = m2i.pounds_to_kilograms(W0_lbs)
         empty_weight = MTOW * We_frac

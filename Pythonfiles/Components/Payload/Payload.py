@@ -426,11 +426,21 @@ class PayloadItem(GeomBase):
 
         For multi-weapon items use ``weapon_solids`` instead; this part is
         suppressed (but still defined) so that the ParaPy tree is consistent.
+
+        ParaPy Box axis convention (verified empirically):
+          ``length`` → local y-axis (fuselage-transverse)
+          ``width``  → local x-axis (fuselage longitudinal)
+          ``height`` → local z-axis (vertical)
+
+        We therefore pass ``width=final_length`` so that the item's
+        longitudinal extent (final_length) aligns with the fuselage x-axis,
+        and ``length=final_width`` so the transverse half-width equals the
+        value used by cross_section_envelope / min_fuselage_radius.
         """
         if self.geometry_type == "box":
             return Box(
-                length=self.final_length,
-                width=self.final_width,
+                length=self.final_width,       # y-axis in ParaPy Box → fuselage-transverse
+                width=self.final_length,        # x-axis in ParaPy Box → fuselage-longitudinal
                 height=self.final_height_box,
                 centered=True,
                 color=self.color,
@@ -584,7 +594,8 @@ class Payload(GeomBase):
         max_half = 0.0
         for item in self.items:
             hy, hz = item.cross_section_envelope
-            max_half = max(max_half, hy, hz)
+            hpyt = math.sqrt(hy**2 + hz**2)
+            max_half = max(max_half, hy, hz, hpyt)
         return max_half * clearance_factor
 
     # -------------------------------------------------------------------------
