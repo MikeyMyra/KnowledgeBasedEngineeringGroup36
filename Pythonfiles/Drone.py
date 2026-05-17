@@ -46,7 +46,7 @@ def _non_negative_int():
 from Pythonfiles.Components.Aircraft import Aircraft
 from mission import Mission
 from Pythonfiles.Components.Payload.Payload import Payload
-from Pythonfiles.Components.Payload.Payloadrules import PayloadRules
+from Pythonfiles.Components.Payload.Payloadrules import PayloadRules, PayloadRole, ROLE_CATEGORIES
 from ISA_calculator import ISA_calculator
 
 from Pythonfiles.metric_imperial_conversions import kilograms_to_pounds, feet_to_meters
@@ -65,31 +65,68 @@ class Drone(GeomBase):
     # Lower bound 10 m/s (minimum controllable UAV speed).
     # Upper bound 350 m/s ≈ Mach 1.03 at sea level — beyond this the
     # Roskam subsonic drag polars and Breguet equations break down.
-    cruise_speed: float = Input(validator=_between(10.0, 350.0))   # [m/s]
+    cruise_speed: float = Input(
+        validator=_between(10.0, 350.0),
+        doc="Cruise true airspeed  [m/s]  ·  valid: 10 – 350 m/s\n"
+            "Engine type is inferred from Mach number and altitude:\n"
+            "  M ≥ 0.40 (sea level) / 0.50 (9 km) / 0.60 (15 km) → Jet\n"
+            "  Below threshold, h > 4 500 m → Turboprop, else → Piston",
+    )   # [m/s]
 
     # Mission altitude [m]
     # 0 m  = sea level  |  20 000 m = mid-stratosphere (SR-71 ceiling ≈ 26 km;
     # propulsion / atmospheric model is ISA troposphere + lower stratosphere).
-    mission_altitude: float = Input(validator=_between(0.0, 20_000.0))  # [m]
+    mission_altitude: float = Input(
+        validator=_between(0.0, 20_000.0),
+        doc="Cruise / loiter altitude  [m]  ·  valid: 0 – 20 000 m\n"
+            "Practical ceilings by engine type:\n"
+            "  Piston   ≤ 4 500 m  |  Turboprop ≤ 9 000 m  |  Jet up to 20 000 m\n"
+            "Above 9 000 m a jet is selected automatically if Mach threshold is met.",
+    )  # [m]
 
     # Mission range [km]
     # 1 km minimum (prevents near-zero loiter-only missions blowing up W0
     # iteration).  25 000 km ≈ once-around-the-globe — extreme but bounded.
-    mission_range: float = Input(validator=_between(1.0, 25_000.0))   # [km]
+    mission_range: float = Input(
+        validator=_between(1.0, 25_000.0),
+        doc="Total mission range (outbound + return)  [km]  ·  valid: 1 – 25 000 km\n"
+            "Breguet fuel sizing: each cruise leg = range / 2.\n"
+            "Class floors: < 150 km → small  |  150 – 500 km → medium  |  > 500 km → large",
+    )   # [km]
 
     # Mission endurance [hr]
     # 0.1 hr prevents division-by-zero in loiter fractions.
     # 120 hr ≈ 5-day record endurance (Global Hawk class).
-    mission_endurance: float = Input(validator=_between(0.1, 120.0))  # [hr]
+    mission_endurance: float = Input(
+        validator=_between(0.1, 120.0),
+        doc="Loiter / endurance duration  [hr]  ·  valid: 0.1 – 120 hr\n"
+            "Class floors: < 4 hr → small  |  4 – 10 hr → medium  |  > 10 hr → large\n"
+            "Objective: > 6 hr → High Endurance (Turboprop preferred)",
+    )  # [hr]
 
     # ================================================================ #
     # PAYLOAD INTENT
     # ================================================================ #
 
-    payload_role: str = Input("ISR")
+    payload_role: PayloadRole = Input(
+        PayloadRole.ISR,
+        doc="Mission role — selects the payload sensor/weapon suite automatically.\n"
+            "ISR: EO/IR + radar + datalink\n"
+            "Strike: EO/IR + weapons + datalink\n"
+            "SEAD: EO/IR + radar + weapons + datalink\n"
+            "Mapping: EO/IR + LiDAR\n"
+            "COMMS relay: comms + datalink\n"
+            "Patrol: EO/IR + comms",
+    )
 
     # Weapon count [—]  0 = unarmed, 6 = maximum typical hard-point count.
-    weapon_count: int = Input(0, validator=_between(0, 6))
+    weapon_count: int = Input(
+        0,
+        validator=_between(0, 6),
+        doc="Number of munitions / hard-points  [—]  ·  valid: 0 – 6\n"
+            "0 = unarmed (weapon category suppressed from payload).\n"
+            "Requires payload_role = 'Strike' or 'SEAD' to carry weapons.",
+    )
 
     # ================================================================ #
     # ENGINEERING RULE OVERRIDES
@@ -105,12 +142,22 @@ class Drone(GeomBase):
     # Cylinder start as % of total fuselage length.
     # Raymer §4.2: nosecone is typically 5–30 % of fuselage length.
     fuselage_cylinder_start: float = Input(
-        10.0, validator=_between(5.0, 30.0))   # [% of fuselage length]
+        10.0,
+        validator=_between(5.0, 30.0),
+        doc="Nosecone / cylinder junction  [% of fuselage length]  ·  valid: 5 – 30 %\n"
+            "Raymer §4.2: nosecone typically 5–30 % of fuselage length.\n"
+            "Payload bay begins just aft of this station.",
+    )   # [% of fuselage length]
 
     # Cylinder end as % of total fuselage length.
     # Tail-cone must begin no later than 95 % of length.
     fuselage_cylinder_end: float = Input(
-        70.0, validator=_between(50.0, 95.0))   # [% of fuselage length]
+        70.0,
+        validator=_between(50.0, 95.0),
+        doc="Cylinder / tail-cone junction  [% of fuselage length]  ·  valid: 50 – 95 %\n"
+            "Tail-cone begins at this station. Fuel tank fits between payload and this point.\n"
+            "Keep at least 5 % gap above cylinder_start.",
+    )   # [% of fuselage length]
 
     # ================================================================ #
     # FUEL SYSTEM
@@ -122,7 +169,13 @@ class Drone(GeomBase):
 
     # Tank shape: length-to-diameter ratio.
     # AR=3 is a compact wing-box tank; increase to 5+ for slender HALE fuselages.
-    fuel_tank_aspect_ratio: float = Input(3.0, validator=_between(1.1, 10.0))
+    fuel_tank_aspect_ratio: float = Input(
+        3.0,
+        validator=_between(1.1, 10.0),
+        doc="Fuel tank length-to-diameter ratio  [—]  ·  valid: 1.1 – 10.0\n"
+            "3 = compact wing-box tank (default).\n"
+            "Increase to 5+ for slender HALE fuselages where tank must fit in a narrow bay.",
+    )
 
     # ================================================================ #
     # ATMOSPHERE
@@ -143,7 +196,14 @@ class Drone(GeomBase):
     # Taper ratio λ = c_tip / c_root.
     # Raymer §4.3: 0.20 (high-speed delta) to 1.0 (un-tapered / constant chord).
     # 0.40 is the Raymer subsonic endurance UAV default.
-    wing_taper_ratio: float = Input(0.40, validator=_between(0.20, 1.0))
+    wing_taper_ratio: float = Input(
+        0.40,
+        validator=_between(0.20, 1.0),
+        doc="Wing taper ratio  λ = c_tip / c_root  [—]  ·  valid: 0.20 – 1.00\n"
+            "0.40 — Raymer subsonic endurance UAV default.\n"
+            "Lower values increase tip wash-out and reduce induced drag; "
+            "values below 0.20 cause structural/manufacturing difficulties.",
+    )
 
     # ================================================================ #
     # ENGINE TYPE
@@ -306,6 +366,25 @@ class Drone(GeomBase):
         #   → AR = 4S / (c_root_max · (1+λ))²
         ar_min  = 4.0 * S / (c_root_max * (1.0 + taper)) ** 2
         ar_geom = min(ar_min, 16.0)   # structural upper bound (Raymer Fig. 4.10)
+
+        # ── Span / fuselage-length ratio cap ──────────────────────────── #
+        # If the span would grow beyond 4× the estimated fuselage length
+        # (Global Hawk ≈ 2.75×; here we allow generous HALE proportions up to 4×),
+        # reduce AR so the semi-span stays at most 2× the fuselage length.
+        # This prevents the horizontal tail from overlapping the wing at
+        # extreme altitudes where the fuselage is short but the wing is large.
+        #
+        # AR_span_cap = (2 · span_max)² / S  where span_max = 4 · L_fus
+        L_fus_est    = self._roskam_fuselage_length_estimate
+        span_max     = 4.0 * L_fus_est          # total span limit
+        ar_span_cap  = span_max ** 2 / S        # AR that gives span = span_max
+        if ar_geom > ar_span_cap and ar_span_cap > ar:
+            print(
+                f"[Wing AR] span cap: AR {ar_geom:.2f} → {ar_span_cap:.2f}  "
+                f"(semi-span would be {math.sqrt(ar_geom * S)/2:.1f} m vs "
+                f"fuselage {L_fus_est:.1f} m)"
+            )
+            ar_geom = max(ar_span_cap, ar)   # never go below Roskam estimate
 
         print(
             f"[Wing AR] Roskam AR={ar:.2f} → c_root={c_root:.3f} m  "
@@ -824,6 +903,24 @@ class Drone(GeomBase):
     @Attribute
     def ld_cruise(self) -> float:
         return self.mission.ld_cruise
+
+    # ================================================================ #
+    # PERFORMANCE MARGINS
+    # ================================================================ #
+
+    @Attribute
+    def performance_margins(self) -> dict:
+        """
+        Which of range / endurance is the sizing driver, and how much
+        surplus capability exists for the non-limiting metric.
+        See Mission.performance_margins for full documentation.
+        """
+        return self.mission.performance_margins
+
+    @Attribute
+    def performance_margins_summary(self) -> str:
+        """Formatted one-block string ready to print."""
+        return self.mission.performance_margins_summary
 
     # ================================================================ #
     # GEOMETRY

@@ -82,3 +82,8 @@ Pythonfiles/Components/Fuselage/__pycache__/Undercarriage.cpython-312.pyc
 *.xml
 __pycache__/
 >>>>>>> e567b001a7bf8c418adffc9e61b077e528bc9cb5
+Pythonfiles/Components/Engines/__pycache__/PropellerEngine.cpython-312.pyc
+Pythonfiles/Components/Engines/__pycache__/JetEngine.cpython-312.pyc
+Pythonfiles/Components/Fuselage/__pycache__/Undercarriage.cpython-312.pyc
+Pythonfiles/Components/Payload/__pycache__/Payload.cpython-312.pyc
+Pythonfiles/Components/Payload/__pycache__/Payloadrules.cpython-312.pyc

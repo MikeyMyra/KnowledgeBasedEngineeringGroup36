@@ -217,6 +217,8 @@ class Mission(Base):
         empty_weight = MTOW * We_frac
         fuel_weight  = MTOW * (1.0 - wf_w0) * 1.01
 
+        print(self.performance_margins_summary)
+
         return MTOW, empty_weight, fuel_weight
 
     # ================================================================ #
@@ -273,6 +275,260 @@ class Mission(Base):
                 for v in v_range
             ]
         return float(v_range[int(np.argmax(fracs))])
+
+    def _fuel_fracs_parametric(self, cruise_range_km: float,
+                                loiter_time_hr: float) -> dict:
+        """
+        Compute Breguet weight fractions for arbitrary (range, endurance) values
+        using the same wing-loading design point as the main sizing.
+
+        Parameters
+        ----------
+        cruise_range_km  : total mission range [km]  (0 → no cruise legs)
+        loiter_time_hr   : loiter / endurance [hr]   (0 → no loiter)
+
+        Returns
+        -------
+        dict with keys
+            wf_w0        – overall remaining-fuel fraction (1 = no fuel burned)
+            w_fixed      – taxi + climb + landing fractions combined
+            w_cruise     – w3_w2 * w5_w4  (both cruise legs)
+            w_loiter     – w4_w3
+            w_reserve    – w6_w5
+            loiter_speed – optimal loiter speed used [m/s]
+            cruise_speed – cruise speed used [m/s]
+            ld_cruise    – L/D at cruise
+            ld_loiter    – L/D at loiter
+        """
+        _, _, _, CD0 = self._wing_parameters()
+        sfc           = self.specific_fuel
+        one_way_km    = cruise_range_km / 2.0
+
+        W_S, _ = self.thrust_and_wing_loading
+
+        # ── taxi / start-up ──────────────────────────────────────────── #
+        w1_w0 = 0.98
+
+        # ── climb ────────────────────────────────────────────────────── #
+        if self.engine_type == "Jet":
+            v_cruise = self.cruise_speed
+            for _ in range(10):
+                v_old = v_cruise
+                M     = v_cruise / self.speed_of_sound
+                w2_w1 = 1.0065 - 0.0325 * M
+                v_cruise = self._find_optimal_cruise_speed(
+                    W_S * w1_w0 * w2_w1, CD0)
+                if abs(v_cruise - v_old) < 0.1:
+                    break
+        else:
+            M     = self.cruise_speed / self.speed_of_sound
+            w2_w1 = 1.0065 - 0.0325 * M
+            v_cruise = self.cruise_speed
+
+        # ── cruise there ─────────────────────────────────────────────── #
+        wf_cr  = w1_w0 * w2_w1
+        ld_cr  = self._lift_to_drag(W_S * wf_cr, CD0, v_cruise)
+        if cruise_range_km > 0.0:
+            if self.engine_type == "Jet":
+                w3_w2 = np.exp((-one_way_km * sfc) / (v_cruise * ld_cr))
+            else:
+                w3_w2 = np.exp((-one_way_km * sfc) /
+                               (self.prop_efficiency * ld_cr))
+        else:
+            w3_w2 = 1.0
+
+        # ── loiter ───────────────────────────────────────────────────── #
+        wf_ltr    = wf_cr * w3_w2
+        v_loiter  = self._find_optimal_loiter_speed(W_S * wf_ltr, CD0)
+        ld_ltr    = self._lift_to_drag(W_S * wf_ltr, CD0, v_loiter)
+        if loiter_time_hr > 0.0:
+            if self.engine_type == "Jet":
+                w4_w3 = np.exp(-loiter_time_hr * (sfc / 3600) / ld_ltr)
+            else:
+                w4_w3 = np.exp(-loiter_time_hr * v_loiter * (sfc / 3600) /
+                               (self.prop_efficiency * ld_ltr))
+        else:
+            w4_w3 = 1.0
+
+        # ── cruise back ──────────────────────────────────────────────── #
+        wf_back = wf_ltr * w4_w3
+        ld_back = self._lift_to_drag(W_S * wf_back, CD0, v_cruise)
+        if cruise_range_km > 0.0:
+            if self.engine_type == "Jet":
+                w5_w4 = np.exp((-one_way_km * sfc) / (v_cruise * ld_back))
+            else:
+                w5_w4 = np.exp((-one_way_km * sfc) /
+                               (self.prop_efficiency * ld_back))
+        else:
+            w5_w4 = 1.0
+
+        # ── reserve ──────────────────────────────────────────────────── #
+        wf_rsv = wf_back * w5_w4
+        ld_rsv = self._lift_to_drag(W_S * wf_rsv, CD0, v_loiter)
+        if self.engine_type == "Jet":
+            w6_w5 = np.exp(-self.reserve_time * (sfc / 3600) / ld_rsv)
+        else:
+            w6_w5 = np.exp(-self.reserve_time * v_loiter * (sfc / 3600) /
+                           (self.prop_efficiency * ld_rsv))
+
+        # ── landing / taxi ────────────────────────────────────────────── #
+        w7_w6 = 0.99
+        w8_w7 = 0.992
+
+        wf_w0 = (w1_w0 * w2_w1 * w3_w2 * w4_w3 *
+                 w5_w4 * w6_w5 * w7_w6 * w8_w7)
+
+        return {
+            "wf_w0":        wf_w0,
+            "w_fixed":      w1_w0 * w2_w1 * w7_w6 * w8_w7,
+            "w_cruise":     w3_w2 * w5_w4,
+            "w_loiter":     w4_w3,
+            "w_reserve":    w6_w5,
+            "loiter_speed": v_loiter,
+            "cruise_speed": v_cruise,
+            "ld_cruise":    ld_cr,
+            "ld_loiter":    ld_ltr,
+        }
+
+    # ── Breguet inversions ──────────────────────────────────────────── #
+
+    def _endurance_from_fraction(self, w_loiter: float,
+                                  v_loiter: float, ld: float) -> float:
+        """Return endurance [hr] given a loiter weight fraction."""
+        if w_loiter <= 0.0 or w_loiter >= 1.0 or ld <= 0.0 or v_loiter <= 0.0:
+            return 0.0
+        sfc = self.specific_fuel
+        if self.engine_type == "Jet":
+            result = -np.log(w_loiter) * ld * 3600 / sfc
+        else:
+            result = (-np.log(w_loiter) * self.prop_efficiency * ld
+                      / (v_loiter * sfc / 3600))
+        return float(result) if np.isfinite(result) and result >= 0.0 else 0.0
+
+    def _range_from_fraction(self, w_cruise: float,
+                              v_cruise: float, ld: float) -> float:
+        """
+        Return total mission range [km] given combined cruise weight fraction
+        (w3_w2 * w5_w4).  Assumes symmetric outbound / return legs.
+        """
+        if w_cruise <= 0.0 or w_cruise >= 1.0 or ld <= 0.0:
+            return 0.0
+        sfc = self.specific_fuel
+        if self.engine_type == "Jet":
+            result = -np.log(w_cruise) * v_cruise * ld / sfc
+        else:
+            result = -np.log(w_cruise) * self.prop_efficiency * ld / sfc
+        return float(result) if np.isfinite(result) and result >= 0.0 else 0.0
+
+    # ================================================================ #
+    # PERFORMANCE MARGINS
+    # ================================================================ #
+
+    @Attribute
+    def performance_margins(self) -> dict:
+        """
+        Determine which of range or endurance is the primary sizing driver
+        and compute the achievable capability of the non-limiting metric.
+
+        Method
+        ------
+        1. Compute fuel fraction for *range only* (endurance → 0).
+        2. Compute fuel fraction for *endurance only* (range → 0).
+        3. The case with the lower wf_w0 (more fuel burned) is limiting.
+        4. For the limiting case, invert Breguet to find how far the
+           non-limiting metric could be pushed if the other requirement
+           were removed entirely.
+
+        Returns
+        -------
+        dict with keys
+            limiting              – "range" | "endurance"
+            achievable_endurance_hr – float  (populated when range limits)
+            achievable_range_km     – float  (populated when endurance limits)
+            specified_range_km    – float
+            specified_endurance_hr – float
+            surplus_endurance_hr  – float  (achievable − specified, ≥ 0)
+            surplus_range_km      – float  (achievable − specified, ≥ 0)
+        """
+        # -- what-if: size for range only (zero loiter) --
+        fr_range = self._fuel_fracs_parametric(self.mission_range, 0.0)
+
+        # -- what-if: size for endurance only (zero range) --
+        fr_end   = self._fuel_fracs_parametric(0.0, self.mission_endurance)
+
+        # lower wf_w0 → more fuel consumed → that requirement is limiting
+        range_is_limiting = fr_range["wf_w0"] <= fr_end["wf_w0"]
+
+        # ── Compute L/D and speeds at a stable nominal weight fraction ── #
+        # Using the degenerate post-long-cruise weight gives ld → 0, which
+        # causes inf × 0 = NaN in the Breguet inversion.  Instead we
+        # evaluate at wf = 0.90 (representative early-mission weight) so
+        # the L/D is always well-conditioned regardless of mission length.
+        _, _, _, CD0 = self._wing_parameters()
+        W_S, _  = self.thrust_and_wing_loading
+        nom_wf  = 0.90   # representative mission weight fraction
+
+        v_ltr_nom = self._find_optimal_loiter_speed(W_S * nom_wf, CD0)
+        ld_ltr_nom = self._lift_to_drag(W_S * nom_wf, CD0, v_ltr_nom)
+        ld_cr_nom  = self._lift_to_drag(W_S * nom_wf, CD0, self.cruise_speed)
+
+        if range_is_limiting:
+            # given the range-only fuel budget, how long could we loiter
+            # (if we skipped all cruise legs)?
+            w_ltr_achievable = (fr_range["wf_w0"]
+                                / (fr_range["w_fixed"] * fr_range["w_reserve"]))
+            achievable_end   = self._endurance_from_fraction(
+                w_ltr_achievable, v_ltr_nom, ld_ltr_nom)
+            achievable_rng   = self.mission_range   # by construction
+        else:
+            # given the endurance-only fuel budget, how far could we cruise
+            # (if we skipped loiter)?
+            w_cr_achievable  = (fr_end["wf_w0"]
+                                / (fr_end["w_fixed"] * fr_end["w_reserve"]))
+            achievable_rng   = self._range_from_fraction(
+                w_cr_achievable, self.cruise_speed, ld_cr_nom)
+            achievable_end   = self.mission_endurance   # by construction
+
+        return {
+            "limiting":               "range" if range_is_limiting else "endurance",
+            "achievable_endurance_hr": achievable_end,
+            "achievable_range_km":     achievable_rng,
+            "specified_range_km":      self.mission_range,
+            "specified_endurance_hr":  self.mission_endurance,
+            "surplus_endurance_hr":    max(0.0, achievable_end - self.mission_endurance),
+            "surplus_range_km":        max(0.0, achievable_rng - self.mission_range),
+        }
+
+    @Attribute
+    def performance_margins_summary(self) -> str:
+        """Human-readable summary of which requirement limits and by how much."""
+        m   = self.performance_margins
+        lim = m["limiting"]
+
+        lines = [
+            "── Performance Margins ─────────────────────────────────────",
+            f"  Sizing driver : {lim.upper()}",
+        ]
+
+        if lim == "range":
+            lines += [
+                f"  Required range     : {m['specified_range_km']:.0f} km  (limiting)",
+                f"  Required endurance : {m['specified_endurance_hr']:.2f} hr",
+                f"  Achievable endurance (if no cruise) : "
+                f"{m['achievable_endurance_hr']:.2f} hr  "
+                f"(+{m['surplus_endurance_hr']:.2f} hr surplus)",
+            ]
+        else:
+            lines += [
+                f"  Required endurance : {m['specified_endurance_hr']:.2f} hr  (limiting)",
+                f"  Required range     : {m['specified_range_km']:.0f} km",
+                f"  Achievable range (if no loiter) : "
+                f"{m['achievable_range_km']:.0f} km  "
+                f"(+{m['surplus_range_km']:.0f} km surplus)",
+            ]
+
+        lines.append("────────────────────────────────────────────────────────────")
+        return "\n".join(lines)
 
 
 # ================================================================ #

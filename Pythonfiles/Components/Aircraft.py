@@ -60,7 +60,13 @@ class Aircraft(GeomBase):
     # ============================================================ #
 
     wing_taper_ratio:             float = Input(0.40)
-    wing_sweep_le:                float = Input(5.0)
+    wing_sweep_le: float = Input(
+        5.0,
+        doc="Wing leading-edge sweep angle  [°]  ·  recommended: 0 – 30°\n"
+            "Values above ~30° push the swept wing tip far aft, risking\n"
+            "overlap with the horizontal tail planform at high AR.\n"
+            "Subsonic UAVs: 0–10°  |  transonic jets: 15–30°.",
+    )
     wing_twist:                   float = Input(0.0)
     wing_dihedral:                float = Input(5.0)
     wing_thickness_to_chord:      float = Input(0.15)
@@ -481,29 +487,39 @@ class Aircraft(GeomBase):
     @Attribute
     def _min_fuselage_length_from_wing(self) -> float:
         """
-        Fuselage length lower bound from wing root chord [m].
+        Fuselage length lower bound that prevents wing–tail geometric overlap [m].
 
-        Rationale
-        ---------
-        Using a fraction of wingspan (e.g. 0.75 · b) is appropriate for
-        conventional aircraft but severely over-constrains HALE/high-altitude
-        UAVs where span is very large relative to fuselage length.
-        Reference: Global Hawk — span 39.9 m, fuselage 14.5 m (ratio 0.36).
+        Derivation
+        ----------
+        Wing attach at 40% of fuselage length (LiftingSurface.attach_x).
+        Tail attach = min(wing_x + tail_arm, L_fus – c_root_tail).
 
-        Instead, use a chord-based rule: the fuselage must be long enough
-        to provide a reasonable tail moment arm relative to the wing chord.
-        A minimum of 3 × c_root ensures the tail can generate effective
-        pitching moments without the fuselage becoming a stub.
+        For the tail LE to clear the wing TE root:
+            tail_attach_x  >  wing_x + c_root_wing
+        The binding constraint is the fuselage-length cap on tail_arm
+        (0.60 · L_fus).  Substituting wing_x = 0.40 · L_fus:
 
-        Raymer §4.2: tail moment arm ≈ 2.5–3.5 × MAC for conventional configs.
-        At high AR (HALE), MAC ≈ c_root because taper ratio is typically ~0.4,
-        so 3 × c_root is an appropriate geometric lower bound.
+            (0.40 + 0.60) · L_fus – c_root_tail  >  0.40 · L_fus + c_root_wing
+            0.60 · L_fus  >  c_root_wing + c_root_tail
+
+        Conservatively approximating c_root_tail ≈ 0.60 · c_root_wing
+        (typical HT root chord from Roskam tail-volume method):
+            L_fus  >  c_root_wing · (1 + 0.60) / 0.60  ≈  2.67 · c_root_wing
+
+        A 4.5× multiplier adds ~70% safety margin and ensures the tail
+        moment arm is long enough for effective pitch authority even when the
+        Roskam fuselage formula gives a short fuselage at high altitude.
+
+        References
+        ----------
+        Raymer §4.2: tail moment arm ≈ 2.5–3.5 × MAC.
+        Global Hawk: span 39.9 m, fuselage 14.5 m — span/fuselage ≈ 2.75.
         """
         S      = self.effective_wing_area
         b      = self.effective_wing_semi_span * 2.0
         lamb   = self.wing_taper_ratio
         c_root = 2.0 * S / (b * (1.0 + lamb))
-        return 3.0 * c_root
+        return 4.5 * c_root
 
     @Attribute
     def _min_fuselage_radius_from_wing(self) -> float:

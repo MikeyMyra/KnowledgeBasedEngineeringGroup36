@@ -31,12 +31,31 @@ Typical call sequence
     rules.payload_config      # → [("flight_computer", ...), ("battery", ...), ...]
 """
 
+import enum
 import math
 import warnings
 from dataclasses import dataclass
 from typing import Optional
 
 from Pythonfiles.Components.Payload.Payload import PAYLOAD_LIBRARY, resolve_model
+
+
+# ---------------------------------------------------------------------------
+# PAYLOAD ROLE ENUM  — drives the GUI dropdown in Drone.payload_role
+#
+# Inheriting from (str, enum.Enum) means every value IS a plain string, so
+# existing code that reads payload_role as a string continues to work without
+# any changes.  ParaPy detects the Enum base class and renders a dropdown
+# automatically.
+# ---------------------------------------------------------------------------
+
+class PayloadRole(str, enum.Enum):
+    ISR         = "ISR"
+    Strike      = "Strike"
+    SEAD        = "SEAD"
+    Mapping     = "Mapping"
+    COMMS_relay = "COMMS relay"
+    Patrol      = "Patrol"
 
 
 # ---------------------------------------------------------------------------

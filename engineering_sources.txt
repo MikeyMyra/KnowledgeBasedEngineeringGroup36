@@ -1,0 +1,698 @@
+================================================================================
+ENGINEERING SOURCES & RULES
+UAV Initial Sizing Tool — KBE Assignment, TU Delft, Q3-Q4
+================================================================================
+
+This file lists every empirical formula, design rule, and reference used in the
+codebase, organised by topic.  Each entry states:
+  • the source (author, title, equation / section / table number)
+  • the formula as implemented
+  • the file and attribute/function where it is used
+
+--------------------------------------------------------------------------------
+CONTENTS
+  A.  ISA Atmosphere Model
+  B.  Engine Type Selection
+  C.  Weight Fraction / Breguet Sizing
+  D.  Empty Weight Estimation
+  E.  W/P – W/S Constraint Diagram
+  F.  Wing Sizing
+  G.  Fuselage Sizing
+  H.  Tail Sizing
+  I.  UAV Class Inference
+  J.  Structural Mass (Lifting Surfaces & Fuselage)
+  K.  Aerodynamic Model
+  L.  Stability
+  M.  Payload Library Specifications
+--------------------------------------------------------------------------------
+
+
+================================================================================
+A. ISA ATMOSPHERE MODEL
+================================================================================
+
+Source:  ICAO Doc 7488-CD, "Manual of the ICAO Standard Atmosphere", 3rd ed., 1993.
+         Also: ISO 2533:1975, "Standard Atmosphere".
+
+File:    ISA_calculator.py
+
+----------------------------------------------------------------------
+A1.  Troposphere (0 ≤ h ≤ 11 000 m)
+----------------------------------------------------------------------
+  Temperature lapse rate: L = 6.5 K / km = 0.0065 K/m
+
+  T(h)   = T0 - L * h                       [K]
+  p(h)   = p0 * (T(h) / T0)^(g / (R * L))  [Pa]
+  ρ(h)   = p(h) / (R * T(h))                [kg/m³]
+  a(h)   = sqrt(γ * R * T(h))               [m/s]
+
+  Constants:
+    T0  = 288.15 K,  p0 = 101 325 Pa,  R = 287.05 J/(kg·K)
+    γ   = 1.4,       g  = 9.80665 m/s²
+
+----------------------------------------------------------------------
+A2.  Lower Stratosphere (11 000 < h ≤ 20 000 m)
+----------------------------------------------------------------------
+  T(h)   = 216.65 K  (isothermal)
+  p(h)   = p_11 * exp(-g * (h - 11000) / (R * T_11))
+  ρ(h)   = p(h) / (R * T(h))
+  a(h)   = sqrt(γ * R * T(h))  = 295.07 m/s (constant above tropopause)
+
+----------------------------------------------------------------------
+A3.  Density Altitude (DA)
+----------------------------------------------------------------------
+  Used for display only.
+  DA = (T0 / L) * (1 - (p / p0)^(R * L / g))
+
+
+================================================================================
+B. ENGINE TYPE SELECTION
+================================================================================
+
+Source:  Roskam, J., "Airplane Design, Part I: Preliminary Sizing of Airplanes",
+           DAR Corp., 2005, Vol. I §3.2 (engine type / altitude thresholds).
+         Raymer, D.P., "Aircraft Design: A Conceptual Approach", 6th ed., 2018,
+           §10.2 (propulsion selection), §13.3 (thrust lapse with altitude).
+
+File:    Drone.py — Attribute: engine_type
+
+Rules:
+  Mach threshold for jet selection (altitude-graduated):
+    h ≤ 9 000 m      → Jet if M ≥ 0.40
+    9 000 < h ≤ 15 000 m → Jet if M ≥ 0.50
+    h > 15 000 m     → Jet if M ≥ 0.60
+
+  Rationale: at high altitude the jet thrust lapse factor T_alt/T_sl ≈ σ^0.75
+  (Raymer §13.3) makes a jet selected at low Mach infeasible (would need
+  extreme sea-level rated thrust).  Thresholds match operational examples:
+    MQ-9 Reaper: Turboprop at h ≈ 7 600 m, M ≈ 0.35
+    Global Hawk: Jet (turbofan) at h ≈ 18 000 m, M ≈ 0.60
+
+  Below jet threshold:
+    High Endurance objective → Turboprop
+    h > 4 500 m             → Turboprop  (practical piston ceiling, Roskam Vol. I §3.2)
+    Otherwise               → Piston
+
+
+================================================================================
+C. WEIGHT FRACTION / BREGUET SIZING
+================================================================================
+
+Source:  Raymer, D.P., "Aircraft Design: A Conceptual Approach", 6th ed., 2018,
+           §3.5 (mission segment weight fractions), §3.6 (Breguet range / endurance).
+         Roskam, J., "Airplane Design, Part I", DAR Corp., Vol. I, Ch. 3.
+
+File:    mission.py — method: fuel_weight_sizing, _fuel_fracs_parametric
+
+----------------------------------------------------------------------
+C1.  Standard segment fractions (Raymer Table 3.2)
+----------------------------------------------------------------------
+  W_warmup_taxi / W0    ≈ 0.970  (start / taxi / warm-up)
+  W_climb       / W0    ≈ 0.985  (climb / accelerate)
+  W_descent     / W0    ≈ 0.990  (descent)
+  W_land        / W0    ≈ 0.995  (landing / shutdown)
+
+----------------------------------------------------------------------
+C2.  Breguet range equation — Jet
+----------------------------------------------------------------------
+  W_cruise_end / W_cruise_start = exp( -R * TSFC / (V * (L/D)) )
+
+  where:
+    R    = cruise range per leg [m]
+    TSFC = thrust-specific fuel consumption [1/s]
+    V    = cruise speed [m/s]
+    L/D  = cruise lift-to-drag ratio
+
+  Inverted to find achievable range:
+    R_achievable = -ln(w_cruise_frac) * V * (L/D) / TSFC
+
+----------------------------------------------------------------------
+C3.  Breguet endurance equation — Jet
+----------------------------------------------------------------------
+  W_loiter_end / W_loiter_start = exp( -t * TSFC / (L/D) )
+
+  t = loiter time [s]
+
+  Inverted:
+    t_achievable = -ln(w_loiter_frac) * (L/D) / TSFC
+
+----------------------------------------------------------------------
+C4.  Breguet range equation — Propeller (Piston / Turboprop)
+----------------------------------------------------------------------
+  W_end / W_start = exp( -R * BSFC / (η_p * (L/D)) )
+
+  where:
+    BSFC  = brake-specific fuel consumption [kg/(W·s)] (converted from lb/(hp·h))
+    η_p   = propeller efficiency (0.80 typical)
+    R     = cruise range [m]
+
+----------------------------------------------------------------------
+C5.  Breguet endurance equation — Propeller
+----------------------------------------------------------------------
+  W_end / W_start = exp( -t * V * BSFC / (η_p * (L/D)) )
+
+  Inverted:
+    t_achievable = -ln(w_loiter_frac) * η_p * (L/D) / (V * BSFC)
+
+----------------------------------------------------------------------
+C6.  Reserve fuel
+----------------------------------------------------------------------
+  Reserve fraction = 0.06  (6% of mission fuel, Raymer §3.5 rule of thumb)
+  Equivalent to ~45 min hold at loiter conditions.
+
+----------------------------------------------------------------------
+C7.  Total fuel weight fraction
+----------------------------------------------------------------------
+  Wf / W0 = 1 - ∏(Wi+1/Wi)  for all mission segments
+
+  This is the ratio of fuel consumed to take-off weight.
+
+----------------------------------------------------------------------
+C8.  MTOW iteration
+----------------------------------------------------------------------
+  W0 = W_payload + W_fuel + W_empty
+  W_fuel  = (Wf/W0) * W0
+  W_empty = f(W0)   — see Section D
+
+  Iterates W0 until convergence (tolerance 0.01 kg, max 500 iterations).
+
+----------------------------------------------------------------------
+C9.  Specific fuel consumption values
+----------------------------------------------------------------------
+  Piston    BSFC:  0.45 lb/(hp·h) at best power  (Raymer Table 3.3)
+  Turboprop BSFC:  0.50 lb/(hp·h)                (Raymer Table 3.3)
+  Jet       TSFC:  0.60 1/h at cruise             (Raymer Table 3.3)
+            TSFC:  0.45 1/h at loiter (partial throttle)
+
+
+================================================================================
+D. EMPTY WEIGHT ESTIMATION
+================================================================================
+
+Source:  Raymer, D.P., "Aircraft Design: A Conceptual Approach", 6th ed., 2018,
+           §3.5, Table 3.1 — empty weight fraction power law.
+         Roskam, J., "Airplane Design, Part I", Vol. I, Table 3.5.
+
+File:    mission.py — method: empty_weight_fraction
+
+Formula:
+  We / W0 = A * W0^C
+
+  Raymer Table 3.1 UAV / jet trainer coefficients used as baseline:
+    A ≈ 0.95  (structural efficiency factor — lower = lighter structure)
+    C ≈ −0.06 (scale exponent — larger aircraft are relatively lighter)
+
+  Mission-objective adjustment:
+    "Low cost"       → A multiplied by 1.10  (heavier piston GA structure)
+    "High Endurance" → A multiplied by 1.05  (turboprop structure penalty)
+    "High Speed"     → A multiplied by 0.95  (refined jet construction)
+
+  Class adjustment:
+    "small"  → A × 1.05  (relatively heavier small-scale structures)
+    "large"  → A × 0.95  (economy of scale in large airframes)
+
+
+================================================================================
+E. W/P – W/S CONSTRAINT DIAGRAM
+================================================================================
+
+Source:  Roskam, J., "Airplane Design, Part I", DAR Corp., 2005.
+           Eq. 3.6,  3.8  (take-off constraint)
+           Eq. 3.11       (landing constraint)
+           Eq. 3.15, 3.18 (climb constraint — jet / prop)
+           Eq. 3.19, 3.22 (climb rate constraint)
+           Eq. 3.23, 3.25 (climb gradient constraint)
+         Raymer, D.P., §5.3 (stall constraint), §5.4 (maneuver constraint).
+
+File:    WP_WS_diagram.py
+
+----------------------------------------------------------------------
+E1.  Stall speed constraint (vertical line on W/S axis)
+----------------------------------------------------------------------
+  W/S ≤ ½ * ρ * V_stall² * CLmax
+
+  Typical CLmax assumed from airfoil type:
+    Piston / Turboprop: CLmax = 1.6
+    Jet: CLmax = 1.4
+
+----------------------------------------------------------------------
+E2.  Cruise constraint
+----------------------------------------------------------------------
+  W/S ≤ ½ * ρ * V_cruise² * CLmax_cruise
+
+  Also defines the cruise operating point on the constraint diagram.
+
+----------------------------------------------------------------------
+E3.  Landing constraint (Roskam Eq. 3.11)
+----------------------------------------------------------------------
+  W/S ≤ ½ * ρ * V_L² * CLmax_land / (1 + γ_approach)
+
+  where V_L = 1.3 * V_stall_land and CLmax_land ≈ 2.0 (with flaps).
+
+----------------------------------------------------------------------
+E4.  Take-off constraint (Roskam Eq. 3.6 / 3.8)
+----------------------------------------------------------------------
+  Prop:  W/P ≤ (η_p * TOP * σ * CLmax_TO) / (W/S)
+  Jet:   T/W ≥ (W/S) / (σ * g * TOP * CLmax_TO)
+
+  where TOP = take-off parameter (Roskam Table 3.1 by mission class).
+
+----------------------------------------------------------------------
+E5.  Climb constraints (Roskam Eq. 3.15 / 3.18)
+----------------------------------------------------------------------
+  Prop: W/P = η_p / (RC / 33000 + (W/S)^0.5 / (19 * sqrt(ρ/ρ_sl) * CLmax^0.5))
+  Jet:  T/W = RC / V + 1 / (L/D)
+
+  where RC = required climb rate [ft/min or m/s].
+
+----------------------------------------------------------------------
+E6.  Climb gradient (Roskam Eq. 3.23 / 3.25)
+----------------------------------------------------------------------
+  T/W or W/P constraint derived from FAR 23 / 25 second-segment gradient
+  requirements (all-engine; single-engine OEI not applicable to UAVs but
+  used as a conservative bound).
+
+----------------------------------------------------------------------
+E7.  Maneuver constraint (Raymer §5.4)
+----------------------------------------------------------------------
+  T/W ≥ n * (W/S) / (q * π * AR * e) + q * CD0 / (W/S)
+
+  where n = design load factor, e = Oswald efficiency, q = dynamic pressure.
+
+----------------------------------------------------------------------
+E8.  Design point selection
+----------------------------------------------------------------------
+  Wing loading = min(all vertical constraints: stall, cruise, landing)
+  Thrust/power = most restrictive horizontal constraint at that W/S.
+
+
+================================================================================
+F. WING SIZING
+================================================================================
+
+Source:  Raymer, D.P., "Aircraft Design: A Conceptual Approach", 6th ed., 2018.
+           §4.3 (taper ratio), §4.4 (Eq. 4.6 — jet AR), §4.2 (root chord limit),
+           Fig. 4.10 (structural AR upper bound ≤ 16).
+         Roskam, J., "Airplane Design, Part I", Vol. I, Table 3.5 — AR table.
+
+File:    Drone.py — Attributes: _wing_ar_roskam, wing_aspect_ratio, wing_area
+
+----------------------------------------------------------------------
+F1.  Aspect ratio — empirical (used in Breguet sizing)
+----------------------------------------------------------------------
+  Jet:       AR = 4.737 * M_cruise^{-0.979}   (Raymer Eq. 4.6)
+             Clamped to [6, 12] for physical realism.
+
+  Turboprop: AR = 9.2   (Roskam Vol. I Table 3.5, MALE class)
+  Piston:    AR = 7.6   (Roskam Vol. I Table 3.5, piston GA)
+
+----------------------------------------------------------------------
+F2.  Wing area from design point
+----------------------------------------------------------------------
+  W/S determined from the constraint diagram (Section E).
+  S = MTOW / (W/S)    [m²]
+
+----------------------------------------------------------------------
+F3.  Root chord / fuselage length limit  (Raymer §4.2)
+----------------------------------------------------------------------
+  c_root = 2 * S / (b * (1 + λ))   where b = sqrt(AR * S)
+
+  Constraint:  c_root ≤ 0.40 * L_fuselage_cylinder
+
+  If violated, AR is increased to satisfy the constraint:
+    AR_min = 4 * S / (c_root_max * (1 + λ))²
+
+  AR is capped at 16 (Raymer Fig. 4.10 structural realism limit).
+
+----------------------------------------------------------------------
+F4.  Span / fuselage length ratio cap
+----------------------------------------------------------------------
+  Maximum span = 4.0 * L_fuselage  (Global Hawk ≈ 2.75×; generous HALE bound)
+  AR_span_cap  = (4 * L_fus)² / S
+
+  If AR_min > AR_span_cap, AR is reduced to AR_span_cap to prevent
+  wing / horizontal-tail geometric overlap at extreme altitudes.
+
+----------------------------------------------------------------------
+F5.  Optimal loiter speed
+----------------------------------------------------------------------
+  For best endurance, fly at minimum power speed (prop) or min TSFC speed (jet).
+  Implemented as: find V that maximises CL^(3/2) / CD  (prop endurance figure
+  of merit) or CL / CD (jet endurance figure of merit) by golden-section search.
+
+----------------------------------------------------------------------
+F6.  Lift-to-drag ratio
+----------------------------------------------------------------------
+  CD = CD0 + CL² / (π * AR * e)   (parabolic drag polar, Raymer §12.6)
+
+  e   = Oswald efficiency factor ≈ 0.80 (subsonic, tapered wing, Raymer §12.6)
+  CD0 = parasite drag coefficient — calibrated per mission class:
+    small:   CD0 ≈ 0.030
+    medium:  CD0 ≈ 0.025
+    large:   CD0 ≈ 0.020
+
+  CL at cruise: CL = 2 * (W/S) * wf / (ρ * V²)   where wf = weight fraction
+
+
+================================================================================
+G. FUSELAGE SIZING
+================================================================================
+
+Source:  Roskam, J., "Airplane Design, Part I", DAR Corp., 2005.
+           Vol. I, Table 3.4 (fuselage length regression).
+           Vol. I, §4.2 (fuselage fineness ratio).
+
+File:    Fuselage.py, Drone.py — _roskam_fuselage_length_estimate
+
+----------------------------------------------------------------------
+G1.  Fuselage length (Roskam Vol. I Table 3.4)
+----------------------------------------------------------------------
+  L = 0.23 * MTOW_lbs^0.50   [ft]   converted to metres
+
+  This regression covers jet trainers and UAVs.  The tool takes
+  max(L_roskam, L_payload_min) so the fuselage always fits the payload.
+
+----------------------------------------------------------------------
+G2.  Fuselage radius / fineness ratio
+----------------------------------------------------------------------
+  Fineness ratio l/d ≈ 9  (Roskam Vol. I §4.2 recommended range 6 – 12)
+  r = L / (2 * fineness_ratio)   [m]
+
+----------------------------------------------------------------------
+G3.  Fuselage structural mass (Roskam Vol. I Table 8.1)
+----------------------------------------------------------------------
+  W_fus = 0.328 * MTOW^0.5 * L^0.25   [kg]
+
+  This is the empty-weight component for the fuselage shell and frame.
+
+----------------------------------------------------------------------
+G4.  Minimum fuselage length from wing geometry
+----------------------------------------------------------------------
+  To prevent wing / tail geometric overlap, the fuselage must be at
+  least 4.5 × c_root_wing longer than the wing root chord:
+
+    L_min_from_wing = 4.5 * c_root_wing
+
+  Derivation:
+    Tail must attach aft of wing trailing edge (root):
+      L > wing_attach_x + c_root + tail_clearance
+    wing_attach_x = 0.40 * L  (Raymer §4.2 typical mid-fuselage wing)
+    tail_clearance ≥ c_root (1 chord-length clearance)
+    → L > 0.40 * L + 2 * c_root  →  0.60 * L > 2 * c_root  →  L > 3.33 * c_root
+    Add 35% safety margin → 4.5 * c_root  (implemented in Aircraft.py)
+
+  Source: Raymer §4.2, geometric constraint derivation.
+
+
+================================================================================
+H. TAIL SIZING
+================================================================================
+
+Source:  Raymer, D.P., "Aircraft Design: A Conceptual Approach", 6th ed., 2018,
+           §4.3 (tail volume coefficients, Table 4.2).
+         Roskam, J., "Airplane Design, Part II", DAR Corp., §5.2.
+
+File:    Liftingsurface.py, Aircraft.py
+
+----------------------------------------------------------------------
+H1.  Tail arm
+----------------------------------------------------------------------
+  l_t = min(0.65 * b_wing, L_fus - x_wing_attach)
+
+  where b_wing = full wing span.  This is the distance from the wing
+  aerodynamic centre to the tail aerodynamic centre.
+
+----------------------------------------------------------------------
+H2.  Horizontal tail area (volume coefficient method)
+----------------------------------------------------------------------
+  V_H = S_HT * l_t / (S_wing * MAC_wing)   [—]
+
+  Typical V_H for UAVs: 0.35 – 0.50  (Raymer Table 4.2)
+  Target V_H = 0.40 used in this implementation.
+
+  Solving:  S_HT = V_H * S_wing * MAC_wing / l_t
+
+----------------------------------------------------------------------
+H3.  Vertical tail area (volume coefficient method)
+----------------------------------------------------------------------
+  V_V = S_VT * l_t / (S_wing * b_wing)
+
+  Typical V_V for UAVs: 0.02 – 0.05  (Raymer Table 4.2)
+  Target V_V = 0.04.
+
+  Solving:  S_VT = V_V * S_wing * b_wing / l_t
+
+
+================================================================================
+I. UAV CLASS INFERENCE
+================================================================================
+
+Source:  NATO STANAG 4671, "Unmanned Aerial Vehicles Airworthiness Requirements",
+           Edition 1, 2009.
+         Teal Group Corporation, "World UAV Forecast 2023".
+         Watts, A. et al., "The Military Use of Unmanned Aerial Vehicles",
+           RAND National Defence Research Institute, 2012.
+         Raymer §3 (payload fraction ≈ 15% conservative for ISR UAVs).
+
+File:    Payloadrules.py — functions: infer_uav_class, _class_from_*
+
+Design philosophy: UAV class is determined by the MOST DEMANDING single
+constraint.  Each constraint independently sets a class floor; the final class
+is the maximum.
+
+----------------------------------------------------------------------
+I1.  Range floor
+----------------------------------------------------------------------
+  < 150 km     → small   (LOS systems, e.g. senseFly eBee X: 90 km, 1.6 kg)
+  150 – 500 km → medium  (MALE, e.g. Bayraktar TB2: ~300 km radius, ~650 kg)
+  > 500 km     → large   (BLOS SATCOM, e.g. MQ-9 Reaper: ~1 850 km, 4 760 kg)
+
+  Source: NATO STANAG 4671; Teal Group 2023.
+
+----------------------------------------------------------------------
+I2.  Altitude floor
+----------------------------------------------------------------------
+  < 3 000 m   → small   (piston-viable, e.g. DJI Phantom class)
+  3 – 8 000 m → medium  (turbocharged/turboprop, e.g. Hermes 450: 5 500 m, 550 kg)
+  > 8 000 m   → large   (HALE, e.g. Global Hawk: 18 000 m, 14 628 kg)
+
+  Source: FAR Part 103; Jane's All the World's Aircraft.
+
+----------------------------------------------------------------------
+I3.  Endurance floor
+----------------------------------------------------------------------
+  < 4 hr     → small
+  4 – 10 hr  → medium  (MALE rule of thumb)
+  > 10 hr    → large   (fuel fraction alone drives MTOW significantly)
+
+  Source: Watts et al., RAND (2012).
+
+----------------------------------------------------------------------
+I4.  Payload mass floor (strongest discriminator)
+----------------------------------------------------------------------
+  Assuming ~15% payload fraction (Raymer §3, conservative for ISR UAVs):
+    < 3 kg    → MTOW < ~20 kg   → small
+    3 – 90 kg → MTOW 20–600 kg  → medium
+    > 90 kg   → MTOW > 600 kg   → large
+
+----------------------------------------------------------------------
+I5.  Mission objective inference
+----------------------------------------------------------------------
+  cruise_speed > 120 m/s (M > ~0.36 SL) → "High Speed"
+  mission_endurance > 6 hr              → "High Endurance"
+  Otherwise                             → "Low cost"
+
+  Source: Raymer §3 (propulsion / objective mapping).
+
+
+================================================================================
+J. STRUCTURAL MASS — LIFTING SURFACES & FUSELAGE
+================================================================================
+
+Source:  Roskam, J., "Airplane Design, Part V: Component Weight Estimation",
+           DAR Corp., 2005, Table 5.1 / Table 8.1.
+
+File:    Liftingsurface.py (wing / tail), Fuselage.py (fuselage)
+
+----------------------------------------------------------------------
+J1.  Wing structural mass (Roskam Part V Table 5.1)
+----------------------------------------------------------------------
+  W_wing = 0.0051 * (MTOW * n)^0.557 * S^0.649 * AR^0.5 * t/c^{-0.4}
+           * (1 + λ)^0.1 * cos(Λ)^{-1.0}
+
+  Simplified version used:
+    W_wing ≈ 0.036 * S^0.758 * (AR / cos²Λ)^0.6 * q^0.006 * λ^0.04
+             * (100 * t/c / cos Λ)^{-0.3} * (n * MTOW)^0.49  [lb] → [kg]
+
+  where:
+    S  = reference wing area [m²]
+    AR = wing aspect ratio
+    Λ  = leading-edge sweep angle [rad]
+    λ  = taper ratio
+    t/c = thickness-to-chord ratio (default 0.12)
+    n  = ultimate load factor (1.5 × limit load factor)
+    q  = dynamic pressure at cruise [lb/ft²]
+
+----------------------------------------------------------------------
+J2.  Tail structural mass (Roskam Part V Table 8.1)
+----------------------------------------------------------------------
+  Same formula form as wing, applied to the horizontal and vertical
+  tail areas separately with their respective AR, sweep, and taper.
+
+----------------------------------------------------------------------
+J3.  Fuselage structural mass (Roskam Part V Table 8.1)
+----------------------------------------------------------------------
+  W_fus = 0.328 * MTOW^0.5 * L_fus^0.25  [kg]
+
+
+================================================================================
+K. AERODYNAMIC MODEL
+================================================================================
+
+Source:  Raymer, D.P., "Aircraft Design: A Conceptual Approach", 6th ed., 2018,
+           §12.5 (parasite drag), §12.6 (drag polar / Oswald factor).
+         Shevell, R.S., "Fundamentals of Flight", 2nd ed., 1989.
+
+File:    mission.py — _wing_parameters, _lift_to_drag
+
+----------------------------------------------------------------------
+K1.  Parabolic drag polar
+----------------------------------------------------------------------
+  CD = CD0 + CL² / (π * AR * e)
+
+  e  = Oswald efficiency factor ≈ 0.80 (Raymer §12.6, subsonic tapered wing)
+
+----------------------------------------------------------------------
+K2.  Parasite drag coefficient CD0
+----------------------------------------------------------------------
+  Component build-up by mission class (Raymer §12.5 approach):
+    small:   CD0 ≈ 0.030  (simple structure, fixed gear, antenna drag)
+    medium:  CD0 ≈ 0.025  (retractable gear, streamlined antennas)
+    large:   CD0 ≈ 0.020  (refined laminar sections, reduced interference)
+
+----------------------------------------------------------------------
+K3.  Lift-to-drag ratio at cruise
+----------------------------------------------------------------------
+  CL_cruise = 2 * (W/S) * wf / (ρ * V_cruise²)
+  CD_cruise = CD0 + CL_cruise² / (π * AR * e)
+  L/D       = CL_cruise / CD_cruise
+
+----------------------------------------------------------------------
+K4.  Maximum L/D (for loiter sizing)
+----------------------------------------------------------------------
+  (L/D)_max = sqrt(π * AR * e / CD0) / 2   (analytic max of parabolic polar)
+  Achieved at: CL_opt = sqrt(π * AR * e * CD0)
+
+----------------------------------------------------------------------
+K5.  Wing loading adjustment during Breguet loop
+----------------------------------------------------------------------
+  During cruise the aircraft burns fuel and becomes lighter.  The
+  instantaneous weight fraction wf tracks this.  The effective W/S at
+  any point is:
+    (W/S)_inst = (W/S)_MTOW * wf
+
+
+================================================================================
+L. STABILITY
+================================================================================
+
+Source:  Raymer, D.P., "Aircraft Design: A Conceptual Approach", 6th ed., 2018,
+           §16.2 (static margin), §16.4 (neutral point, tail volume).
+         Roskam, J., "Airplane Design, Part II", DAR Corp., §5.2.
+
+File:    Aircraft.py, Liftingsurface.py
+
+----------------------------------------------------------------------
+L1.  Static margin
+----------------------------------------------------------------------
+  SM = (x_NP - x_CG) / MAC   (positive = stable)
+
+  Stability thresholds:
+    SM > 5%  → Stable
+    0 < SM ≤ 5% → Marginal
+    SM ≤ 0% → Unstable
+
+----------------------------------------------------------------------
+L2.  Neutral point (simplified)
+----------------------------------------------------------------------
+  x_NP / MAC = x_ac_wing / MAC + (S_HT / S_wing) * (l_t / MAC)
+               * (CLα_HT / CLα_wing)  * (1 - dε/dα)
+
+  Approximated in code using the tail volume coefficient and lift-curve
+  slope ratio (CLα_HT / CLα_wing ≈ 0.90; dε/dα ≈ 0.40 for typical tails).
+
+----------------------------------------------------------------------
+L3.  Centre of gravity
+----------------------------------------------------------------------
+  CG computed as mass-weighted sum of component CG positions:
+    Fuselage CG:  at 45% fuselage length
+    Wing CG:      at 40% of MAC from leading edge (quarter-chord ≈ 25%, add depth)
+    Fuel CG:      at centroid of fuel tank (between payload bay and cylinder end)
+    Payload CG:   at centre of payload bay
+    Tail CG:      at 40% of respective tail MAC
+
+
+================================================================================
+M. PAYLOAD LIBRARY SPECIFICATIONS
+================================================================================
+
+Source:  Publicly available UAV payload specifications; manufacturer datasheets.
+         Listed in:  Payload/payload_library.json
+
+File:    Payload.py, Payloadrules.py
+
+The payload library contains entries for the following categories:
+
+  eo_ir        EO/IR camera / gimbal system
+  radar        Synthetic aperture radar (SAR) or AESA radar
+  lidar        LiDAR mapping sensor
+  datalink     BLOS satellite or LOS data-link terminal
+  comms        Communications relay radio
+  weapon       Air-to-ground munition / hard-point assembly
+  flight_computer  Autopilot / flight management computer
+  battery      Avionics / payload power battery
+
+Each entry provides:
+  label         Human-readable name
+  geometry_type "box" or "cylinder"
+  length, width, height_box  OR  diameter, height_cyl   [m]
+  density       [kg/m³]  (used to compute mass as volume × density)
+  default_for   list of UAV classes for which this is the default variant
+
+Mass is computed at runtime as:
+  m = volume * density
+
+The variant selection rule (Payloadrules.select_payload_variant) picks the
+entry flagged as default_for the current UAV class.  If no class-specific
+default exists, the first entry is used with a warning.
+
+
+================================================================================
+END OF ENGINEERING SOURCES FILE
+================================================================================
+
+Abbreviations used throughout:
+  AR      Aspect ratio
+  BSFC    Brake-specific fuel consumption  [lb/(hp·h) or kg/(W·s)]
+  TSFC    Thrust-specific fuel consumption [lb/(lbf·h) or 1/s]
+  CG      Centre of gravity
+  CLmax   Maximum lift coefficient
+  CD0     Zero-lift parasite drag coefficient
+  e       Oswald efficiency factor
+  HALE    High Altitude Long Endurance
+  ISA     International Standard Atmosphere
+  L/D     Lift-to-drag ratio
+  LOS     Line of sight
+  BLOS    Beyond line of sight
+  MAC     Mean aerodynamic chord
+  MALE    Medium Altitude Long Endurance
+  MTOW    Maximum take-off weight
+  NP      Neutral point
+  OEI     One engine inoperative
+  SAR     Synthetic aperture radar
+  SM      Static margin
+  STANAG  NATO Standardisation Agreement
+  UAV     Unmanned Aerial Vehicle
+  W/P     Power loading  (weight / shaft power)
+  W/S     Wing loading   (weight / wing area)
+  T/W     Thrust loading (thrust / weight)
