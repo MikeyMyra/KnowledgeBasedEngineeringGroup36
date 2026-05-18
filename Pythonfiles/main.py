@@ -31,10 +31,10 @@ if __name__ == "__main__":
         # ------------------------------------------------------------------ #
         # MISSION  — required
         # ------------------------------------------------------------------ #
-        cruise_speed=200,          # [m/s]
-        mission_altitude=2000,      # [m]
-        mission_range=500,          # [km]
-        mission_endurance=5,        # [hr]
+        cruise_speed=50,          # [m/s]
+        mission_altitude=1000,      # [m]
+        mission_range=100,          # [km]
+        mission_endurance=24,        # [hr]
 
         # ------------------------------------------------------------------ #
         # PAYLOAD INTENT  — optional overrides

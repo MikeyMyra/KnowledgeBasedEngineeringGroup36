@@ -333,6 +333,15 @@ class Drone(GeomBase):
                 f"Expected a 4-digit NACA 4-series code, e.g. '2412' or 'naca2412'.\n"
                 f"Got '{s}' after stripping the 'naca' prefix."
             )
+        elif int(s[0]) > 6:
+            error_msg = (
+                f"Invalid NACA input '{raw}'.\n\n"
+                f"The first digit encodes max camber as % of chord.\n"
+                f"Values above 6 % (digit > 6) produce highly cambered airfoils "
+                f"where XFoil's viscous solver routinely diverges and Q3D results "
+                f"become unreliable.\n\n"
+                f"Please choose a first digit of 0 – 6."
+            )
         elif int(s[2:4]) == 0:
             error_msg = (
                 f"Invalid NACA input '{raw}'.\n\n"
@@ -569,11 +578,26 @@ class Drone(GeomBase):
     @Attribute
     def _roskam_fuselage_length_estimate(self) -> float:
         """
-        Quick Roskam length estimate [m].
+        Quick Roskam fuselage length estimate [m] used only for visual payload
+        positioning (payload_start_x).
 
-        Roskam Vol. I Table 3.4: L = 0.23 * MTOW^0.5
+        Roskam Vol. I Table 3.4: L [ft] = 0.23 × MTOW [lbs]^0.5
+
+        IMPORTANT: this must NOT depend on self.MTOW.  The dependency chain
+            MTOW → _mission_sizing → mission → payload_weight → payload Part
+            → payload_start_x → _roskam_fuselage_length_estimate → MTOW
+        creates a circular reference that locks the ParaPy GUI whenever
+        _mission_sizing is being evaluated and the viewer concurrently tries
+        to refresh the payload geometry.
+
+        Instead, MTOW is estimated from payload_weight using a typical UAV
+        payload fraction (~15 %, Roskam Vol. I Table 3.5).  payload.total_mass
+        has no dependency on positioning, so there is no cycle.  The estimate
+        is only used to size the fuselage for item layout; the real MTOW from
+        fuel_weight_sizing() still drives all structural calculations.
         """
-        mtow_lbs  = kilograms_to_pounds(self.MTOW)
+        estimated_mtow_kg = self.payload_weight / 0.15   # typical UAV payload fraction
+        mtow_lbs  = kilograms_to_pounds(estimated_mtow_kg)
         length_ft = 0.23 * (mtow_lbs ** 0.50)
         return feet_to_meters(length_ft)
 
@@ -1238,8 +1262,28 @@ class Drone(GeomBase):
 
     @Attribute
     def _mission_sizing(self) -> tuple:
-        """Single cached call to fuel_weight_sizing."""
+        """
+        Single cached call to fuel_weight_sizing.
+
+        Returns (MTOW, empty_weight, fuel_weight) in kg, or (nan, nan, nan)
+        when the mission is infeasible.  The dialog is shown by
+        fuel_weight_sizing() itself before returning the nan tuple.
+
+        IMPORTANT: this must return (not raise) even for the infeasible case.
+        ParaPy cannot cache a raised exception, so a raise would cause every
+        subsequent attribute access to re-evaluate this method.  Because
+        payload_start_x → _roskam_fuselage_length_estimate → MTOW feeds back
+        into this chain via the viewer's lazy evaluation, a non-cached raise
+        creates an unresolvable CircularReferenceError that locks the GUI.
+        Returning nan lets ParaPy cache the result; _feasible and the aircraft
+        Part's suppress flag then gate all downstream geometry safely.
+        """
         return self.mission.fuel_weight_sizing()
+
+    @Attribute
+    def _feasible(self) -> bool:
+        """True when mission sizing produced a valid (non-nan) MTOW."""
+        return not math.isnan(self._mission_sizing[0])
 
     @Attribute
     def MTOW(self) -> float:
@@ -1311,6 +1355,7 @@ class Drone(GeomBase):
     @Part
     def aircraft(self) -> Aircraft:
         return Aircraft(
+            suppress=not self._feasible,
             cruise_speed=self.cruise_speed,
             aircraft_mass=self.MTOW,
             cruise_altitude=self.mission_altitude,

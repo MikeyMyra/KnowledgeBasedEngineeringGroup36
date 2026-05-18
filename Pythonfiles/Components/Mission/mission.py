@@ -289,13 +289,13 @@ class Mission:
         # reasonable upper bound derived from real UAV data.
         if self.engine_type == "Jet":
             A, C_exp = 1.67, -0.16
-            We_frac_max = 0.65   # jet UAV (e.g. Global Hawk ≈ 0.47)
+            We_frac_max = 0.50   # jet UAV (Global Hawk ≈ 0.47, capped at 0.50)
         elif self.engine_type == "Turboprop":
             A, C_exp = 2.75, -0.18
-            We_frac_max = 0.68   # turboprop UAV (e.g. Predator A ≈ 0.50)
+            We_frac_max = 0.52   # turboprop UAV (Predator A ≈ 0.50, capped at 0.52)
         else:
             A, C_exp = 0.97, -0.06
-            We_frac_max = 0.72   # piston UAV (typical GA piston ≈ 0.55–0.65)
+            We_frac_max = 0.58   # piston UAV (typical small UAV ≈ 0.52–0.58)
 
         payload_lbs  = m2i.kilograms_to_pounds(self.payload_weight)
 

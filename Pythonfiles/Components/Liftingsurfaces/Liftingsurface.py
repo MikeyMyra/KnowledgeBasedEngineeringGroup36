@@ -170,7 +170,7 @@ class LiftingSurface(GeomBase):
         if s.startswith("naca"):
             s = s[4:]
 
-        if len(s) != 4 or not s.isdigit() or int(s[2:4]) == 0:
+        if len(s) != 4 or not s.isdigit() or int(s[0]) > 6 or int(s[2:4]) == 0:
             print(f"[LiftingSurface] Ignoring unparseable naca_input '{raw}'.")
             return None
 
