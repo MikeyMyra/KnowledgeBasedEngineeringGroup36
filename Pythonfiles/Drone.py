@@ -1,9 +1,3 @@
-"""
-drone.py
-========
-Top-level drone class.
-"""
-
 import math
 import os
 import glob
@@ -15,6 +9,12 @@ from parapy.core import Input, Attribute, Part, action
 from parapy.geom import GeomBase
 
 from Pythonfiles.Components.Mission.vn_diagram import plot_vn_diagram
+from Pythonfiles.Components.Aircraft import Aircraft
+from Pythonfiles.Components.Mission.mission import Mission
+from Pythonfiles.Components.Payload.Payload import Payload
+from Pythonfiles.Components.Payload.Payloadrules import PayloadRules, PayloadRole
+from Pythonfiles.Components.Mission.ISA_calculator import ISA_calculator
+from Pythonfiles.metric_imperial_conversions import kilograms_to_pounds, feet_to_meters
 
 
 # ─── Input-range validator helpers ────────────────────────────────────────── #
@@ -50,8 +50,7 @@ def _non_negative_int():
 
 # ─── NACA 4-series .dat writer ────────────────────────────────────────────── #
 
-def _write_naca_dat_if_missing(naca_str: str, m: float, p: float, t: float,
-                                n_points: int = 100) -> str:
+def _write_naca_dat_if_missing(naca_str: str, m: float, p: float, t: float, n_points: int = 100) -> str:
     """
     Write a Selig-format .dat file for a NACA 4-series airfoil to
     ``Inputfiles/Airfoils/<naca_str>.dat``.
@@ -59,18 +58,6 @@ def _write_naca_dat_if_missing(naca_str: str, m: float, p: float, t: float,
     If the file already exists it is left untouched and its path is returned.
     The NACA 4-series geometry matches the formulas used in ``Airfoil.py``
     (cosine-spaced stations, closed trailing edge via the ×1.015 correction).
-
-    Parameters
-    ----------
-    naca_str : str   e.g. ``"naca2412"``
-    m        : float max camber as fraction of chord  (first digit / 100)
-    p        : float camber position as fraction      (second digit / 10)
-    t        : float max thickness as fraction        (last two digits / 100)
-    n_points : int   number of stations on each surface half (default 100)
-
-    Returns
-    -------
-    str  absolute path to the .dat file
     """
     import numpy as np
 
@@ -126,19 +113,6 @@ def _archive_previous(output_dir: str, pattern: str) -> None:
     Move any existing files in *output_dir* that match *pattern* into a
     ``data/`` sub-folder, preserving their original filenames.
 
-    Parameters
-    ----------
-    output_dir : str
-        Absolute path to the ``Outputfiles`` directory.
-    pattern : str
-        Glob pattern relative to *output_dir*, e.g. ``"design_point_*.png"``.
-
-    Example
-    -------
-    Before saving ``design_point_20260517_120000.png`` call::
-
-        _archive_previous(save_dir, "design_point_*.png")
-
     Any previously generated ``design_point_*.png`` files sitting in
     ``Outputfiles/`` are moved to ``Outputfiles/data/`` so the root folder
     always contains only the most-recent file.
@@ -151,15 +125,6 @@ def _archive_previous(output_dir: str, pattern: str) -> None:
         # If a file with the same name already exists in the archive,
         # overwrite it (identical timestamp → same run, safe to replace).
         shutil.move(existing, dest)
-
-
-from Pythonfiles.Components.Aircraft import Aircraft
-from Pythonfiles.Components.Mission.mission import Mission
-from Pythonfiles.Components.Payload.Payload import Payload
-from Pythonfiles.Components.Payload.Payloadrules import PayloadRules, PayloadRole, ROLE_CATEGORIES
-from Pythonfiles.Components.Mission.ISA_calculator import ISA_calculator
-
-from Pythonfiles.metric_imperial_conversions import kilograms_to_pounds, feet_to_meters
 
 
 class Drone(GeomBase):
@@ -315,6 +280,7 @@ class Drone(GeomBase):
         Accepted formats: '2412', 'NACA2412', 'naca 2412' (spaces stripped).
         Returns dict {camber, position, thickness, naca_str} on success,
         or None when wing_naca_input is empty / None.
+        
         Shows a tkinter error dialog on bad input and falls back to None
         so the rest of the geometry is unaffected while the user corrects it.
         """
@@ -379,14 +345,9 @@ class Drone(GeomBase):
         """
         Absolute-style path to the .dat file that currently drives wing geometry.
 
-        Resolution order
-        ----------------
-        1. ``wing_naca_input`` typed by the user  → ``_parsed_wing_naca`` validates
-           it, writes the .dat if missing, and returns the parsed dict.
+        1. ``wing_naca_input`` typed by the user  → ``_parsed_wing_naca`` validates it, writes the .dat if missing, and returns the parsed dict.
         2. Default: NACA 0012 — written on first load if not already present.
 
-        The returned path is always passed to ``aircraft.wing_active_dat_path``
-        so the wing geometry immediately reflects the active airfoil.
         """
         parsed = self._parsed_wing_naca
         if parsed is not None:
@@ -451,8 +412,6 @@ class Drone(GeomBase):
         """
         Wing AR from Roskam/Raymer empirical formula [—].
 
-        References
-        ----------
         Raymer §4.4 (Eq. 4.6) — subsonic jet UAV:
             AR = 4.737 * M_cruise^{-0.979},  clamped to [6, 12]
         Roskam Vol. I Table 3.5 — turboprop MALE:  AR ≈ 9.2
@@ -582,19 +541,6 @@ class Drone(GeomBase):
         positioning (payload_start_x).
 
         Roskam Vol. I Table 3.4: L [ft] = 0.23 × MTOW [lbs]^0.5
-
-        IMPORTANT: this must NOT depend on self.MTOW.  The dependency chain
-            MTOW → _mission_sizing → mission → payload_weight → payload Part
-            → payload_start_x → _roskam_fuselage_length_estimate → MTOW
-        creates a circular reference that locks the ParaPy GUI whenever
-        _mission_sizing is being evaluated and the viewer concurrently tries
-        to refresh the payload geometry.
-
-        Instead, MTOW is estimated from payload_weight using a typical UAV
-        payload fraction (~15 %, Roskam Vol. I Table 3.5).  payload.total_mass
-        has no dependency on positioning, so there is no cycle.  The estimate
-        is only used to size the fuselage for item layout; the real MTOW from
-        fuel_weight_sizing() still drives all structural calculations.
         """
         estimated_mtow_kg = self.payload_weight / 0.15   # typical UAV payload fraction
         mtow_lbs  = kilograms_to_pounds(estimated_mtow_kg)
@@ -605,10 +551,6 @@ class Drone(GeomBase):
     def _fuel_tank_length_estimate(self) -> float:
         """
         Fuel tank total length estimate [m] — pure math, no geometry.
-
-        Mirrors Aircraft._fuel_tank_sizing so that Drone.payload_start_x can
-        decide whether payload fits before or after the tank without depending
-        on the Aircraft Part (which would be circular).
         """
         import math
         from Pythonfiles.Components.Fuel.FuelTank import FUELS, AUTO_SELECTION, _VOLUME_FACTOR
@@ -629,6 +571,7 @@ class Drone(GeomBase):
         X-position where the first payload item begins [m].
 
         Always placed from the nose: cylinder_start + nose_clearance offset.
+        
         If this puts the payload inside the fuel tank the fuselage sizing in
         Aircraft._min_fuselage_length_for_payload_tank_clearance will force
         the fuselage (and therefore the wing/tank station) to grow until the
@@ -720,8 +663,6 @@ class Drone(GeomBase):
     @action(label="Run Wing Airfoil Sweep")
     def run_wing_sweep(self):
         self.aircraft.main_wing.run_sweep()
-        # Sync the winning NACA code back to Drone so the top-level input
-        # field always reflects the active airfoil after a sweep.
         self.wing_naca_input = self.aircraft.main_wing.naca_input
         print(f"[Drone] wing_naca_input updated to '{self.wing_naca_input}'")
 
@@ -1268,15 +1209,6 @@ class Drone(GeomBase):
         Returns (MTOW, empty_weight, fuel_weight) in kg, or (nan, nan, nan)
         when the mission is infeasible.  The dialog is shown by
         fuel_weight_sizing() itself before returning the nan tuple.
-
-        IMPORTANT: this must return (not raise) even for the infeasible case.
-        ParaPy cannot cache a raised exception, so a raise would cause every
-        subsequent attribute access to re-evaluate this method.  Because
-        payload_start_x → _roskam_fuselage_length_estimate → MTOW feeds back
-        into this chain via the viewer's lazy evaluation, a non-cached raise
-        creates an unresolvable CircularReferenceError that locks the GUI.
-        Returning nan lets ParaPy cache the result; _feasible and the aircraft
-        Part's suppress flag then gate all downstream geometry safely.
         """
         return self.mission.fuel_weight_sizing()
 

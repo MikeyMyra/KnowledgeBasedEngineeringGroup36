@@ -313,20 +313,23 @@ class Airfoil(GeomBase):
             return [], [], [], []   # abort — do not run XFoil
         mach = mach_actual
 
-        # 1. Always write the .dat file fresh (do NOT rely on the cached
-        #    @Attribute write_dat_file — after a sweep the ParaPy cache may
-        #    still hold the old path without re-writing the file on disk).
-        os.makedirs(_AIRFOIL_DIR, exist_ok=True)
+        # 1. Write the .dat file fresh to XFOIL6.99/Airfoils/ — the exact
+        #    location XFoil expects when its cwd is _XFOIL_DIR and the LOAD
+        #    command uses the relative path "Airfoils/<name>.dat".
+        #    Inputfiles/Airfoils/ is used only for geometry (dat_path_override)
+        #    and must be kept separate from XFoil's working files.
+        xfoil_airfoil_dir = os.path.join(_XFOIL_DIR, "Airfoils")
+        os.makedirs(xfoil_airfoil_dir, exist_ok=True)
         dat_name   = f"{self.resolved_name}.dat"
-        dat_path   = os.path.join(_AIRFOIL_DIR, dat_name)
+        dat_path   = os.path.join(xfoil_airfoil_dir, dat_name)
         with open(dat_path, "w") as _df:
             _df.write(f"{self.resolved_name}\n")
             for _x, _z in self.normalized_coordinates:
                 _df.write(f"{_x:.6f} {_z:.6f}\n")
         print(f"[XFoil] DAT written → {dat_path}")
 
-        polar_path = self.polar_file_path
-        dump_path  = self.dump_file_path
+        polar_path = os.path.join(xfoil_airfoil_dir, f"{self.resolved_name}_polar.txt")
+        dump_path  = os.path.join(xfoil_airfoil_dir, f"{self.resolved_name}_dump.txt")
 
         # Remove stale output files so XFoil doesn't append
         for p in (polar_path, dump_path):

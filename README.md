@@ -1,18 +1,16 @@
-# UAV Initial Sizing Tool — KBE Assignment
-**TU Delft MSc FPP · Knowledge Based Engineering · Q3/Q4**
+# UAV Initial Sizing Tool — KBE Assignment Group 36
+# TU Delft MSc FPP · Knowledge Based Engineering · Q3/Q4
 
 A knowledge-based ParaPy application for the conceptual sizing and 3-D geometry generation of fixed-wing UAVs. The tool sizes the aircraft from mission requirements (speed, altitude, range, endurance, payload role) using Breguet/Raymer/Roskam empirical methods, then builds a parametric 3-D model in the ParaPy viewer.
-
----
 
 ## Quick Start
 
 ### 1. Launch the application
 
-Open a terminal in the `Assignment/` root folder (one level above `Pythonfiles/`) and run:
+Open a terminal in the folder one level above `Pythonfiles/` and run:
 
 ```bash
-python Pythonfiles/main.py
+python main.py
 ```
 
 This starts the ParaPy GUI with a pre-configured `Drone` instance. All inputs can be changed live in the GUI sidebar.
@@ -32,15 +30,15 @@ These four inputs are mandatory and have no default values — they must be set 
 | `mission_altitude` | m | 0 – 18 000 | Cruise / loiter altitude above MSL |
 | `mission_range` | km | 1 – 25 000 | Total mission range (outbound + return) |
 | `mission_endurance` | hr | 0.1 – 120 | Loiter endurance |
+| `payload_role` | `ISR` | Mission role: ISR / Strike / SEAD / Mapping / COMMS relay / Patrol |
+| `weapon_count` | `0` | Number of munitions (0 = unarmed) |
 
-### 4. Key optional inputs
+### 4. Key optional overrides
 
 These have Roskam/Raymer defaults and can be left unchanged or overridden in `main.py`:
 
 | Input | Default | Description |
 |---|---|---|
-| `payload_role` | `ISR` | Mission role: ISR / Strike / SEAD / Mapping / COMMS relay / Patrol |
-| `weapon_count` | `0` | Number of munitions (0 = unarmed) |
 | `wing_naca_input` | `'0012'` | NACA 4-digit code for the main wing (e.g. `'2412'`) |
 | `fuel_type` | `'auto'` | `'auto'` \| `'avgas_100ll'` \| `'jet_a'` \| `'jp8'` \| `'lipo_battery'` |
 | `fuel_tank_aspect_ratio` | `3.0` | Tank length-to-diameter ratio (1.1 – 10) |
@@ -50,27 +48,26 @@ These have Roskam/Raymer defaults and can be left unchanged or overridden in `ma
 
 Engine type (Piston / Turboprop / Jet) is derived automatically from cruise Mach number and altitude using Roskam Vol. I §3.2 rules.
 
----
+### Application Structure
 
 ## Input Files
 
 The application expects an `Inputfiles/` directory at the **working directory** from which you launch the script (i.e. `Assignment/`):
 
 ```
-Assignment/
+root/
 ├── Inputfiles/
-│   └── Airfoils/        ← .dat files are auto-generated here on first run
-├── Outputfiles/         ← PDFs, plots, and sweep results written here
+│   └── Airfoils/        ← .dat files are auto-generated here on first run, .json files used as libraries
+├── Outputfiles/         ← PDFs, plots, STEP files and sweep results written here
 ├── Pythonfiles/
 │   └── ...
-└── Q3D/                 ← Q3D MATLAB toolbox (see MATLAB note below)
+├── Q3D/                 ← Q3D MATLAB toolbox (see MATLAB note below)
+└── XFOIL6.99/           ← XFOIL program (full installment)
 ```
 
 **Airfoil `.dat` files** are generated automatically into `Inputfiles/Airfoils/` the first time a NACA code is used. You do not need to provide them manually. The default NACA 0012 file is created on startup.
 
 No other input files need to be loaded manually before running.
-
----
 
 ## GUI Actions
 
@@ -81,9 +78,10 @@ The following actions are available in the ParaPy sidebar / right-click menu on 
 | **Show Design Point** | Plots the W/P–W/S diagram and saves a PNG to `Outputfiles/` |
 | **Show V-n Diagram** | Plots the V-n manoeuvrability envelope |
 | **Run Wing Airfoil Sweep** | Searches NACA 4-series space via Q3D + XFoil; updates wing geometry with the best candidate |
-| **Plot Wing XFoil Polars** | Runs XFoil on the current wing airfoil and plots Cl–α and Cl/Cd–α |
+| **Plot Wing XFoil Polars** | Runs XFoil on the current wing airfoil and plots Cl–α, Cd-α, Cm-α & Cl/Cd–α |
 | **Print Stability Report** | Prints a static stability summary to the console |
 | **Export PDF Report** | Generates a full PDF sizing report in `Outputfiles/` |
+| **Export STEP File** | Generates a configured STEP file in `Outputfiles/` |
 
 ### Wing airfoil workflow
 
@@ -94,8 +92,6 @@ The following actions are available in the ParaPy sidebar / right-click menu on 
 ### Infeasibility handling
 
 If the mission is infeasible (fuel fraction ≥ 1, or MTOW > 100 t) a warning dialog appears and the 3-D aircraft geometry is suppressed. Reduce range, endurance, or cruise speed to recover a feasible design.
-
----
 
 ## Software Requirements
 

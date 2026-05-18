@@ -19,6 +19,16 @@ class LiftingSurface(GeomBase):
     """
     Parametric lifting surface (wing, horizontal tail, vertical tail).
 
+    Mach limits
+    -----------
+    XFoil (viscous panel):  M ≤ 0.70  — enforced in Airfoil.run_xfoil()
+    Q3D   (vortex-lattice): M ≤ 0.84  — enforced below in run_sweep() and
+        q3d_data.  Q3D applies a Prandtl-Glauert compressibility correction
+        which degrades above Mach ~0.84 as wave drag and non-linear
+        compressibility begin to dominate.  The failure mode is gradual
+        inaccuracy rather than hard divergence, making the limit slightly
+        less harsh than XFoil's, but results above 0.84 are not meaningful.
+
     Airfoil selection
     -----------------
     Normal mode  (run_airfoil_sweep=False):
@@ -37,6 +47,9 @@ class LiftingSurface(GeomBase):
     - VT   : W_vt = 0.073 * S_vt^0.873 * AR_vt^0.357         (Roskam Table 8.1)
     CG of each surface at 40% MAC from the LE of MAC (Roskam §8.4 statistical).
     """
+
+    # Q3D vortex-lattice Mach validity limit (see class docstring).
+    Q3D_MACH_MAX: float = 0.84
 
     # ------------------------------------------------------------------ #
     # FLIGHT CONDITIONS
@@ -213,6 +226,38 @@ class LiftingSurface(GeomBase):
 
     @action(label="Run Airfoil Sweep")
     def run_sweep(self):
+        # ── Q3D Mach validity check ─────────────────────────────────────── #
+        if self.mach > self.Q3D_MACH_MAX:
+            msg = (
+                f"Airfoil sweep aborted.\n\n"
+                f"Q3D uses a vortex-lattice method with a Prandtl-Glauert\n"
+                f"compressibility correction. Above M = {self.Q3D_MACH_MAX:.2f},\n"
+                f"wave drag and non-linear compressibility effects dominate\n"
+                f"— phenomena that potential-flow VLM cannot model. Results\n"
+                f"would be unreliable.\n\n"
+                f"Current cruise Mach : {self.mach:.3f}\n"
+                f"Q3D valid up to     : M = {self.Q3D_MACH_MAX:.2f}\n\n"
+                f"Note: this limit is less strict than XFoil's (M ≤ 0.70)\n"
+                f"because VLM degrades gradually rather than diverging.\n\n"
+                f"Suggested fixes:\n"
+                f"  • Reduce cruise_speed\n"
+                f"  • Increase mission_altitude  (higher altitude → lower Mach)"
+            )
+            print(f"[Q3D Sweep] Aborted — Mach {self.mach:.3f} > "
+                  f"Q3D_MACH_MAX {self.Q3D_MACH_MAX:.2f}")
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                _root = tk.Tk()
+                _root.withdraw()
+                messagebox.showwarning(
+                    "Airfoil Sweep Aborted — Q3D Mach Limit", msg
+                )
+                _root.destroy()
+            except Exception:
+                pass
+            return
+        # ── proceed with sweep ──────────────────────────────────────────── #
         self.pre_sweep_camber    = self.maximum_camber_input
         self.pre_sweep_position  = self.maximum_camber_position_input
         self.pre_sweep_thickness = self.thickness_to_chord_input
@@ -752,6 +797,11 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def q3d_data(self):
+        if self.mach > self.Q3D_MACH_MAX:
+            print(f"[Q3D] WARNING: Mach {self.mach:.3f} exceeds Q3D validity "
+                  f"limit (M = {self.Q3D_MACH_MAX:.2f}). "
+                  f"Prandtl-Glauert correction unreliable — results may be "
+                  f"significantly inaccurate.")
         alpha_or_cl = self.target_cl if self.use_cl else self.alpha
         return MATLAB_Q3D_ENGINE.run_q3d_cst(
             self._q3d_planform_matrix,
