@@ -1,7 +1,7 @@
-from math import radians, tan, pi, sqrt
+from math import radians, tan, sqrt
 
 from parapy.core import Input, Attribute, Part
-from parapy.geom import GeomBase, translate, rotate, Vector
+from parapy.geom import GeomBase, translate, Vector
 
 from Pythonfiles.Components.Engines.JetEngine import JetEngine
 from Pythonfiles.Components.Engines.PropellerEngine import PropellerEngine
@@ -10,26 +10,6 @@ from Pythonfiles.Components.Engines.PropellerEngine import PropellerEngine
 class Engine(GeomBase):
     """
     Engine selector with Roskam-driven type, count, and positioning.
-
-    Decision rules (Roskam Vol. I §3.2, §3.6):
-    ─────────────────────────────────────────────────────────────────────
-    Engine type:    cruise_speed < 130 m/s (≈ Mach 0.40) → propeller
-                    cruise_speed ≥ 130 m/s                → jet
-
-    Engine count:   MTOW < 2700 kg   → 1 engine
-                    2700 ≤ MTOW < 30000 kg → 2 engines
-                    ≥ 30000 kg       → 4 engines  (outside UAV scope, safety net)
-
-    Blade count:    Roskam Vol. I §3.6 disk solidity σ = n·c/(π·R)
-                    Derived inside PropellerEngine; here we add a
-                    cruise-speed nudge: high-speed props (>80 m/s) favour
-                    more blades (lower tip speed per blade) → solidity bumped.
-
-    Placement:
-        n_engines == 1, jet      → dorsal rear mount (top of fuselage, aft)
-        n_engines == 1, prop     → centreline nose tractor
-        n_engines == 2, any      → wing-mounted (symmetric, ±Y)
-    ─────────────────────────────────────────────────────────────────────
     """
 
     # ------------------------------------------------------------------ #
@@ -105,19 +85,11 @@ class Engine(GeomBase):
         Engine type from Mach number at cruise altitude.
 
         Decision rule (Roskam Vol. I §3.2 / §3.6 / Raymer §10.2):
-        ──────────────────────────────────────────────────────────────
+
         M ≥ 0.40 at cruise altitude → "jet"   (compressibility drag
             makes propeller tip speeds impractical above Mach 0.40)
         M <  0.40                   → "propeller"
 
-        Note: altitude alone does NOT force a jet.  At high altitude the
-        propeller disk simply needs to be larger (actuator-disk theory:
-        A ∝ 1/ρ).  PropellerEngine.blade_length applies the density
-        scaling D_alt = D_sl · √(ρ_sl / ρ) automatically.
-
-        ISA speed of sound is computed inline to avoid importing
-        ISA_calculator here (Engine has no knowledge of Drone's ISA module).
-        ──────────────────────────────────────────────────────────────
         """
         # ISA speed of sound — troposphere up to 11 km, then isothermal
         if self.mission_altitude <= 11_000.0:
@@ -127,13 +99,7 @@ class Engine(GeomBase):
         a    = sqrt(1.4 * 287.05 * T)   # ISA speed of sound [m/s]
         mach = self.cruise_speed / a
 
-        # Altitude-graduated Mach threshold — mirrors Drone.engine_type logic.
-        # At high altitude the jet thrust lapse (σ^0.75) is so severe that jets
-        # are only practical at correspondingly high Mach numbers.
-        # Roskam Vol. I §3.2 / Raymer §13.3 / §10.2:
-        #   h > 15 000 m → jet viable only at M ≥ 0.60  (Global Hawk territory)
-        #   h >  9 000 m → jet viable only at M ≥ 0.50  (Predator-B boundary)
-        #   h ≤  9 000 m → jet viable at M ≥ 0.40       (classic compressibility limit)
+        # Altitude-graduated Mach threshold 
         h = self.mission_altitude
         if h > 15_000.0:
             jet_mach_min = 0.60
@@ -170,14 +136,15 @@ class Engine(GeomBase):
         """Spanwise station for wing-mounted engines: 35% semi-span (Roskam)."""
         return self.semi_span * 0.35
 
-    # ── Approximate sizing used only for offset geometry ─────────────── #
+    # ------------------------------------------------------------------ #
+    # DIMENSIONS
+    # ------------------------------------------------------------------ #
 
     @Attribute
     def _approx_nacelle_radius(self) -> float:
         """
         Nacelle radius estimate for positioning [m] (Roskam Vol. V §4).
-        Mirrors JetEngine.nacelle_radius — uses lapse-corrected sea-level
-        thrust for jets so offsets scale correctly at altitude.
+        Uses lapse-corrected sea-level thrust for jets so offsets scale correctly at altitude.
         """
         T_alt_kN = (self.thrust_to_weight * self.mtow * self.g
                     / max(self.n_engines, 1)) / 1000.0
@@ -210,9 +177,11 @@ class Engine(GeomBase):
         rho_sl   = 1.225
         rho      = max(self.rho, 0.01)
         D_alt    = D_sl * sqrt(rho_sl / rho)
-        return min(D_alt / 2.0, self.semi_span * 0.15)
+        return min(D_alt / 2.0, self.semi_span * 0.15)#
 
-    # ── Per-type mount offsets ────────────────────────────────────────── #
+    # ------------------------------------------------------------------ #
+    # POSITIONS
+    # ------------------------------------------------------------------ #
 
     @Attribute
     def _prop_x_offset(self) -> float:
@@ -222,9 +191,7 @@ class Engine(GeomBase):
         The prop disc is placed at the wing LE of the mount station.
         An inboard blade tip (at y = mount_y − blade_length) is behind
         that LE by  blade_length · tan(sweep_le)  because the LE sweeps
-        aft outboard.  Moving the entire engine forward by this amount
-        (plus a 50 mm clearance margin) ensures all blade tips clear the
-        wing leading edge.
+        aft outboard.
         """
         clearance = (self._approx_blade_length * tan(radians(self.sweep_le))
                      + 0.05)
@@ -252,13 +219,9 @@ class Engine(GeomBase):
         """
         return -self._approx_nacelle_radius * 2.0
 
-    # ── Final mount coordinates ───────────────────────────────────────── #
-
     @Attribute
     def _wing_mount_x(self) -> float:
-        """
-        X at the wing-mount station, with engine-type forward offset applied.
-        """
+        """X at the wing-mount station, with engine-type forward offset applied."""
         base_x = self.wing_root_x + self._wing_mount_y * tan(radians(self.sweep_le))
         if self.engine_type == "propeller":
             return base_x + self._prop_x_offset
@@ -267,9 +230,7 @@ class Engine(GeomBase):
 
     @Attribute
     def _wing_mount_z(self) -> float:
-        """
-        Z at the wing-mount station, with engine-type vertical offset applied.
-        """
+        """Z at the wing-mount station, with engine-type vertical offset applied."""
         base_z = self.wing_root_z + self._wing_mount_y * tan(radians(self.dihedral))
         if self.engine_type == "jet":
             return base_z + self._jet_z_offset
@@ -287,8 +248,7 @@ class Engine(GeomBase):
 
     @Attribute
     def _position_starboard(self):
-        """Position for starboard (or single centreline/dorsal) engine.
-        No rotation here — subclasses apply rotate90('y') via _engine_base."""
+        """Position for starboard (or single centreline/dorsal) engine."""
         if self.n_engines == 1:
             if self.engine_type == "jet":
                 return translate(
@@ -310,8 +270,7 @@ class Engine(GeomBase):
 
     @Attribute
     def _position_port(self):
-        """Port (mirrored) position for twin installations.
-        No rotation here — subclasses apply rotate90('y') via _engine_base."""
+        """Port (mirrored) position for twin installations."""
         return translate(
             self.position,
             Vector(1, 0, 0), self._wing_mount_x,

@@ -1,48 +1,3 @@
-"""
-Payload.py
-==========
-Payload assembly for the UAV KBE tool.
-
-Raw component data (geometry, density, sources) lives in payload_library.json
-alongside this file.  The module-level variables PAYLOAD_LIBRARY, WEAPON_DIMS,
-DENSITY, and MANDATORY_PAYLOADS are loaded from that file at import time, so
-all other modules (Payloadrules.py, etc.) that import them will work unchanged.
-
-Positional layout
------------------
-Payload items are stacked sequentially along the fuselage x-axis starting at
-``payload_start_x`` (measured from the Payload object's own origin).  Each item
-is centred at the x-midpoint of its allocated slot; a configurable ``payload_gap``
-separates consecutive items.
-
-    payload_start_x
-          |
-          |<-- extent_0 -->|gap|<-- extent_1 -->|gap|...
-          |       c0       |   |       c1       |
-
-  c_i  = payload_start_x + sum(extents[0..i-1]) + i*gap + extent_i/2
-
-For boxes    : extent = ``length``      (the x-aligned dimension)
-For cylinders: extent = ``height_cyl``  (the long axis, rotated to lie along x)
-
-Weapon stacking
----------------
-When ``weapon_count`` > 1, weapons are arranged side-by-side in the y-z plane
-(perpendicular to the fuselage x-axis) rather than repeated along x.  They are
-packed into the most square grid possible:
-
-    n_cols = ceil(sqrt(weapon_count))
-    n_rows = ceil(weapon_count / n_cols)
-
-Each weapon cylinder keeps its own diameter; the grid pitch equals the diameter
-(cylinders touch).  The composite bounding envelope in y and z is:
-
-    envelope_y = n_cols * diameter
-    envelope_z = n_rows * diameter
-
-This envelope drives the ``min_fuselage_radius`` requirement.
-"""
-
 import json
 import math
 import os
@@ -180,13 +135,6 @@ class WeaponSolid(GeomBase):
 # =============================================================================
 
 class PayloadItem(GeomBase):
-    """
-    A single payload component.
-
-    For weapons with ``weapon_count`` > 1 the solid parts are arranged in a
-    grid in the y-z plane (perpendicular to the fuselage axis).  All other
-    payload types ignore ``weapon_count``.
-    """
 
     payload_type: str = Input()
     model:        str = Input()
@@ -265,8 +213,6 @@ class PayloadItem(GeomBase):
     
     @Attribute
     def cg_x(self) -> float:
-        """CG x-position of this item in the Payload's coordinate frame [m].
-        For a symmetrically placed item the CG is at its own x-position."""
         return self.position.x
 
     # -------------------------------------------------------------------------
@@ -285,18 +231,6 @@ class PayloadItem(GeomBase):
 
     @Attribute
     def _weapon_grid_positions(self) -> list:
-        """
-        List of (dy, dz) offsets [m] for each weapon in the y-z grid,
-        centred on the item's local origin.
-
-        The grid is filled row-by-row (y fast, z slow).  The full grid
-        envelope is:
-            width_y  = n_cols * diameter
-            height_z = n_rows * diameter
-
-        Weapons are centred within this envelope, so the offsets run from
-        -(n_cols-1)/2 * d  to  +(n_cols-1)/2 * d  in y, and similarly in z.
-        """
         d = self.final_diameter
         nc = self._weapon_n_cols
         nr = self._weapon_n_rows
@@ -342,15 +276,8 @@ class PayloadItem(GeomBase):
         (half_width_y, half_height_z) of the item's cross-section envelope [m].
 
         For a single weapon or any non-weapon:
-          - box      → (width/2, height_box/2)
-          - cylinder → (diameter/2, diameter/2)
-
-        For stacked weapons:
-          - (n_cols * diameter / 2,  n_rows * diameter / 2)
-
-        This is the *half*-size because the fuselage radius is measured from
-        the centreline; the fuselage must accommodate the largest half-envelope
-        across all items.
+            - box      → (width/2, height_box/2)
+            - cylinder → (diameter/2, diameter/2)
         """
         if self.payload_type == "weapon" and self.weapon_count > 1:
             d  = self.final_diameter
@@ -414,28 +341,12 @@ class PayloadItem(GeomBase):
 
     # -------------------------------------------------------------------------
     # Geometry
-    #
-    # Weapons with weapon_count > 1 are placed at each grid offset in y-z.
-    # All other items remain a single solid at the item's own position.
     # -------------------------------------------------------------------------
 
     @Part(parse=False)
     def solid(self):
         """
         Single solid for non-weapon items (or a single weapon).
-
-        For multi-weapon items use ``weapon_solids`` instead; this part is
-        suppressed (but still defined) so that the ParaPy tree is consistent.
-
-        ParaPy Box axis convention (verified empirically):
-          ``length`` → local y-axis (fuselage-transverse)
-          ``width``  → local x-axis (fuselage longitudinal)
-          ``height`` → local z-axis (vertical)
-
-        We therefore pass ``width=final_length`` so that the item's
-        longitudinal extent (final_length) aligns with the fuselage x-axis,
-        and ``length=final_width`` so the transverse half-width equals the
-        value used by cross_section_envelope / min_fuselage_radius.
         """
         if self.geometry_type == "box":
             return Box(
@@ -463,19 +374,6 @@ class PayloadItem(GeomBase):
 class Payload(GeomBase):
     """
     Ordered collection of payload items laid out along the fuselage x-axis.
-
-    Items are placed sequentially starting at ``payload_start_x`` (offset from
-    this object's own origin).  Each item occupies a slot equal to its x-extent
-    (``length`` for boxes, ``height_cyl`` for cylinders), with ``payload_gap``
-    metres of clearance between consecutive items.
-
-    Fuselage sizing outputs
-    -----------------------
-    ``min_fuselage_length``  — total payload bay length; the fuselage cylindrical
-                               section must be at least this long.
-    ``min_fuselage_radius``  — the largest cross-section half-envelope across all
-                               items; the fuselage radius must be at least this
-                               value to guarantee every item fits inside.
     """
 
     payload_config: list = Input(
@@ -569,9 +467,6 @@ class Payload(GeomBase):
         """
         Minimum fuselage cylindrical-section length needed to contain the full
         payload bay [m].
-
-        Equal to ``total_payload_length``; provided as an explicit named output
-        so that the Fuselage class can consume it directly.
         """
         return self.total_payload_length
 
@@ -580,12 +475,6 @@ class Payload(GeomBase):
         """
         Minimum fuselage radius needed so that every payload item fits inside
         the fuselage cross-section [m].
-
-        Computed as the largest *half-envelope* dimension across all items and
-        both y and z directions, with a small clearance margin added.
-
-        For non-weapon items this is half their width or diameter.
-        For stacked weapons this accounts for the full n_cols × n_rows grid.
 
         A 5 % clearance margin is applied on top of the geometric minimum so
         that items are not flush against the fuselage skin.

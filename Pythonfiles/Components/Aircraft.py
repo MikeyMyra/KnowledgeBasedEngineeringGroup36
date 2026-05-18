@@ -1,10 +1,8 @@
-import sys
 import os
 import math
 import glob
 import shutil
-
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+from types import SimpleNamespace
 
 from parapy.core import Input, Attribute, Part, action
 from parapy.geom import GeomBase
@@ -12,7 +10,9 @@ from parapy.geom import GeomBase
 from Pythonfiles.Components.Liftingsurfaces.Liftingsurface import LiftingSurface
 from Pythonfiles.Components.Fuselage.Fuselage import Fuselage
 from Pythonfiles.Components.Engines.Engine import Engine
-from Pythonfiles.Components.Fuel.FuelTank import FuelTank
+from Pythonfiles.Components.Fuel.FuelTank import FuelTank, FUELS, AUTO_SELECTION, _VOLUME_FACTOR
+
+
 
 
 class Aircraft(GeomBase):
@@ -42,14 +42,8 @@ class Aircraft(GeomBase):
     fuselage_cylinder_end:   float = Input(70.0)
     payload_object = Input(None)
 
-    # Gap from nose-cone/cylinder junction to first payload item [m].
-    # Prevents payload overlapping the prop nacelle (tractor configurations).
-    # Default 100 mm — increase if the nacelle is long.
     payload_nose_clearance: float = Input(0.12)
 
-    # Fuel and engine mass fractions for CG computation
-    # Roskam Vol. I §8.1: fuel CG assumed at wing AC (tanks in centre wing box).
-    # Engine mass ~10% MTOW (Roskam Table 8.1 "propulsion group").
     fuel_mass:   float = Input(0.0)   # [kg] — passed in from Drone.fuel_weight
     engine_mass: float = Input(None)  # [kg] — None = 10% MTOW (Roskam default)
 
@@ -74,6 +68,7 @@ class Aircraft(GeomBase):
     # Path to the active .dat file that drives wing geometry.
     # Generated and resolved by Drone._active_wing_dat_path.
     wing_active_dat_path:         str   = Input(None)
+    
     wing_sweep_le: float = Input(
         5.0,
         doc="Wing leading-edge sweep angle  [°]  ·  recommended: 0 – 30°\n"
@@ -167,42 +162,9 @@ class Aircraft(GeomBase):
 
     mesh_deflection: float = Input(1e-4)
 
-    # ============================================================ #
-    # FUEL TANK — sizing helper + rendered part
-    #
-    # Circular dependency that must be broken:
-    #   fuel_tank (Part) → _fuel_tank_position → fuselage._x_cylinder_start
-    #   → fuselage.length → fuel_tank.min_fuselage_length → (Part) fuel_tank
-    #
-    # Fix: _fuel_tank_sizing is a plain @Attribute that returns a lightweight
-    # SimpleNamespace (pure Python, NOT a GeomBase subclass).  It replicates
-    # the FuelTank sizing math without creating any ParaPy geometry objects,
-    # so ParaPy never tries to register it in the part tree.
-    #
-    # Fuselage receives this namespace for sizing (it reads .min_fuselage_length
-    # and .min_fuselage_radius).  fuel_tank @Part is the rendered geometry and
-    # safely reads fuselage._x_cylinder_start because fuselage.length is already
-    # cached by the time Part geometry is evaluated.
-    # ============================================================ #
-
     @Attribute
     def _fuel_tank_sizing(self):
-        """
-        Pure-Python sizing record for the fuel tank (no GeomBase, no geometry).
 
-        Returns a SimpleNamespace with the same attribute names used by
-        FuelTank, so Fuselage and the CG/mass breakdown can read them without
-        creating a rendered Part (which would cause a circular dependency).
-        Returns None when fuel_mass <= 0.
-        """
-        import math
-        from types import SimpleNamespace
-        from Pythonfiles.Components.Fuel.FuelTank import (
-            FUELS, AUTO_SELECTION, _VOLUME_FACTOR,
-        )
-
-        # Treat NaN fuel_mass (from an infeasible mission) the same as zero —
-        # no tank should be rendered when sizing failed.
         if math.isnan(self.fuel_mass) or self.fuel_mass <= 0.0:
             return None
 
@@ -243,12 +205,7 @@ class Aircraft(GeomBase):
     def fuel_tank(self):
         """
         Rendered fuel tank capsule — positioned aft of the payload bay.
-
-        Fuselage uses _fuel_tank_sizing (above) for sizing, so this Part's
-        position can safely read fuselage._x_cylinder_start with no cycle.
         """
-        # Suppress when fuel_mass is zero OR NaN (failed mission sizing).
-        # max(NaN, 0.01) returns NaN in Python, so we must guard explicitly.
         return FuelTank(
             suppress=self._fm_safe <= 0.0,
             fuel_mass=max(self._fm_safe, 0.01),   # guard against suppress=False/0
@@ -263,9 +220,6 @@ class Aircraft(GeomBase):
     def _fuel_tank_position(self):
         """
         Nose position of the rendered fuel tank [m from aircraft origin].
-
-        Placed immediately aft of the payload bay (with a small 50 mm gap),
-        but never forward of the wingbox rear spar.
 
         Roskam Vol. I §8.1: fuel CG at wing AC for stability — the rendered
         tank is a fuselage capsule for visualisation; mass/CG analysis uses
@@ -469,19 +423,11 @@ class Aircraft(GeomBase):
         """
         Approximate largest rotating radius for undercarriage strut sizing [m].
 
-        Computed from mission inputs only — no dependency on Fuselage or Engine
-        Parts, so it can be passed safely into Fuselage without circular refs.
-
         Jet engines  : nacelle outer radius, sea-level rated (lapse-corrected).
                        Roskam Vol. V §4: D_nac = 0.2284 * T_sl_kN^0.4.
         Prop engines : propeller blade-tip radius, altitude-corrected.
                        Roskam Vol. I §3.6 / actuator-disk: D = 0.658 * P_kW^0.25,
                        scaled to altitude by D_alt = D_sl * sqrt(rho_sl / rho).
-
-        Note on thrust_to_weight units:
-          • Jet  → dimensionless T/W passed from Drone (Drone.thrust_loading).
-          • Prop → power loading [kg/W] passed from Drone (Drone.power_loading),
-                   so total power P = aircraft_mass / thrust_to_weight [W].
         """
         from math import sqrt
         n = 1 if self.aircraft_mass < 2700 else 2
@@ -495,18 +441,9 @@ class Aircraft(GeomBase):
             return 0.2284 * (T_sl_kN ** 0.4) / 2.0
 
         else:
-            # Propeller radius for undercarriage clearance.
-            # thrust_to_weight = power_loading [kg/W] for prop engines;
-            # total power P = aircraft_mass / power_loading [W].
             P_total_W  = self.aircraft_mass / max(self.thrust_to_weight, 1e-9)
             P_per_kW   = max(P_total_W / n, 1.0) / 1000.0
             D_sl_per   = 0.658 * (P_per_kW ** 0.25)   # Roskam §3.6 sea-level
-            # Do NOT apply altitude density scaling here.
-            # PropellerEngine.blade_length caps at semi_span×0.15 (geometric /
-            # tip-speed limit), so the displayed blade is not 3.7× larger at
-            # 20 km — it is the same physical hardware.  Using the uncapped
-            # D_alt = D_sl×√(ρ_sl/ρ) would produce struts 2× fuselage diameter
-            # at HALE altitudes.  Apply the same geometric cap instead.
             geo_cap = self.effective_wing_semi_span * 0.15
             return min(D_sl_per / 2.0, geo_cap)
 
@@ -515,29 +452,6 @@ class Aircraft(GeomBase):
         """
         Fuselage length lower bound that prevents wing–tail geometric overlap [m].
 
-        Derivation
-        ----------
-        Wing attach at 40% of fuselage length (LiftingSurface.attach_x).
-        Tail attach = min(wing_x + tail_arm, L_fus – c_root_tail).
-
-        For the tail LE to clear the wing TE root:
-            tail_attach_x  >  wing_x + c_root_wing
-        The binding constraint is the fuselage-length cap on tail_arm
-        (0.60 · L_fus).  Substituting wing_x = 0.40 · L_fus:
-
-            (0.40 + 0.60) · L_fus – c_root_tail  >  0.40 · L_fus + c_root_wing
-            0.60 · L_fus  >  c_root_wing + c_root_tail
-
-        Conservatively approximating c_root_tail ≈ 0.60 · c_root_wing
-        (typical HT root chord from Roskam tail-volume method):
-            L_fus  >  c_root_wing · (1 + 0.60) / 0.60  ≈  2.67 · c_root_wing
-
-        A 4.5× multiplier adds ~70% safety margin and ensures the tail
-        moment arm is long enough for effective pitch authority even when the
-        Roskam fuselage formula gives a short fuselage at high altitude.
-
-        References
-        ----------
         Raymer §4.2: tail moment arm ≈ 2.5–3.5 × MAC.
         Global Hawk: span 39.9 m, fuselage 14.5 m — span/fuselage ≈ 2.75.
         """
@@ -560,23 +474,10 @@ class Aircraft(GeomBase):
         c_root = 2 * S / (b * (1 + lamb))
         return 0.08 * c_root
 
-    # ============================================================ #
-    # WINGBOX CLEARANCE
-    #
-    # The main-wing wingbox passes through the fuselage between the
-    # front and rear spar stations.  Payload and fuel tank must be
-    # placed fore or aft of this blocked zone to avoid intersection.
-    #
-    # Roskam Vol. II §4.1 / §5.1: front spar at ~15% chord,
-    # rear spar at ~60% chord (input via wing_front/rear_spar_position).
-    # ============================================================ #
-
     @Attribute
     def _wingbox_start_x(self) -> float:
         """
         X-position of the wing front spar at the fuselage centreline [m].
-
-        This is the forward edge of the zone blocked by the wingbox.
         """
         return self.main_wing.attach_x + self.wing_front_spar_position * self.main_wing.c_root_geometric
 
@@ -584,16 +485,8 @@ class Aircraft(GeomBase):
     def _wingbox_end_x(self) -> float:
         """
         X-position of the wing rear spar at the fuselage centreline [m].
-
-        Nothing may be placed inside the fuselage between _wingbox_start_x
-        and _wingbox_end_x; the fuel tank and payload are pushed aft of this
-        station (or forward of it) to maintain structural clearance.
         """
         return self.main_wing.attach_x + self.wing_rear_spar_position * self.main_wing.c_root_geometric
-
-    # ============================================================ #
-    # STABILITY ANALYSIS  (Roskam Vol. II §3.2–3.3)
-    # ============================================================ #
 
     # ------------------------------------------------------------ #
     # Component masses
@@ -650,14 +543,6 @@ class Aircraft(GeomBase):
     def cg_breakdown(self) -> dict:
         """
         Dictionary of {component_label: cg_x [m]} for all major groups.
-
-        Assumptions
-        -----------
-        - Engine CG  : at wing AC (tractor/pusher mounted on wing leading edge)
-                       Roskam Vol. I §8.1 statistical for UAV tractor configs.
-        - Fuel CG    : at wing AC — fuel stored in centre wing box
-                       Roskam Vol. I §8.1.
-        - Payload CG : from Payload.cg_x (mass-weighted item positions).
         """
         payload_len   = (self.payload_object.min_fuselage_length
                          if self.payload_object is not None else 0.0)
@@ -674,14 +559,7 @@ class Aircraft(GeomBase):
                 f"(x={self._wingbox_start_x:.3f}–{self._wingbox_end_x:.3f} m). "
                 f"Consider reducing payload length or moving the wing aft."
             )
-        # ── fuel CG: wing aerodynamic centre (Roskam Vol. I §8.1) ─────────── #
-        #
-        # Roskam assumes fuel is stored in the centre wing box, so its CG
-        # coincides with the wing AC.  The rendered FuelTank Part is a fuselage
-        # capsule placed aft of the wingbox for visual clarity, but it does not
-        # represent the true structural/mass location of the fuel.  Using the
-        # rendered tank's x-position for stability would incorrectly shift the
-        # aircraft CG aft and degrade the static margin.
+
         fuel_cg_x = self.main_wing.x_ac   # Roskam §8.1
 
         d = {
@@ -703,9 +581,6 @@ class Aircraft(GeomBase):
         """
         Aircraft CG x-position from nose [m].
 
-        Computed as mass-weighted average of all component CGs:
-            CG = Σ(m_i * x_cg_i) / Σ(m_i)
-
         Roskam Vol. I §8.1, Eq. (8.1).
         """
         masses = self.mass_breakdown
@@ -725,21 +600,7 @@ class Aircraft(GeomBase):
         Aircraft neutral point x-position from nose [m].
 
         Roskam Vol. II §3.2, Eq. (3.15) — simplified for straight-tapered
-        wing + horizontal tail, subsonic incompressible:
-
-            NP = (CL_alpha_w * x_ac_w  +  eta_h * (S_h/S_w) * CL_alpha_h * x_ac_h)
-                 -----------------------------------------------------------------------
-                        CL_alpha_w  +  eta_h * (S_h/S_w) * CL_alpha_h
-
-        Assumptions
-        -----------
-        - CL_alpha_w = CL_alpha_h = 2π [1/rad]  (thin-aerofoil theory, subsonic)
-          Roskam Vol. II §3.2: adequate for conceptual design; Q3D sweep
-          would give a more accurate value per surface.
-        - eta_h = 0.90 (tail efficiency, Roskam Vol. II Table 3.1 — accounts
-          for fuselage wake / boundary layer losses at tail location).
-        - Fuselage contribution ignored at conceptual level (conservative;
-          fuselage destabilises, so true NP is slightly aft of this estimate).
+        wing + horizontal tail, subsonic incompressible
         """
         cl_alpha   = 2.0 * 3.14159265   # 2π [1/rad] — thin-aerofoil theory
         eta_h      = 0.90               # tail efficiency (Roskam Vol. II Table 3.1)

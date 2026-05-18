@@ -37,9 +37,6 @@ class Airfoil(GeomBase):
     
     alpha_cruise: float = Input()
 
-    # airfoil_name defaults to the auto-derived NACA string but can be
-    # overridden (e.g. airfoil_name="root_airfoil_geometric") so that
-    # the saved .dat / polar files use a meaningful filename.
     @Attribute
     def _naca_name(self):
         """Auto-derived NACA 4-digit string, e.g. 'naca2412'."""
@@ -49,10 +46,7 @@ class Airfoil(GeomBase):
         return f"naca{m}{p}{t:02d}"
 
     airfoil_name: str = Input(None)   # None → falls back to _naca_name / dat filename
-
-    # When set, geometry is READ from this .dat file instead of being computed
-    # from the NACA parameters.  Parameters are still used by sweep instances
-    # (which never set this) and as a fallback if the file is missing.
+    
     dat_path_override: str = Input(None)
 
     # ------------------------------------------------------------------ #
@@ -129,14 +123,6 @@ class Airfoil(GeomBase):
 
     @staticmethod
     def _read_dat_coordinates(path: str):
-        """
-        Read a Selig-format .dat file and return an (N, 2) float array of
-        normalised (x, z) coordinates.
-
-        The first line is always the airfoil name and is skipped.  Any line
-        that cannot be parsed as two floats is silently ignored so that blank
-        lines or comment rows don't break the reader.
-        """
         coords = []
         with open(path) as fh:
             for i, line in enumerate(fh):
@@ -154,19 +140,6 @@ class Airfoil(GeomBase):
 
     @Attribute
     def normalized_coordinates(self):
-        """
-        Normalised (x, z) coordinates of the airfoil section.
-
-        Source priority
-        ---------------
-        1. ``dat_path_override`` — read from the .dat file when the path is
-           set and the file exists.  This is the live-geometry path used by
-           the real wing Parts; the file was written by the Drone when the
-           user picked a NACA code or the sweep completed.
-        2. Computed from NACA 4-series params — used by temporary sweep
-           ``Airfoil`` instances (which never receive ``dat_path_override``)
-           and as an automatic fallback if the file is somehow missing.
-        """
         if self.dat_path_override is not None:
             if os.path.exists(self.dat_path_override):
                 return self._read_dat_coordinates(self.dat_path_override)
@@ -266,10 +239,7 @@ class Airfoil(GeomBase):
     # XFOIL
     # ------------------------------------------------------------------ #
 
-    # Xfoil's panel method / viscous coupling becomes unreliable above this Mach
-    # number (transonic shock formation, diverging BL iterations).  We cap the
-    # value passed to Xfoil and print a warning so the user knows.
-    XFOIL_MACH_MAX: float = 0.70
+    XFOIL_MACH_MAX: float = 0.70 # Mach is capped at ``XFOIL_MACH_MAX`` (0.70) — Xfoil's panel method diverges for transonic flows and returns no data above that limit.
 
     def run_xfoil(
         self,
@@ -280,16 +250,7 @@ class Airfoil(GeomBase):
         alpha_step:  float = 0.5,
         n_iter:      int   = 200,
     ):
-        """
-        Run XFoil for the airfoil.  Writes the polar to ``polar_file_path``
-        and the BL dump to ``dump_file_path``.  Returns (alphas, cls).
-
-        ``reynolds`` and ``mach`` default to the values set on the instance
-        (Input attributes) so callers never need to repeat them.
-
-        Mach is capped at ``XFOIL_MACH_MAX`` (0.70) — Xfoil's panel method
-        diverges for transonic flows and returns no data above that limit.
-        """
+        
         reynolds     = reynolds if reynolds is not None else self.reynolds
         mach_actual  = mach     if mach     is not None else self.mach
         if mach_actual > self.XFOIL_MACH_MAX:
@@ -313,11 +274,7 @@ class Airfoil(GeomBase):
             return [], [], [], []   # abort — do not run XFoil
         mach = mach_actual
 
-        # 1. Write the .dat file fresh to XFOIL6.99/Airfoils/ — the exact
-        #    location XFoil expects when its cwd is _XFOIL_DIR and the LOAD
-        #    command uses the relative path "Airfoils/<name>.dat".
-        #    Inputfiles/Airfoils/ is used only for geometry (dat_path_override)
-        #    and must be kept separate from XFoil's working files.
+        # 1. Write the .dat
         xfoil_airfoil_dir = os.path.join(_XFOIL_DIR, "Airfoils")
         os.makedirs(xfoil_airfoil_dir, exist_ok=True)
         dat_name   = f"{self.resolved_name}.dat"
@@ -337,11 +294,6 @@ class Airfoil(GeomBase):
                 os.remove(p)
 
         # 2. Build the XFoil command script
-        #    - Paths are relative to _XFOIL_DIR (cwd for the subprocess)
-        #    - Use forward slashes — XFoil (Fortran) does not handle Windows backslashes
-        #    - PLOP G turns off the graphics window
-        #    - VISC must come BEFORE MACH in OPER
-        #    - Two blank PACC lines: first opens, second closes the polar file
         rel_dat   = "Airfoils/" + dat_name
         rel_polar = "Airfoils/" + f"{self.resolved_name}_polar.txt"
         rel_dump  = "Airfoils/" + f"{self.resolved_name}_dump.txt"
@@ -395,12 +347,6 @@ class Airfoil(GeomBase):
     def _parse_polar(polar_path: str):
         """
         Read an XFoil polar file and return (alphas, cls, cds, cms).
-
-        XFoil polar column layout:
-          alpha    CL        CD       CDp       CM     Top_Xtr  Bot_Xtr
-          ------  -------   -------  -------  -------  -------  -------
-        Indices:  [0]       [1]      [2]      [3]      [4]
-        Data starts after the dashed separator line.
         """
         alphas, cls, cds, cms = [], [], [], []
 
@@ -432,11 +378,7 @@ class Airfoil(GeomBase):
         return alphas, cls, cds, cms
 
     # ------------------------------------------------------------------ #
-    # PLOT  (reads saved polar file)
-    # ------------------------------------------------------------------ #
-
-    # ------------------------------------------------------------------ #
-    # POLAR FIGURE BUILDER  (shared by action and save method)
+    # POLAR FIGURE BUILDER
     # ------------------------------------------------------------------ #
 
     def _build_polar_figure(self):
@@ -554,11 +496,7 @@ class Airfoil(GeomBase):
     @action(label="Plot XFoil polars")
     def plot_cl_alpha(self):
         """
-        Run XFoil and display the 4-panel polar figure:
-          top-left   CL – α  (cruise & stall markers)
-          top-right  CD – α
-          bottom-left  Cm – α
-          bottom-right  L/D – α
+        Run XFoil and display the 4-panel polar figure
         """
         fig = self._build_polar_figure()
         if fig is not None:
@@ -615,19 +553,5 @@ if __name__ == "__main__":
         export_dat=True,
         alpha_cruise=4,
     )
-
-    # Explicit name: files saved as root_airfoil_geometric.dat / ..._polar.txt
-    # af = Airfoil(
-    #     label="root_airfoil",
-    #     chord=2.5,
-    #     maximum_camber=0.04,
-    #     camber_position=0.4,
-    #     thickness_to_chord=0.12,
-    #     thickness_factor=1.0,
-    #     export_dat=True,
-    #     airfoil_name="root_airfoil_geometric",
-    #     mach=0.78,
-    #     reynolds=3_000_000,
-    # )
 
     display(af)

@@ -1,36 +1,3 @@
-"""
-engineering_rules.py
-====================
-Derives UAV class, mission objective, and payload variant selection
-from mission performance inputs and payload categories.
-
-Design philosophy
------------------
-UAV class is determined by the MOST DEMANDING single constraint,
-not by averaging or scoring.  Each constraint (range, altitude,
-endurance, payload mass) independently sets a minimum class floor,
-and the final class is the maximum across all floors.
-
-This means:
-  - A short-endurance, high-payload drone correctly lands in "large"
-  - A long-range, light-payload drone correctly lands in "medium"
-  - No single weak constraint can pull the class down
-
-Typical call sequence
----------------------
-    rules = PayloadRules(
-        cruise_speed      = 80,
-        mission_altitude  = 6000,
-        mission_range     = 500,
-        mission_endurance = 8,
-        payload_categories = ["eo_ir", "radar"],
-        weapon_count      = 0,
-    )
-    rules.uav_class           # → "medium"
-    rules.mission_objective   # → "High Endurance"
-    rules.payload_config      # → [("flight_computer", ...), ("battery", ...), ...]
-"""
-
 import enum
 import math
 import warnings
@@ -42,11 +9,6 @@ from Pythonfiles.Components.Payload.Payload import PAYLOAD_LIBRARY, resolve_mode
 
 # ---------------------------------------------------------------------------
 # PAYLOAD ROLE ENUM  — drives the GUI dropdown in Drone.payload_role
-#
-# Inheriting from (str, enum.Enum) means every value IS a plain string, so
-# existing code that reads payload_role as a string continues to work without
-# any changes.  ParaPy detects the Enum base class and renders a dropdown
-# automatically.
 # ---------------------------------------------------------------------------
 
 class PayloadRole(str, enum.Enum):
@@ -167,10 +129,6 @@ def infer_uav_class(
 ) -> str:
     """
     Return the minimum UAV class satisfying ALL active constraints.
-
-    Each constraint sets an independent class floor; the result is the
-    most demanding floor.  Payload mass is the strongest discriminator
-    when available; mission params act as proxies before it is known.
     """
     floors = [
         _class_from_range(mission_range),
@@ -185,17 +143,6 @@ def infer_uav_class(
 
 # ---------------------------------------------------------------------------
 # MISSION OBJECTIVE INFERENCE
-# ---------------------------------------------------------------------------
-# Mirrors Mission.engine_selection() so the inferred string is always
-# consistent with the propulsion type Mission will later select.
-#
-# Jet      : Mach > ~0.4 at altitude  (≈ 120 m/s conservative threshold)
-#            → "High Speed"
-# Turboprop: subsonic, endurance-driven (> 6 h)
-#            → "High Endurance"
-# Piston   : subsonic, short endurance, cost-sensitive
-#            → "Low cost"
-#
 # Source: Raymer "Aircraft Design: A Conceptual Approach" ch. 3.
 # ---------------------------------------------------------------------------
 
@@ -253,23 +200,6 @@ _MANDATORY = ["flight_computer", "battery"]
 class PayloadRules:
     """
     Single source of truth for all inferred design parameters.
-
-    Required
-    --------
-    cruise_speed, mission_altitude, mission_range, mission_endurance
-
-    Optional
-    --------
-    payload_categories : list[str]
-        Categories the user wants, e.g. ["eo_ir", "radar", "weapon"].
-        The system picks the right variant per category based on UAV class.
-        If None → inferred from mission parameters.
-
-    weapon_count : int
-        Number of munitions (0 = unarmed; suppresses "weapon" category).
-
-    uav_class_override, mission_objective_override : str
-        Hard overrides — bypass inference entirely for that parameter.
     """
 
     cruise_speed:       float
@@ -285,7 +215,6 @@ class PayloadRules:
 
     # ------------------------------------------------------------------
     # Step 1 — resolve category list
-    # Must happen before UAV class because payload mass is a class input.
     # ------------------------------------------------------------------
 
     @property
@@ -336,10 +265,6 @@ class PayloadRules:
 
     # ------------------------------------------------------------------
     # Step 2 — estimate payload mass using a 'small' variant as proxy
-    #
-    # We resolve variants against "small" here (lower-bound estimate).
-    # If actual payload mass in a medium/large variant is higher, that
-    # only pushes the class further up — the conservative direction.
     # ------------------------------------------------------------------
 
     @property

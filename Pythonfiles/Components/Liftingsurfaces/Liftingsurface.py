@@ -4,7 +4,6 @@ from math import radians, tan
 import numpy as np
 
 import matlab
-#import matlab.engine
 
 from parapy.core import Attribute, Input, Part, action
 from parapy.geom import GeomBase, LoftedSolid, rotate, translate
@@ -18,34 +17,6 @@ from Pythonfiles.Matlab_start import MATLAB_Q3D_ENGINE
 class LiftingSurface(GeomBase):
     """
     Parametric lifting surface (wing, horizontal tail, vertical tail).
-
-    Mach limits
-    -----------
-    XFoil (viscous panel):  M ≤ 0.70  — enforced in Airfoil.run_xfoil()
-    Q3D   (vortex-lattice): M ≤ 0.84  — enforced below in run_sweep() and
-        q3d_data.  Q3D applies a Prandtl-Glauert compressibility correction
-        which degrades above Mach ~0.84 as wave drag and non-linear
-        compressibility begin to dominate.  The failure mode is gradual
-        inaccuracy rather than hard divergence, making the limit slightly
-        less harsh than XFoil's, but results above 0.84 are not meaningful.
-
-    Airfoil selection
-    -----------------
-    Normal mode  (run_airfoil_sweep=False):
-        maximum_camber_input / maximum_camber_position_input / thickness_to_chord_input
-        are used directly.
-
-    Sweep mode   (run_airfoil_sweep=True  OR  via the 'Run Airfoil Sweep' action):
-        A Q3D sweep over camber_range × position_range × thickness_range picks
-        the feasible NACA 4-series shape with the highest L/D margin above
-        ld_required.  Results are stored in sweep_result_* and picked up
-        automatically by the resolved Attributes below.
-
-    Structural mass (Roskam Vol. I §8.4 / §8.5):
-    - Wing : W_w  = 0.036 * S^0.758 * AR^0.6 * (t/c)^-0.3   (Roskam Table 8.1)
-    - HT   : W_ht = 0.016 * S_ht^0.873 * AR_ht^0.357         (Roskam Table 8.1)
-    - VT   : W_vt = 0.073 * S_vt^0.873 * AR_vt^0.357         (Roskam Table 8.1)
-    CG of each surface at 40% MAC from the LE of MAC (Roskam §8.4 statistical).
     """
 
     # Q3D vortex-lattice Mach validity limit (see class docstring).
@@ -99,18 +70,8 @@ class LiftingSurface(GeomBase):
     maximum_camber_position_input: float = Input(0.40)
     thickness_to_chord_input:      float = Input(0.12)
 
-    # NACA 4-series code forwarded from Drone → Aircraft (e.g. "2412").
-    # User interaction and validation live in Drone._parsed_wing_naca.
-    # Priority (highest → lowest):
-    #   1. sweep_result_* (set after run_sweep action)
-    #   2. naca_input     (forwarded from Drone.wing_naca_input)
-    #   3. maximum_camber_input / maximum_camber_position_input / thickness_to_chord_input
     naca_input: str = Input(None)
 
-    # Path to the .dat file that the rendered airfoil Parts should read their
-    # geometry from.  Set by Drone._active_wing_dat_path (default: naca0012.dat).
-    # Sweep Airfoil instances (created inside best_airfoil_params) do NOT receive
-    # this — they compute geometry from their explicit NACA params.
     active_dat_path: str = Input(None)
 
     sweep_result_camber:    float = Input(None)
@@ -165,15 +126,6 @@ class LiftingSurface(GeomBase):
     def _parsed_naca_input(self):
         """
         Parse the NACA 4-series string passed in via naca_input.
-
-        Validation (with user-facing dialog) is handled upstream in Drone so
-        that the error is surfaced at the top-level object.  Here we only do
-        a silent parse: bad strings are logged and return None so the fallback
-        camber/position/thickness inputs remain active without disrupting the
-        geometry.
-
-        Accepted formats: "2412", "NACA2412", "naca 2412" (spaces stripped).
-        Returns dict {camber, position, thickness, naca_str} or None.
         """
         raw = self.naca_input
         if raw is None or str(raw).strip() == "":
@@ -473,10 +425,7 @@ class LiftingSurface(GeomBase):
         return self.mac_spanwise_position * tan(radians(self.sweep_le))
 
     # ------------------------------------------------------------------ #
-    # AERODYNAMIC CENTRE x-position (from nose)
-    #
-    # Roskam Vol. II §3.2: x_ac = attach_x + LE sweep offset to MAC + 0.25 * MAC
-    # The sweep offset brings us to the LE of the MAC spanwise station.
+    # AERODYNAMIC CENTRE
     # ------------------------------------------------------------------ #
 
     @Attribute
@@ -486,12 +435,11 @@ class LiftingSurface(GeomBase):
 
         Roskam Vol. II §3.2: AC of a swept tapered wing lies at 25% MAC,
         measured from the leading edge of the MAC.
-        x_ac = attach_x + mac_x_offset + 0.25 * MAC
         """
         return self.attach_x + self.mac_x_offset + 0.25 * self.mean_aerodynamic_chord
 
     # ------------------------------------------------------------------ #
-    # STRUCTURAL MASS  (Roskam Vol. I §8.4 / §8.5)
+    # STRUCTURAL MASS 
     # ------------------------------------------------------------------ #
 
     @Attribute
@@ -503,9 +451,6 @@ class LiftingSurface(GeomBase):
         - Wing : W_w  = 0.036 * S_w^0.758 * AR_w^0.6  * (t/c)^-0.3
         - HT   : W_ht = 0.016 * S_ht^0.873 * AR_ht^0.357
         - VT   : W_vt = 0.073 * S_vt^0.873 * AR_vt^0.357
-
-        S in [m²], AR dimensionless, t/c dimensionless.
-        All three equations from Roskam Vol. I Table 8.1 UAV/homebuilt row.
         """
         S  = self._effective_area
         AR = self.aspect_ratio
@@ -525,8 +470,7 @@ class LiftingSurface(GeomBase):
         Structural CG x-position from aircraft nose [m].
 
         Roskam Vol. I §8.4: wing/tail structural mass centroid at 40% MAC
-        from the leading edge of the MAC — consistent with the wingbox
-        spanning ~15–60% chord (front_spar to rear_spar midpoint ≈ 38%).
+        from the leading edge of the MAC
         """
         return self.attach_x + self.mac_x_offset + 0.40 * self.mean_aerodynamic_chord
 
@@ -846,7 +790,6 @@ if __name__ == "__main__":
         camber_range=[0.0, 0.02, 0.03, 0.04, 0.05, 0.06],
         position_range=[0.3, 0.35, 0.4, 0.45, 0.5],
         thickness_range=[0.08, 0.10, 0.12, 0.15],
-        cm_min=-0.50, cm_max=0.00, t_min=0.10,
         weight=15_000, velocity=60.0, altitude=2_000,
         t_factor_root=1.0, t_factor_tip=1.0,
         front_spar_position=0.15, rear_spar_position=0.60,

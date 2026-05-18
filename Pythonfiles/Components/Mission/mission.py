@@ -1,35 +1,3 @@
-"""
-mission.py
-==========
-Pure-Python mission sizing — no ParaPy dependency.
-All methods are plain functions; no @Attribute caching.
-
-Unit conventions:
-  range      : km
-  speed      : m/s  (converted to km/hr inside Breguet)
-  SFC        : [1/hr] for jet  (thrust-specific, dimensionless fuel fraction/hr)
-               [1/hr] for prop (interpreted as fuel fraction per hr)
-  endurance  : hr
-
-Breguet equations used:
-  Jet range:      R[km] = V[km/hr] / SFC[1/hr] * L/D * ln(Wi/Wf)
-  Prop range:     R[km] = eta * V[km/hr] / SFC[1/hr] * L/D * ln(Wi/Wf)
-  Jet endurance:  E[hr] = 1/SFC[1/hr] * L/D * ln(Wi/Wf)
-  Prop endurance: E[hr] = eta / SFC[1/hr] * L/D * ln(Wi/Wf)   (Raymer §3.5)
-
-Speed convention:
-  cruise_speed is used for ALL flight legs (cruise and loiter).
-  This gives a single consistent L/D across the mission and avoids the
-  ambiguity of a separate loiter speed input.
-
-Mission profile:
-  taxi -> climb -> cruise -> loiter -> cruise back -> reserve -> land -> taxi
-
-Performance margins:
-  - L/D        : single value, evaluated at cruise_speed and actual wing loading.
-  - Fuel driver: which leg (cruise combined or loiter) consumed more fuel fraction.
-"""
-
 import numpy as np
 import Pythonfiles.metric_imperial_conversions as m2i
 from Pythonfiles.Components.Mission.WP_WS_diagram import WP_WS_Diagram
@@ -40,9 +8,6 @@ from Pythonfiles.Components.Mission.WP_WS_diagram import WP_WS_Diagram
 def _show_infeasible_dialog(title: str, message: str) -> None:
     """
     Show a modal tkinter warning dialog, then destroy the root window.
-
-    Silently suppressed if tkinter is unavailable (headless / CI environment).
-    This mirrors the approach used in Airfoil.py for the XFoil Mach limit.
     """
     try:
         import tkinter as tk
@@ -283,10 +248,6 @@ class Mission:
               f"wf_w0:       {wf_w0:.4f}\n")
 
         # Raymer empty-weight fraction coefficients (Table 3.1).
-        # NOTE: These were derived from large manned aircraft.  For small UAVs
-        # (MTOW < ~2 000 kg) the power-law extrapolates badly, producing
-        # We_frac > 0.80.  We_frac_max caps the result at a physically
-        # reasonable upper bound derived from real UAV data.
         if self.engine_type == "Jet":
             A, C_exp = 1.67, -0.16
             We_frac_max = 0.50   # jet UAV (Global Hawk ≈ 0.47, capped at 0.50)
@@ -325,33 +286,10 @@ class Mission:
             _show_infeasible_dialog("Mission Infeasible — Fuel Fraction ≥ 1", msg)
             return float("nan"), float("nan"), float("nan")
 
-        # ── Raymer sizing equation (robust root-find) ─────────────────────── #
-        #
-        #   f(W0) = W0 * (1 - fuel_frac - We_frac(W0)) - W_payload = 0
-        #
-        # where  We_frac(W0) = min(A * W0^C_exp, We_frac_max)
-        #
-        # The simple Picard iteration W0 ← payload/denom is unstable when the
-        # slope of We_frac exceeds the slope of the payload line (common for
-        # small UAVs with demanding missions).  We use bisection instead,
-        # which is unconditionally convergent given a bracket [lo, hi] with
-        # opposite signs of f.
-
         def _f(W0_lbs_: float) -> float:
             we = min(A * (W0_lbs_ ** C_exp), We_frac_max)
             return W0_lbs_ * (1.0 - fuel_frac - we) - payload_lbs
 
-        # ── Hard MTOW cap ───────────────────────────────────────────── #
-        #
-        # When fuel_frac approaches (1 - We_frac_max), the denominator
-        # (1 - fuel_frac - We_frac) → 0 and MTOW → ∞.  The bisection
-        # can still find a "root" at millions of kg by expanding hi
-        # geometrically — technically correct but completely unphysical.
-        #
-        # Fix: evaluate _f at the 100-tonne cap FIRST.  If f(hi_max) ≤ 0
-        # the root lies beyond 100 t, which is outside the scope of any
-        # UAV this tool is designed to size.  Return NaN immediately with
-        # a clear diagnostic instead of converging to an absurd value.
         _MTOW_MAX_KG  = 100000.0   # [kg] — hard UAV scope limit
         hi_max_lbs    = m2i.kilograms_to_pounds(_MTOW_MAX_KG)
 
@@ -402,9 +340,6 @@ class Mission:
             )
             return float("nan"), float("nan"), float("nan")
 
-        # ── Find bracket [lo, hi] with f(lo) < 0 < f(hi) ─────────────── #
-        # hi is now capped at hi_max_lbs because we already verified
-        # f(hi_max_lbs) > 0 above.
         lo, hi = payload_lbs * 0.5, min(payload_lbs * 200.0, hi_max_lbs)
         for _ in range(40):
             if _f(hi) > 0:
@@ -457,12 +392,9 @@ class Mission:
         """
         From the full combined mission:
 
-        1. L/D at cruise_speed for each leg — since the same speed is used
-           throughout, differences reflect only the wing loading change as
-           fuel burns off. The higher L/D leg is the aerodynamic design driver.
+        1. L/D at cruise_speed for each leg
 
-        2. Fuel fraction per leg — which of cruise or loiter consumed more
-           fuel, i.e. which drives the fuel weight sizing.
+        2. Fuel fraction per leg
         """
         fr = self._fuel_fracs()
 
@@ -529,6 +461,7 @@ if __name__ == "__main__":
             maximum_mach=mach_max,
             prop_efficiency=prop_eff,
             cruise_speed=v_cruise,
+            loiter_speed=v_cruise*0.5,
             mission_objective=objective,
             oswald_factor=0.8,
             reserve_time=0.5,
@@ -544,23 +477,3 @@ if __name__ == "__main__":
                       "High Endurance", 9.2, "Turboprop")
     MTOW, _, fw = m1.fuel_weight_sizing()
     print(f"MTOW={MTOW:.1f} kg  fuel={fw:.1f} kg\n")
-
-    print("=== Turboprop 5000 km / 8 hr ===")
-    m2 = make_mission(6000, 5000, 8, 100, 0.5, 0.5, 0.8, 80,
-                      "High Endurance", 9.2, "Turboprop")
-    MTOW, _, fw = m2.fuel_weight_sizing()
-    print(f"MTOW={MTOW:.1f} kg  fuel={fw:.1f} kg\n")
-
-    print("=== Jet 1000 km / 5 hr ===")
-    m_jet = make_mission(8000, 1000, 5, 150, 0.8, 0.8, 1.0, 220,
-                         "Long range", 7.5, "Jet")
-    MTOW, _, fw = m_jet.fuel_weight_sizing()
-    WS, TW = m_jet.thrust_and_wing_loading()
-    print(f"MTOW={MTOW:.1f} kg  fuel={fw:.1f} kg  W/S={WS:.1f}  T/W={TW:.4f}\n")
-
-    print("=== Piston 100 km / 5 hr ===")
-    m_pi = make_mission(3000, 100, 5, 50, 0.4, 0.3, 0.8, 60,
-                        "Low cost", 7.6, "Piston")
-    MTOW, _, fw = m_pi.fuel_weight_sizing()
-    WS, WP = m_pi.thrust_and_wing_loading()
-    print(f"MTOW={MTOW:.1f} kg  fuel={fw:.1f} kg  W/S={WS:.1f}  W/P={WP:.4f}")

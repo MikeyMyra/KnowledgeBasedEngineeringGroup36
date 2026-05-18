@@ -1,16 +1,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import os
-import sys
-import json
-from Pythonfiles.Components.Mission.ISA_calculator import *
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from Pythonfiles.Components.Mission.ISA_calculator import *
 
 class WP_WS_Diagram:
     
-    def __init__(self, aspect_ratio, CL_max_clean, CL_max_land, CL_max_TO, cruise_speed, CD0, prop_eff, engine_type,
-                 oswald_factor, n_max, x_max=1000, y_max=1, plot=True, save_path=None):
+    def __init__(self, aspect_ratio=1, CL_max_clean=1, CL_max_land=1, CL_max_TO=1, cruise_speed=10, CD0=0.1, prop_eff=1, engine_type='Jet',
+                 oswald_factor=0.9, n_max=2.5, x_max=1000, y_max=1, plot=True, save_path=None):
 
         self.plot = plot
         self.save_path = save_path
@@ -52,19 +48,6 @@ class WP_WS_Diagram:
         if self.plot or self.save_path:
             self.plot_wing_loading_constraints()
     
-    # def load_data(self):
-    #
-    #     # Load main aircraft data
-    #     with open("__data__/aircraft_data.json", "r") as f:
-    #         self.aircraft = json.load(f)
-    #
-    #     self.pre_CL_MAX_clean = self.aircraft['aerodynamics']['CL_max']
-    #     self.pre_CL_MAX_land = self.aircraft['aerodynamics']['CL_land']
-    #     self.pre_CL_MAX_TO = self.aircraft['aerodynamics']['CL_TO']
-    #     self.pre_rho = self.aircraft['environment']['density_kg/m3']
-    #     self.pre_h = self.aircraft['environment']['altitude_m']
-    #     self.pre_A_design = self.aircraft['aerodynamics']['aspect_ratio'] / 2
-    
     def set_densities(self):
         for h in self.h:
             rho = ISA_calculator(h)[2]
@@ -80,8 +63,7 @@ class WP_WS_Diagram:
         Roskam Part I, eq 3.8 (propeller) and eq 3.6 (jet)
         TOP: takeoff parameter, ~200 for military, ~300 for civil
         """
-
-
+        
         if CL_TO_list is None:
             CL_TO_list = [self.CL_max_TO]
 
@@ -224,9 +206,6 @@ class WP_WS_Diagram:
     def maneuver_loading(self, rho=1.225):
         """
         Structural / maneuver constraint.
-        At load factor n, stall speed increases: V_stall_n = V_stall * sqrt(n)
-        Wing loading must satisfy: W/S <= 0.5 * rho * V_stall^2 * CL_max / n
-        Or expressed as a vertical line on the diagram.
         """
         W_S_limit = 0.5 * rho * self.V_cruise**2 * self.CL_max_clean[0] / self.n_max
         return W_S_limit
@@ -432,10 +411,7 @@ class WP_WS_Diagram:
 # Example Usage
 if __name__ == "__main__":
     wpws = WP_WS_Diagram(
-
         plot=True,
         x_max=1000,
         y_max=1
-
     )
-    wpws.plot_wing_loading_constraints()

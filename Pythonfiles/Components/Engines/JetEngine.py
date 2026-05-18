@@ -1,10 +1,7 @@
-from math import radians, tan, sqrt, pi
+from math import radians, tan
 
 from parapy.core import Input, Attribute, Part, child
-from parapy.geom import (
-    GeomBase, LoftedSolid,
-    Circle, translate, rotate, Vector,
-)
+from parapy.geom import GeomBase, LoftedSolid, Circle, translate, rotate, Vector
 
 from Pythonfiles.Components.Frame import Frame
 
@@ -14,17 +11,6 @@ class JetEngine(GeomBase):
     Turbofan/turbojet nacelle with Roskam-based sizing.
 
     Sizing relations (Roskam Vol. V, §4 / Vol. I §3.2):
-    ─────────────────────────────────────────────────────────────────────
-    Thrust:     T_total = T/W * MTOW * g
-                T_eng   = T_total / n_engines
-
-    Nacelle:    D_nac = 0.2284 * (T_eng_kN)^0.4     [Roskam Vol. V §4]
-                L_nac = 2.5 * D_nac
-
-    BPR:        BPR = 15 * (1 - T/W)^2, clamped [1, 12]  [Roskam Vol. I §3.2]
-    Fan tip:    r_fan = 0.90 * r_nac
-    Core:       r_core = 0.40 * r_fan
-    ─────────────────────────────────────────────────────────────────────
     """
 
     # ------------------------------------------------------------------ #
@@ -40,9 +26,6 @@ class JetEngine(GeomBase):
     rho: float = Input()
     g: float = Input()
 
-    # cruise TAS — passed from Engine._jet_kwargs; kept here so ParaPy does
-    # not raise on the unexpected keyword argument.  Useful for future
-    # ram-drag or Mach-based thrust-lapse corrections (Roskam Vol. V §5).
     cruise_speed: float = Input()   # [m/s]
 
     # ------------------------------------------------------------------ #
@@ -107,14 +90,8 @@ class JetEngine(GeomBase):
         For a turbofan/turbojet, thrust falls with air density as:
             T_alt / T_sl ≈ (ρ_alt / ρ_sl)^0.75
 
-        The exponent 0.75 is the standard value for high-bypass turbofans
         (Raymer §13.3; Roskam Vol. V §5.2).  Turbojets use ~0.9 but 0.75
         is the conservative design assumption for mixed fleets.
-
-        At 20 km (ρ ≈ 0.089 kg/m³):  factor ≈ (0.089/1.225)^0.75 ≈ 0.12
-        → the engine produces only 12 % of its sea-level rated thrust.
-        To deliver the required altitude thrust it must therefore be rated
-        at ~8× that thrust at sea level.
         """
         sigma = max(self.rho, 0.01) / 1.225   # density ratio (clamp away from zero)
         return min(sigma ** 0.75, 1.0)         # cap at 1.0 (no lapse below sea level)
@@ -123,10 +100,6 @@ class JetEngine(GeomBase):
     def sl_thrust_per_engine(self) -> float:
         """
         Sea-level rated thrust per engine [N].
-
-        This is the thrust the engine must be designed to produce at
-        sea level so that, after altitude lapse, it still delivers the
-        required cruise thrust at the mission altitude.
         """
         return self.thrust_per_engine / self.thrust_lapse_factor
 
@@ -138,11 +111,6 @@ class JetEngine(GeomBase):
     def nacelle_radius(self) -> float:
         """
         Nacelle outer radius [m] — Roskam Vol. V §4 correlation.
-
-        The correlation is calibrated against sea-level-rated thrust, so
-        the sea-level equivalent (lapse-corrected) thrust is used here.
-        Using the altitude thrust directly would produce an unrealistically
-        small nacelle at high cruise altitudes.
         """
         if self.nacelle_radius_override is not None:
             return self.nacelle_radius_override
@@ -222,8 +190,7 @@ class JetEngine(GeomBase):
 
     @Attribute
     def _engine_base(self):
-        """Translated-only position (no rotation) — used to place profiles
-        so that after rotate90('y') their Z-normal aligns with global X."""
+        """Translated-only position (no rotation)."""
         return translate(
             self.position,
             Vector(1, 0, 0), self._attach_x,
@@ -233,7 +200,7 @@ class JetEngine(GeomBase):
 
     @Attribute
     def _engine_position(self):
-        """Fully oriented engine frame (rotated) — used for the Frame part."""
+        """Fully oriented engine frame (rotated)."""
         return self._engine_base.rotate90('y')
 
     # ------------------------------------------------------------------ #

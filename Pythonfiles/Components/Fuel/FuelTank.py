@@ -1,51 +1,3 @@
-"""
-FuelTank.py
-===========
-Cylindrical fuel tank with hemispherical end-caps (capsule geometry),
-sized from fuel mass, fuel type, and a user-specified length-to-diameter
-aspect ratio.
-
-Geometry
---------
-The tank is a *capsule*: a cylinder of length L_cyl capped at each end
-by a hemisphere of radius R.
-
-    |<-- R -->|<-------- L_cyl -------->|<-- R -->|
-    └─ nose ─┘         cylinder         └─ tail ─┘
-    Total length  L_total = L_cyl + 2·R
-    Total volume  V       = π·R²·L_cyl + (4/3)·π·R³
-
-Given fuel volume V_fuel and desired aspect ratio AR = L_total / (2·R):
-
-    L_total  = 2·AR·R
-    L_cyl    = 2R·(AR − 1)
-    V_tank   = π·R²·2R·(AR−1) + (4/3)·π·R³
-             = π·R³·[2(AR−1) + 4/3]
-             = π·R³·(2·AR − 2/3)
-
-    → R = (V_tank / (π·(2·AR − 2/3)))^(1/3)
-
-V_tank includes a ~10 % overhead for ullage and tank structure.
-
-Fuselage sizing outputs
------------------------
-``min_fuselage_length``  — total tank length (fuselage cylinder must fit this
-                           in addition to the payload bay).
-``min_fuselage_radius``  — tank outer radius + 3 % structural clearance.
-
-Placement
----------
-The tank sits in the centre wing box, immediately aft of the payload bay.
-Its x-position in the fuselage frame is determined by Aircraft and passed
-in via ``position``.  The tank nose is at ``self.position``.
-
-References
-----------
-- Roskam Vol. I §3.5  — fuel system mass fractions
-- MIL-T-5578          — ullage and pressurisation requirements
-- fuel_properties.json — density and compatibility data
-"""
-
 import json
 import math
 import os
@@ -53,8 +5,6 @@ import os
 from parapy.core  import Input, Attribute, Part, child, action
 from parapy.geom  import GeomBase, LoftedSolid, Circle, translate, Vector
 
-
-# ─── load fuel database ───────────────────────────────────────────────────── #
 
 _DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", ".." , "Inputfiles", "fuel_properties.json")
 
@@ -68,16 +18,28 @@ _STRUCTURE     = _FUEL_DB["structure_fraction"]     # 0.05
 _VOLUME_FACTOR = 1.0 / (1.0 - _ULLAGE - _STRUCTURE)  # ≈ 1.111
 
 
-# ─────────────────────────────────────────────────────────────────────────── #
-# FUEL TANK
-# ─────────────────────────────────────────────────────────────────────────── #
-
 class FuelTank(GeomBase):
     """
     Capsule-shaped fuel tank sized from fuel mass and fuel type.
 
     The tank is placed in the fuselage centre wing box immediately aft of
     the payload bay.  Its ``position`` (nose) is set by Aircraft.
+    
+    Geometry
+    --------
+    The tank is a *capsule*: a cylinder of length L_cyl capped at each end
+    by a hemisphere of radius R.
+
+        |<-- R -->|<-------- L_cyl -------->|<-- R -->|
+        └─ nose ─┘         cylinder         └─ tail ─┘
+        Total length  L_total = L_cyl + 2·R
+        Total volume  V       = π·R²·L_cyl + (4/3)·π·R³
+
+    References
+    ----------
+    - Roskam Vol. I §3.5  — fuel system mass fractions
+    - MIL-T-5578          — ullage and pressurisation requirements
+    - fuel_properties.json — density and compatibility data
     """
 
     # ------------------------------------------------------------------ #
@@ -175,11 +137,6 @@ class FuelTank(GeomBase):
     def tank_volume(self) -> float:
         """
         Required tank internal volume [m³], including ullage and structure.
-
-        V_tank = V_fuel × 1 / (1 − ullage − structure_fraction)
-               ≈ V_fuel × 1.111
-
-        References: MIL-T-5578 (5 % ullage); typical 5 % structure allowance.
         """
         return self.fuel_volume * _VOLUME_FACTOR
 
@@ -222,23 +179,17 @@ class FuelTank(GeomBase):
     def cg_local_x(self) -> float:
         """
         Fuel CG x-offset from tank nose [m].
-
-        Assumes uniform fuel distribution (valid for conceptual sizing).
-        For a capsule, the centroid is at the geometric centre.
         """
         return self.total_length / 2.0
 
     # ------------------------------------------------------------------ #
-    # FUSELAGE SIZING OUTPUTS  (same interface as Payload)
+    # FUSELAGE SIZING OUTPUTS
     # ------------------------------------------------------------------ #
 
     @Attribute
     def min_fuselage_length(self) -> float:
         """
         Minimum fuselage cylinder contribution required for this tank [m].
-
-        Equal to ``total_length``; the Fuselage adds this to the payload
-        bay length to get the total required cylinder length.
         """
         return self.total_length
 
@@ -246,9 +197,6 @@ class FuelTank(GeomBase):
     def min_fuselage_radius(self) -> float:
         """
         Minimum fuselage inner radius to accommodate the tank [m].
-
-        Outer radius + 3 % radial clearance for tank-to-skin gap
-        (insulation, wiring routing, and structural web thickness).
         """
         return self.outer_radius * 1.03
 
@@ -278,19 +226,18 @@ class FuelTank(GeomBase):
 
         data = []
 
-        # ① nose hemisphere  (θ: 0 → π/2)
+        # ① nose hemisphere
         for i in range(n):
             theta = (math.pi / 2.0) * i / (n - 1)
             x_loc = R * (1.0 - math.cos(theta))   # 0 → R
             r_loc = R * math.sin(theta)             # 0 → R
             data.append((x_loc, max(r_loc, r_min)))
 
-        # ② cylinder far end  (only if cylinder exists)
+        # ② cylinder far end
         if L_cyl > 1e-3:
             data.append((R + L_cyl, R))
 
-        # ③ tail hemisphere  (θ: 0 → π/2, x from R+L_cyl, r from R → 0)
-        #    skip i=0 to avoid duplicate profile at the cap join
+        # ③ tail hemisphere
         for i in range(1, n):
             theta = (math.pi / 2.0) * i / (n - 1)
             x_loc = R + L_cyl + R * math.sin(theta)   # R+L_cyl → total_length
@@ -362,9 +309,9 @@ class FuelTank(GeomBase):
         print("=" * 60)
 
 
-# ─────────────────────────────────────────────────────────────────────────── #
-# STANDALONE TEST
-# ─────────────────────────────────────────────────────────────────────────── #
+# ------------------------------------------------------------------ #
+# TEST
+# ------------------------------------------------------------------ #
 
 if __name__ == "__main__":
     from parapy.gui import display

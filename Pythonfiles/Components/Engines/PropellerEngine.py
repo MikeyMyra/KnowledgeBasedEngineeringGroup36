@@ -1,10 +1,7 @@
 from math import radians, tan, sin, cos, pi, sqrt, isfinite
 
 from parapy.core import Input, Attribute, Part, child
-from parapy.geom import (
-    GeomBase, LoftedSolid,
-    Circle, translate, rotate, Vector,
-)
+from parapy.geom import GeomBase, LoftedSolid, Circle, translate, rotate, Vector
 
 from Pythonfiles.Components.Frame import Frame
 
@@ -14,28 +11,6 @@ class PropellerEngine(GeomBase):
     Propeller (tractor/pusher) engine with Roskam-based sizing.
 
     Sizing relations (Roskam Vol. I, §3.6 + actuator-disk theory):
-    ─────────────────────────────────────────────────────────────────────
-    Thrust:         T_total = T/W * MTOW * g
-                    T_eng   = T_total / n_engines
-
-    Disk area:      A = T_eng / DL,  DL = disk_loading_uav  [N/m²]
-    Shaft power:    P = T * sqrt(T / (2 * rho * A))          [momentum theory]
-    Prop diameter:  D_prop = 0.658 * P_kW^0.25              [Roskam §3.6]
-                    blade_length = D_prop / 2, capped at _max_blade_length
-
-    Blade chord:    c_base = 0.065 * D_prop                  [Roskam §3.6, 2-blade ref]
-                    c_root = c_base * n_blades / 2           [scaled to keep σ ≈ target]
-                    c_tip  = 0.30 * c_root
-
-    Blade count:    σ = n * c / (π * R)  → n = σ * π * R / c_base
-                    clamped to [2, 6]
-
-    Spinner:        r_spinner = 0.15 * D_prop
-                    L_spinner = 1.5 * r_spinner
-
-    Nacelle:        nacelle_radius = spinner_radius  (motor cowl, not thrust-sized)
-                    nacelle_length = 3.5 * nacelle_radius
-    ─────────────────────────────────────────────────────────────────────
     """
 
     # ------------------------------------------------------------------ #
@@ -165,19 +140,11 @@ class PropellerEngine(GeomBase):
         Altitude note for propeller propulsion.
 
         Engine type is determined solely by Mach number (M < 0.40 → propeller).
-        At high altitude the propeller disk scales with air density via
-        actuator-disk theory (D ∝ 1/√ρ), so large props are physically
-        consistent — they are just geometrically bigger.
-
-        This attribute provides informational sizing context visible in
-        the ParaPy attribute browser.
 
         Roskam Vol. I §3.2 practical altitude bands (for reference):
-          Piston ceiling      : ~4 500 m  (15 000 ft)
-          Turboprop ceiling   : ~9 000 m  (30 000 ft)
-          Above 9 000 m: turboprop still possible with pressure-ratio
-          controlled powerplants (e.g. Rolls-Royce AE2100 on Global Hawk
-          predecessor) and large-diameter, slow-turning props.
+        Piston ceiling      : ~4 500 m  (15 000 ft)
+        Turboprop ceiling   : ~9 000 m  (30 000 ft)
+        Above 9 000 m: turboprop 
         """
         h          = self.mission_altitude
         rho_sl     = 1.225
@@ -355,8 +322,7 @@ class PropellerEngine(GeomBase):
 
     @Attribute
     def _engine_base(self):
-        """Translated-only position (no rotation) — used to place profiles
-        so that after rotate90('y') their Z-normal aligns with global X."""
+        """Translated-only position (no rotation)."""
         return translate(
             self.position,
             Vector(1, 0, 0), self._attach_x,
@@ -366,7 +332,7 @@ class PropellerEngine(GeomBase):
 
     @Attribute
     def _engine_position(self):
-        """Fully oriented engine frame (rotated) — used for the Frame part."""
+        """Fully oriented engine frame (rotated)."""
         return self._engine_base.rotate90('y')
 
     # ------------------------------------------------------------------ #
@@ -512,6 +478,7 @@ if __name__ == "__main__":
     prop = PropellerEngine(
         label="prop_engine",
 
+        cruise_speed=50,
         mtow=100.0,
         n_engines=1,
         thrust_to_weight=0.35,

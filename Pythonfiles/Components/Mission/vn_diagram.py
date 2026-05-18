@@ -1,27 +1,3 @@
-"""
-vn_diagram.py
-=============
-Maneuver V-n diagram for UAV initial sizing.
-
-Usage
------
-Run standalone with defaults:
-    python vn_diagram.py
-
-Or import and call from Drone:
-    from vn_diagram import plot_vn_diagram
-    plot_vn_diagram(
-        MTOW=self.MTOW,
-        wing_area=self.wing_area,
-        rho=self.air_density,
-        n_pos=self.maximum_load_factor,
-    )
-
-References
-----------
-Raymer §V.2, Roskam Vol. V §4.2, EASA CS-LUAS ACJ VLA 333.
-"""
-
 import datetime
 import glob
 import math
@@ -33,6 +9,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
+""" 
+Raymer §V.2, Roskam Vol. V §4.2, EASA CS-LUAS ACJ VLA 333.
+"""
 
 # ── default parameters (edit or override via function arguments) ──────────── #
 
@@ -110,28 +89,6 @@ def plot_vn_diagram(
 ):
     """
     Generate, display, and save a maneuver V-n diagram.
-
-    Air density is derived from cruise_altitude via the ISA model.
-    Vc is set directly to cruise_speed (the actual design cruise speed).
-    Vd = Vd_factor × Vc  (EASA CS-LUAS default: 1.20).
-    n_neg defaults to −n_pos / 2 if not supplied.
-
-    Always calls plt.show(). If output_dir is given, also saves a timestamped
-    PNG there (any previous vn_diagram_*.png is archived to output_dir/data/).
-
-    Parameters
-    ----------
-    MTOW            : float      Maximum take-off mass [kg]
-    wing_area       : float      Reference wing area [m²]
-    cruise_speed    : float      Cruise true airspeed — used directly as Vc [m/s]
-    cruise_altitude : float      ISA altitude for air density [m]
-    n_pos           : float      Positive limit load factor [–]
-    n_neg           : float|None Negative limit load factor (negative value).
-                                 None → −n_pos / 2
-    CLmax_pos       : float      Max lift coefficient, positive stall [–]
-    CLmax_neg       : float      Max lift coefficient, negative stall (magnitude) [–]
-    Vd_factor       : float      Vd = Vd_factor × Vc [–]
-    output_dir      : str|None   Directory to save timestamped PNG. None = no file saved.
     """
     if n_neg is None:
         n_neg = -n_pos / 2.0
@@ -243,8 +200,6 @@ def plot_vn_diagram(
     return fig, ax
 
 
-# ── print summary to terminal ─────────────────────────────────────────────── #
-
 def print_summary(**kwargs):
     p = {**DEFAULTS, **kwargs}
     if p["n_neg"] is None:
@@ -270,8 +225,6 @@ def print_summary(**kwargs):
     print(f"  n−  limit         : {p['n_neg']:>8.1f} g")
     print("=" * 52)
 
-
-# ── standalone entry point ────────────────────────────────────────────────── #
 
 if __name__ == "__main__":
     print_summary()

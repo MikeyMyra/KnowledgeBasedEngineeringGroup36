@@ -17,7 +17,7 @@ class Undercarriage(GeomBase):
     - strut_height       : §8.6 Fig. 8.8 — ground clearance > max prop radius + 18 cm margin
     - wheel_major_radius : §8.5 Table 8.4 — tyre diameter correlation with MTOW
     - wheel_minor_radius : §8.5 — tyre width ≈ 35% of tyre diameter (fixed-wing norm)
-    - strut_radius       : NOTE (Roskam default not explicit) — scaled from strut load
+    - strut_radius       : Roskam default not explicit
     - main_gear_y        : §8.6 Fig. 8.5 — lateral track ≥ 3× wheel radius for tip-over stability
     """
 
@@ -65,14 +65,7 @@ class Undercarriage(GeomBase):
 
         Roskam Vol. I, §8.5, Table 8.4 covers GA/transport aircraft (MTOW > ~500 kg).
         The standard fit d_tire = 0.10 * m^0.29 extrapolates poorly to UAV masses,
-        producing wheels larger than the fuselage below ~100 kg.
-
-        The formula below is re-fitted to match:
-          - Roskam Table 8.4 at the high end (5 700 kg → ~0.21 m radius)
-          - Real UAV tyre data at the low end (25 kg → ~0.033 m radius, e.g. 66 mm tyre)
-            d_tire [m] ≈ 0.034 * MTOW[kg]^0.21
-        NOTE (Roskam): select the nearest standard tyre from a supplier catalogue;
-        this formula is a sizing starting point only.
+        producing wheels larger than the fuselage below ~100 kg..
         """
         d_tire = 0.034 * (max(1.0, self.aircraft_mass) ** 0.21)
         return d_tire / 2.0
@@ -82,7 +75,6 @@ class Undercarriage(GeomBase):
         """Tyre cross-section radius (half-width) [m].
 
         Roskam Vol. I, §8.5: tyre width ≈ 35% of tyre outer diameter.
-        NOTE (Roskam): round up to nearest standard section width.
         """
         return self.wheel_major_radius * 0.35
 
@@ -94,22 +86,12 @@ class Undercarriage(GeomBase):
         radius (propeller tip or nacelle) + 18 cm safety margin.
 
         Ground-to-fuselage-centreline distance = fuselage_radius + strut_height
-        + wheel_major_radius.  Solving for strut_height:
-
-            strut_height ≥ prop_clearance_radius + 0.18
-                           − fuselage_radius − wheel_major_radius
-
-        Three competing floors are taken:
-          1. Clearance requirement  (propeller / nacelle, above)
-          2. Tyre-stroke floor      : 2.0 × wheel_major_radius  (axle above ground
-                                      with tyre and ~50 % stroke travel margin)
-          3. Mass-based floor       : 0.05 + 0.015 × log10(m)  — prevents
-                                      near-zero struts on very light aircraft
+        + wheel_major_radius.
         """
         mass_floor    = 0.05 + 0.015 * math.log10(max(1.0, self.aircraft_mass))
         tyre_floor    = self.wheel_major_radius * 2.0
 
-        # 1. Prop / nacelle ground clearance
+        # Prop / nacelle ground clearance
         if self.prop_clearance_radius > 0.0:
             clearance_req = max(0.0,
                                 self.prop_clearance_radius + 0.18
@@ -118,13 +100,9 @@ class Undercarriage(GeomBase):
         else:
             clearance_req = 0.0
 
-        # 2. Tailstrike clearance on takeoff rotation  (Roskam Vol. I §8.6)
-        #    The aircraft rotates nose-up about the main gear contact point.
-        #    The tail tip sweeps downward by  L_tail × sin(θ_rot).
-        #    Roskam design rotation angle: 12° (10–15° range for GA/UAV).
-        #    Constraint: CG height ≥ L_tail × sin(θ_rot) + 0.10 m margin.
-        #    Solving for strut_height:
-        #      strut_height ≥ L_tail×sin(θ) + 0.10 − fuselage_radius − wheel
+        # Tailstrike clearance on takeoff rotation  (Roskam Vol. I §8.6)
+        # Roskam design rotation angle: 12° (10–15° range for GA/UAV).
+        # Constraint: CG height ≥ L_tail × sin(θ_rot) + 0.10 m margin.
         L_tail       = self.fuselage_length * (1.0 - 0.60)   # gear at 60% L_fus
         theta_rot    = math.radians(12.0)                     # Roskam 12° design
         tailstrike_req = max(0.0,
@@ -147,11 +125,6 @@ class Undercarriage(GeomBase):
     @Attribute
     def strut_radius(self) -> float:
         """Structural strut tube radius [m].
-
-        NOTE (Roskam default not explicit): sized as 25% of wheel_major_radius,
-        which gives visually and structurally proportionate struts across the UAV
-        mass range.  The previous log formula had a 0.04 m floor that was
-        oversized for small UAVs.  Flag for structural column-buckling check.
         """
         return self.wheel_major_radius * 0.25
 
@@ -210,16 +183,9 @@ class Undercarriage(GeomBase):
     def _main_gear_positions_y(self) -> list:
         """Lateral positions of each main strut [m].
 
-        Roskam Vol. I, §8.6, Fig. 8.5 — roll-over (tip-over) criterion:
+        Roskam Vol. I, §8.6, Fig. 8.5 — roll-over (tip-over) criterion
         The angle ψ from vertical to the line connecting the main gear contact
-        point to the CG must satisfy ψ ≥ 35°  (equivalently the aircraft can
-        lean 55° from the ground before tipping):
-
-            ψ = atan(half_track / cg_height) ≥ 35°
-            → half_track ≥ cg_height × tan(35°) ≈ cg_height × 0.700
-
-        A practical lower floor of 3.5 × wheel_major_radius is also kept to
-        prevent over-narrow gear on very low-CG configurations.
+        point to the CG must satisfy ψ ≥ 35°
         """
         min_tipover = self._cg_height * math.tan(math.radians(35.0))
         spacing     = max(self.wheel_major_radius * 3.5, min_tipover)

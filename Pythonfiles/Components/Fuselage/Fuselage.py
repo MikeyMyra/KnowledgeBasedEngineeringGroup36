@@ -6,12 +6,7 @@ from parapy.geom import GeomBase, LoftedSolid, Circle, Vector, translate
 from Pythonfiles.Components.Frame import Frame
 from Pythonfiles.Components.Fuselage.Undercarriage import Undercarriage
 
-from Pythonfiles.metric_imperial_conversions import (
-    kilograms_to_pounds,
-    feet_to_meters,
-    meters_to_feet,
-    pounds_to_kilograms,
-)
+from Pythonfiles.metric_imperial_conversions import kilograms_to_pounds, feet_to_meters
 
 
 class Fuselage(GeomBase):
@@ -24,9 +19,6 @@ class Fuselage(GeomBase):
     - cylinder_end      : §3.3 Fig. 3.7 — tailcone typically starts at 70% fuselage length
 
     Structural mass (Roskam Vol. I, §8.3):
-    - W_fus = C_f * MTOW^0.5 * L_fus^0.25
-      C_f = 0.328 (UAV re-fit from Roskam Table 8.1 "homebuilt" row scaled for UAV).
-    - CG assumed at 45% fuselage length (Roskam Vol. I §8.3 statistical midpoint).
     """
 
     # ------------------------------------------------------------------ #
@@ -58,16 +50,12 @@ class Fuselage(GeomBase):
     undercarriage_color_axle:  str  = Input()
     undercarriage_color_strut: str  = Input()
     undercarriage_retractible: bool = Input()
-    # Largest rotating radius that must clear the ground (prop tip or nacelle).
-    # Computed by Aircraft and forwarded here so Undercarriage can size struts.
+    
     prop_clearance_radius: float = Input(0.0)
-
-    # Payload object — drives min length/radius, None = no constraint
     payload = Input(None)
 
     # Gap between the nose-cone/cylinder junction and the first payload item [m].
     # Ensures the payload does not overlap the prop nacelle (tractor configs).
-    # Forwarded from Aircraft.payload_nose_clearance.
     payload_nose_clearance: float = Input(0.0)
 
     # FuelTank object — placed in centre wing box, drives additional
@@ -82,7 +70,6 @@ class Fuselage(GeomBase):
     def _roskam_length(self) -> float:
         """Fuselage length from Roskam Vol. I Table 3.4 UAV re-fit [m].
         Formula is L = 0.23 * MTOW^0.5 with MTOW in lbs, result in ft.
-        Converted to metric via metric_imperial_conversions.
         """
         mtow_lbs  = kilograms_to_pounds(self.aircraft_mass)
         length_ft = 0.23 * (mtow_lbs ** 0.50)
@@ -92,14 +79,6 @@ class Fuselage(GeomBase):
     def _roskam_radius(self) -> float:
         """
         Fuselage radius from fineness ratio l/d = 14 [m].
-
-        Roskam Vol. I §3.3 gives l/d ≈ 9 for manned aircraft, but UAVs are
-        notably more slender.  Real-world UAV data:
-          Predator A  : 8.2 m / 0.86 m  → l/d ≈ 19
-          Global Hawk : 14.5 m / 1.0 m  → l/d ≈ 29
-          Heron       : ~8 m  / 0.70 m  → l/d ≈ 23
-        l/d = 14 is a conservative lower bound that still keeps the fuselage
-        reasonably slender for a compact UAV without payload / tank constraints.
         """
         return self._roskam_length / (14.0 * 2.0)
 
@@ -114,16 +93,16 @@ class Fuselage(GeomBase):
         Fuselage total length [m] — payload + fuel-tank led sizing.
 
         Priority (highest to lowest):
-        ① Manual override  (length_override)
-        ② Combined bay length = payload bay + gap + fuel tank length,
-           scaled by 1/cylinder_fraction to get total fuselage length.
-           Both the payload bay and the fuel tank are altitude-independent
-           (payload geometry is fixed; tank depends only on fuel_mass /
-           density, not on fuselage dimensions), so the fuselage stays
-           compact even when the wing grows large at high altitude.
-        ③ Roskam power-law estimate — only when neither payload nor fuel
-           tank is defined  (L = 0.23 · MTOW^0.5, Roskam Vol. I Table 3.4).
-        ④ length_min_override  (from wing-chord constraint in Aircraft).
+        1 Manual override  (length_override)
+        2 Combined bay length = payload bay + gap + fuel tank length,
+            scaled by 1/cylinder_fraction to get total fuselage length.
+            Both the payload bay and the fuel tank are altitude-independent
+            (payload geometry is fixed; tank depends only on fuel_mass /
+            density, not on fuselage dimensions), so the fuselage stays
+            compact even when the wing grows large at high altitude.
+        3 Roskam power-law estimate — only when neither payload nor fuel
+            tank is defined  (L = 0.23 · MTOW^0.5, Roskam Vol. I Table 3.4).
+        4 length_min_override  (from wing-chord constraint in Aircraft).
 
         Fuselage cylinder layout (longitudinal):
         ┌─────────────┬──────────────┬─────────────────┐
@@ -135,15 +114,9 @@ class Fuselage(GeomBase):
             return max(self.length_override, self.length_min_override)
 
         cylinder_fraction = (self.cylinder_end - self.cylinder_start) / 100.0
-
-        # payload_nose_clearance is the gap reserved between the cylinder start
-        # and the first payload item (to clear the prop nacelle).  It must be
-        # counted as part of the cylinder occupancy so the fuselage stretches
-        # to fit payload_clearance + payload_bay + gap + tank.
-        payload_len = (self.payload.min_fuselage_length + self.payload_nose_clearance
-                       if self.payload is not None else 0.0)
-        tank_len    = (self.fuel_tank.min_fuselage_length + self._tank_gap
-                       if self.fuel_tank is not None else 0.0)
+        
+        payload_len = (self.payload.min_fuselage_length + self.payload_nose_clearance if self.payload is not None else 0.0)
+        tank_len    = (self.fuel_tank.min_fuselage_length + self._tank_gap if self.fuel_tank is not None else 0.0)
 
         combined = payload_len + tank_len
 
@@ -159,14 +132,6 @@ class Fuselage(GeomBase):
     def _structural_min_radius(self) -> float:
         """
         Hard lower bound on fuselage radius [m] driven by structural integrity.
-
-        The old value of 6 % of length gave l/d ≈ 8.3 — far too fat for a
-        slender UAV fuselage.  Real UAV fineness ratios are l/d = 15–29.
-        Using 3 % of length gives l/d ≈ 16.7, which is a conservative but
-        realistic lower bound for a semi-monocoque composite UAV fuselage.
-
-        Absolute floor of 60 mm ensures longerons and skin can physically fit
-        even for very small (< 2 m) fuselages.
         """
         return max(self.length * 0.03, 0.06)
 
@@ -176,16 +141,16 @@ class Fuselage(GeomBase):
         Fuselage outer radius [m] — payload + fuel-tank led sizing.
 
         Priority (highest to lowest):
-        ① Manual override  (radius_override)
-        ② Largest of payload cross-section and fuel tank cross-section.
-           The fuselage must accommodate both: the payload bay and the
-           fuel tank share the same cylindrical section, so the fuselage
-           radius must satisfy the tighter of the two radial constraints.
-           • Payload: Payload.min_fuselage_radius  (+5 % clearance baked in)
-           • Tank:    FuelTank.min_fuselage_radius  (+3 % clearance baked in)
-        ③ Roskam fineness-ratio estimate — only when no payload OR tank defined.
-        ④ Structural minimum  (_structural_min_radius  ≈ 6 % of length)
-        ⑤ Wing-interference minimum  (radius_min_override = 8 % root chord)
+        1 Manual override  (radius_override)
+        2 Largest of payload cross-section and fuel tank cross-section.
+            The fuselage must accommodate both: the payload bay and the
+            fuel tank share the same cylindrical section, so the fuselage
+            radius must satisfy the tighter of the two radial constraints.
+            • Payload: Payload.min_fuselage_radius  (+5 % clearance baked in)
+            • Tank:    FuelTank.min_fuselage_radius  (+3 % clearance baked in)
+        3 Roskam fineness-ratio estimate — only when no payload OR tank defined.
+        4 Structural minimum  (_structural_min_radius  ≈ 6 % of length)
+        5 Wing-interference minimum  (radius_min_override = 8 % root chord)
         """
         if self.radius_override is not None:
             return self.radius_override
@@ -215,11 +180,6 @@ class Fuselage(GeomBase):
 
         Roskam Vol. I §8.3, Eq. (8.5) — UAV re-fit:
             W_fus = 0.328 * MTOW^0.5 * L_fus^0.25
-
-        MTOW in lbs, L_fus in ft, result in lbs — converted to kg.
-        The coefficient 0.328 is the Roskam Table 8.1 "homebuilt" value
-        scaled down by 0.70 for composite/light UAV construction.
-        Reference: Roskam Table 8.1; UAV scaling per Raymer §15.3.
         """
         from Pythonfiles.metric_imperial_conversions import meters_to_feet, pounds_to_kilograms
         mtow_lbs   = kilograms_to_pounds(self.aircraft_mass)
@@ -421,17 +381,6 @@ class Fuselage(GeomBase):
             mesh_deflection=self.mesh_deflection,
         )
 
-    # ------------------------------------------------------------------ #
-    # REMAINING TODOS
-    # ------------------------------------------------------------------ #
-
-    @Attribute
-    def calculate_volume(self):
-        return 1
-
-    @Attribute
-    def calculate_skin_friction(self):
-        return 1
 
 
 # ---------------------------------------------------------------------- #

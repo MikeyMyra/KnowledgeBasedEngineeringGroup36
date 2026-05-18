@@ -1,6 +1,5 @@
 import numpy as np
 
-"""ISA CALCULATOR"""
 
 def ISA_calculator(h):
     """Calculate the temperature, pressure, density, speed of sound and density altitude at a given altitude.	
@@ -32,16 +31,9 @@ def ISA_calculator(h):
     DA = p / (R * T) # density altitude [m]
     return T, p, rho, a, DA
 
-import numpy as np
 
 def ISA_altitude_from_density(rho):
     """Calculate the altitude given the air density (rho) using the ISA model.
-    
-    Args:
-        rho: Air density [kg/m^3]
-    
-    Returns:
-        h: Altitude [m]
     """
     # Constants
     T0 = 288.15  # ISA SL temperature [K]

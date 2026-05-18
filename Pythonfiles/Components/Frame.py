@@ -1,4 +1,4 @@
-from parapy.geom import GeomBase, LineSegment, translate, Vector
+from parapy.geom import GeomBase, LineSegment, translate
 from parapy.core import Input, Attribute, Part, child
 
 
