@@ -4,7 +4,7 @@ import warnings
 from dataclasses import dataclass
 from typing import Optional
 
-from Pythonfiles.Components.Payload.Payload import PAYLOAD_LIBRARY, resolve_model
+from Pythonfiles.Components.Payload.PayloadDatabase import PAYLOAD_LIBRARY, resolve_model
 
 
 # ---------------------------------------------------------------------------
@@ -21,11 +21,9 @@ class PayloadRole(str, enum.Enum):
 
 
 # ---------------------------------------------------------------------------
-# CLASS ORDERING  — used to take the max across constraint floors
+# ROLE → CATEGORY MAPPING
 # ---------------------------------------------------------------------------
 
-_CLASS_RANK = {"small": 0, "medium": 1, "large": 2}
-_RANK_CLASS = {0: "small", 1: "medium", 2: "large"}
 ROLE_CATEGORIES = {
     "ISR":         ["eo_ir", "radar", "datalink"],
     "Strike":      ["eo_ir", "weapon", "datalink"],
@@ -34,6 +32,17 @@ ROLE_CATEGORIES = {
     "COMMS relay": ["comms", "datalink"],
     "Patrol":      ["eo_ir", "comms"],
 }
+
+# Mandatory categories prepended to every configuration, regardless of role
+_MANDATORY = ["flight_computer", "battery"]
+
+
+# ---------------------------------------------------------------------------
+# CLASS ORDERING  — used to take the max across constraint floors
+# ---------------------------------------------------------------------------
+
+_CLASS_RANK = {"small": 0, "medium": 1, "large": 2}
+_RANK_CLASS = {0: "small", 1: "medium", 2: "large"}
 
 
 def _max_class(*classes: str) -> str:
@@ -47,42 +56,25 @@ def _max_class(*classes: str) -> str:
 # Each function returns the minimum UAV class required by ONE constraint.
 # The final class is _max_class() across all active floors.
 #
-# Range floor
-# -----------
-# < 150 km  : Group I–II line-of-sight systems (small)
-#             e.g. senseFly eBee X: 90 km range, 1.6 kg MTOW
-# 150–500 km: Group III MALE territory (medium)
-#             e.g. Bayraktar TB2: ~300 km radius, ~650 kg MTOW
-# > 500 km  : BLOS SATCOM, large fuel fraction required (large)
-#             e.g. MQ-9 Reaper: ~1 850 km, 4 760 kg MTOW
-# Source: NATO STANAG 4671; Teal Group World UAV Forecast 2023.
+# Range floor  (NATO STANAG 4671; Teal Group World UAV Forecast 2023)
+#   < 150 km  → small   e.g. senseFly eBee X: 90 km, 1.6 kg
+#   150–500   → medium  e.g. Bayraktar TB2: ~300 km radius, ~650 kg
+#   > 500 km  → large   e.g. MQ-9 Reaper: ~1 850 km, 4 760 kg
 #
-# Altitude floor
-# --------------
-# < 3 000 m : small fixed/rotary-wing, piston-viable
-# 3–8 000 m : requires turbocharged/turboprop → Group III (medium)
-#             e.g. Hermes 450: 5 500 m ceiling, 550 kg MTOW
-# > 8 000 m : HALE territory (large)
-#             e.g. Global Hawk: 18 000 m, 14 628 kg MTOW
-# Source: FAR 103; Jane's All the World's Aircraft.
+# Altitude floor  (FAR 103; Jane's All the World's Aircraft)
+#   < 3 000 m  → small
+#   3–8 000 m  → medium  e.g. Hermes 450: 5 500 m, 550 kg
+#   > 8 000 m  → large   e.g. Global Hawk: 18 000 m, 14 628 kg
 #
-# Endurance floor
-# ---------------
-# Endurance is the weakest discriminator alone (a lightweight solar
-# drone can achieve 20 h at small-class MTOW), so thresholds are
-# deliberately conservative.
-# < 4 h  : small class
-# 4–10 h : medium (MALE class rule of thumb)
-# > 10 h : large (fuel fraction alone drives MTOW up significantly)
-# Source: Watts et al., RAND (2012) "The Military Use of UAVs".
+# Endurance floor  (Watts et al., RAND 2012)
+#   < 4 h  → small
+#   4–10 h → medium
+#   > 10 h → large
 #
-# Payload mass floor
-# ------------------
-# Strongest discriminator when payload mass is known.
-# Assuming ~15 % payload fraction (Raymer §3, conservative for ISR UAVs):
-#   payload < 3 kg  → MTOW < ~20 kg   → small
-#   3–90 kg         → MTOW 20–600 kg  → medium
-#   > 90 kg         → MTOW > 600 kg   → large
+# Payload mass floor  (Raymer §3 ~15 % payload fraction)
+#   < 3 kg  → MTOW < ~20 kg   → small
+#   3–90 kg → MTOW 20–600 kg  → medium
+#   > 90 kg → MTOW > 600 kg   → large
 # ---------------------------------------------------------------------------
 
 def _class_from_range(mission_range: float) -> str:
@@ -127,9 +119,7 @@ def infer_uav_class(
     mission_endurance: float,
     payload_mass_kg:   Optional[float] = None,
 ) -> str:
-    """
-    Return the minimum UAV class satisfying ALL active constraints.
-    """
+    """Return the minimum UAV class satisfying ALL active constraints."""
     floors = [
         _class_from_range(mission_range),
         _class_from_altitude(mission_altitude),
@@ -137,19 +127,14 @@ def infer_uav_class(
     ]
     if payload_mass_kg is not None:
         floors.append(_class_from_payload_mass(payload_mass_kg))
-
     return _max_class(*floors)
 
 
 # ---------------------------------------------------------------------------
-# MISSION OBJECTIVE INFERENCE
-# Source: Raymer "Aircraft Design: A Conceptual Approach" ch. 3.
+# MISSION OBJECTIVE INFERENCE  (Raymer "Aircraft Design" ch. 3)
 # ---------------------------------------------------------------------------
 
-def infer_mission_objective(
-    cruise_speed:      float,
-    mission_endurance: float,
-) -> str:
+def infer_mission_objective(cruise_speed: float, mission_endurance: float) -> str:
     if cruise_speed > 120:
         return "High Speed"
     elif mission_endurance > 6:
@@ -163,10 +148,7 @@ def infer_mission_objective(
 # ---------------------------------------------------------------------------
 
 def select_payload_variant(category: str, uav_class: str) -> str:
-    """
-    Pick the default variant for *category* / *uav_class* using the
-    existing default_for mechanism in PAYLOAD_LIBRARY.
-    """
+    """Pick the default variant for *category* / *uav_class*."""
     sub = PAYLOAD_LIBRARY.get(category)
     if sub is None:
         raise KeyError(f"Unknown payload category: '{category}'")
@@ -175,7 +157,6 @@ def select_payload_variant(category: str, uav_class: str) -> str:
         if uav_class in entry.get("default_for", []):
             return key
 
-    # No class-specific default — use first entry with a warning
     first = next(iter(sub))
     warnings.warn(
         f"No default variant for '{category}' / class '{uav_class}'. "
@@ -186,13 +167,6 @@ def select_payload_variant(category: str, uav_class: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# MANDATORY CATEGORIES  — always included regardless of user input
-# ---------------------------------------------------------------------------
-
-_MANDATORY = ["flight_computer", "battery"]
-
-
-# ---------------------------------------------------------------------------
 # MAIN RULES CLASS
 # ---------------------------------------------------------------------------
 
@@ -200,6 +174,14 @@ _MANDATORY = ["flight_computer", "battery"]
 class PayloadRules:
     """
     Single source of truth for all inferred design parameters.
+
+    Steps
+    -----
+    1. Resolve the active payload category list from the role / explicit list.
+    2. Estimate payload mass using small-class variants as a proxy.
+    3. Infer UAV class from all constraint floors.
+    4. Infer mission objective from speed and endurance.
+    5. Build the final payload config with the correct UAV-class variants.
     """
 
     cruise_speed:       float
@@ -219,15 +201,16 @@ class PayloadRules:
 
     @property
     def _active_categories(self) -> list:
-        raw = self.payload_categories if self.payload_categories is not None else self._infer_categories()
+        raw = (self.payload_categories if self.payload_categories is not None
+               else self._infer_categories())
 
         cats = []
         for item in raw:
-            if item in ROLE_CATEGORIES:              # it's a role string → expand it
+            if item in ROLE_CATEGORIES:          # role string → expand
                 for cat in ROLE_CATEGORIES[item]:
                     if cat not in cats:
                         cats.append(cat)
-            else:                                    # it's already a category
+            else:                                # already a category
                 if item not in cats:
                     cats.append(item)
 
@@ -239,32 +222,20 @@ class PayloadRules:
         return result
 
     def _infer_categories(self) -> list:
-        """
-        Infer payload categories from mission parameters alone.
-
-          EO/IR    — always (basic situational awareness)
-          radar    — endurance > 6 h  (persistent ISR)
-          datalink — range > 500 km   (BLOS operation)
-          comms    — range ≤ 500 km   (line-of-sight)
-          weapon   — weapon_count > 0
-        """
+        """Infer payload categories from mission parameters alone."""
         cats = ["eo_ir"]
-
         if self.mission_endurance > 6:
             cats.append("radar")
-
         if self.mission_range > 500:
             cats.append("datalink")
         else:
             cats.append("comms")
-
         if self.weapon_count > 0:
             cats.append("weapon")
-
         return cats
 
     # ------------------------------------------------------------------
-    # Step 2 — estimate payload mass using a 'small' variant as proxy
+    # Step 2 — estimate payload mass (small-class proxy)
     # ------------------------------------------------------------------
 
     @property
@@ -275,19 +246,15 @@ class PayloadRules:
                 key   = select_payload_variant(cat, "small")
                 entry = PAYLOAD_LIBRARY[cat][key]
                 if entry["geometry_type"] == "box":
-                    vol = (entry["length"]
-                           * entry["width"]
-                           * entry["height_box"])
+                    vol = (entry["length"] * entry["width"] * entry["height_box"])
                 else:
-                    vol = (math.pi / 4
-                           * entry["diameter"] ** 2
-                           * entry["height_cyl"])
+                    vol = (math.pi / 4 * entry["diameter"] ** 2 * entry["height_cyl"])
                 mass = vol * entry["density"]
                 if cat == "weapon":
                     mass *= max(self.weapon_count, 1)
                 total += mass
             except Exception:
-                pass  # unknown/custom category — skip silently
+                pass   # unknown/custom category — skip silently
         return total
 
     # ------------------------------------------------------------------
@@ -328,7 +295,7 @@ class PayloadRules:
         ]
 
     # ------------------------------------------------------------------
-    # Diagnostic summary — shows every constraint floor explicitly
+    # Diagnostic summary
     # ------------------------------------------------------------------
 
     def summarise(self):
@@ -367,7 +334,7 @@ class PayloadRules:
 
 if __name__ == "__main__":
 
-    print("\n--- 1: Long-range ISR, explicit categories ---")
+    print("\n--- 1: Long-range ISR ---")
     PayloadRules(
         cruise_speed=80, mission_altitude=6000,
         mission_range=500, mission_endurance=8,
@@ -386,20 +353,4 @@ if __name__ == "__main__":
     PayloadRules(
         cruise_speed=20, mission_altitude=500,
         mission_range=30, mission_endurance=1.5,
-    ).summarise()
-
-    print("\n--- 4: Short-range but heavy payload pushes class up ---")
-    PayloadRules(
-        cruise_speed=60, mission_altitude=3000,
-        mission_range=100, mission_endurance=3,
-        payload_categories=["eo_ir", "radar", "lidar", "weapon"],
-        weapon_count=1,
-    ).summarise()
-
-    print("\n--- 5: Override class, objective still inferred ---")
-    PayloadRules(
-        cruise_speed=80, mission_altitude=6000,
-        mission_range=200, mission_endurance=8,
-        payload_categories=["eo_ir"],
-        uav_class_override="large",
     ).summarise()
