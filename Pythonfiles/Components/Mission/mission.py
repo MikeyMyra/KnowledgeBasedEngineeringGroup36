@@ -35,6 +35,26 @@ import metric_imperial_conversions as m2i
 from Pythonfiles.Components.Mission.WP_WS_diagram import WP_WS_Diagram
 
 
+# ─── Infeasibility warning dialog (matches XFoil Mach pattern) ────────────── #
+
+def _show_infeasible_dialog(title: str, message: str) -> None:
+    """
+    Show a modal tkinter warning dialog, then destroy the root window.
+
+    Silently suppressed if tkinter is unavailable (headless / CI environment).
+    This mirrors the approach used in Airfoil.py for the XFoil Mach limit.
+    """
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+        _root = tk.Tk()
+        _root.withdraw()
+        messagebox.showwarning(title, message)
+        _root.destroy()
+    except Exception:
+        pass  # headless environment — console print is the fallback
+
+
 class Mission:
 
     def __init__(
@@ -284,10 +304,25 @@ class Mission:
 
         # ── absolute feasibility: fuel alone must fit in the aircraft ────── #
         if fuel_frac >= 1.0:
+            msg = (
+                f"Mission is physically infeasible.\n\n"
+                f"The required fuel fraction is {fuel_frac:.3f} ≥ 1.0, meaning\n"
+                f"the aircraft would need to be made entirely of fuel.\n\n"
+                f"Current inputs:\n"
+                f"  Range      : {self.mission_range:.0f} km\n"
+                f"  Endurance  : {self.mission_endurance:.2f} hr\n"
+                f"  Altitude   : {self.mission_altitude:.0f} m\n\n"
+                f"Suggested fixes — reduce one or more of:\n"
+                f"  • Mission range\n"
+                f"  • Mission endurance\n"
+                f"  • Cruise speed  (lowers fuel burn)\n"
+                f"  • Mission altitude  (denser air → better L/D)"
+            )
             print("Warning: mission physically infeasible — "
                   f"fuel_frac={fuel_frac:.3f} >= 1.0  (wf_w0={wf_w0:.3f})\n"
                   f"  (Try reducing range, endurance, or SFC.)")
             print(self.performance_margins_summary())
+            _show_infeasible_dialog("Mission Infeasible — Fuel Fraction ≥ 1", msg)
             return float("nan"), float("nan"), float("nan")
 
         # ── Raymer sizing equation (robust root-find) ─────────────────────── #
@@ -317,11 +352,42 @@ class Mission:
         # the root lies beyond 100 t, which is outside the scope of any
         # UAV this tool is designed to size.  Return NaN immediately with
         # a clear diagnostic instead of converging to an absurd value.
-        _MTOW_MAX_KG  = 100_000.0   # [kg] — hard UAV scope limit
+        _MTOW_MAX_KG  = 100000.0   # [kg] — hard UAV scope limit
         hi_max_lbs    = m2i.kilograms_to_pounds(_MTOW_MAX_KG)
 
         denom_at_cap = 1.0 - fuel_frac - min(A * hi_max_lbs ** C_exp, We_frac_max)
         if _f(hi_max_lbs) <= 0.0:
+            # Identify the dominant driver so the dialog can name it explicitly
+            pm = self.performance_margins()
+            driver = pm["fuel_dominant_leg"]
+            if driver == "cruise":
+                driver_detail = (
+                    f"Range ({self.mission_range:.0f} km) is the dominant fuel driver.\n"
+                    f"  → Try reducing mission_range first."
+                )
+            else:
+                driver_detail = (
+                    f"Endurance ({self.mission_endurance:.2f} hr) is the dominant fuel driver.\n"
+                    f"  → Try reducing mission_endurance first."
+                )
+
+            msg = (
+                f"Mission requires MTOW > {_MTOW_MAX_KG / 1000:.0f} t — outside the\n"
+                f"scope of this UAV sizing tool.\n\n"
+                f"Current inputs:\n"
+                f"  Range      : {self.mission_range:.0f} km\n"
+                f"  Endurance  : {self.mission_endurance:.2f} hr\n"
+                f"  Altitude   : {self.mission_altitude:.0f} m\n"
+                f"  Cruise speed: {self.cruise_speed:.1f} m/s\n\n"
+                f"Sizing diagnosis:\n"
+                f"  fuel_frac = {fuel_frac:.4f}   We_frac_max = {We_frac_max:.3f}\n"
+                f"  {driver_detail}\n\n"
+                f"Suggested fixes — reduce one or more of:\n"
+                f"  • Mission range\n"
+                f"  • Mission endurance\n"
+                f"  • Cruise speed  (lower speed → better L/D → less fuel)\n"
+                f"  • Mission altitude  (denser air → better L/D at same speed)"
+            )
             print(
                 f"\n[Mission] INFEASIBLE — mission requires MTOW > {_MTOW_MAX_KG/1000:.0f} t,\n"
                 f"  which is outside the scope of this UAV sizing tool.\n"
@@ -331,6 +397,9 @@ class Mission:
                 f"  Fixes: ↓ cruise speed  |  ↓ range  |  ↓ endurance  |  ↑ cruise altitude"
             )
             print(self.performance_margins_summary())
+            _show_infeasible_dialog(
+                f"Mission Infeasible — MTOW > {_MTOW_MAX_KG / 1000:.0f} t", msg
+            )
             return float("nan"), float("nan"), float("nan")
 
         # ── Find bracket [lo, hi] with f(lo) < 0 < f(hi) ─────────────── #

@@ -39,7 +39,7 @@ if __name__ == "__main__":
         # ------------------------------------------------------------------ #
         # PAYLOAD INTENT  — optional overrides
         # ------------------------------------------------------------------ #
-        payload_role="ISR",         # "ISR" | "Strike" | "Relay" | "Cargo"
+        payload_role="Mapping",         # "ISR" | "Strike" | "Relay" | "Cargo"
         weapon_count=0,             # 0 = unarmed; max 6
 
         # ------------------------------------------------------------------ #

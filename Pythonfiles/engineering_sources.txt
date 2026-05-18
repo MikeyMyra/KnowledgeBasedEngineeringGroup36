@@ -1,13 +1,33 @@
 ================================================================================
-ENGINEERING SOURCES & RULES
+INFORMAL KNOWLEDGE MODEL
 UAV Initial Sizing Tool — KBE Assignment, TU Delft, Q3-Q4
 ================================================================================
 
-This file lists every empirical formula, design rule, and reference used in the
-codebase, organised by topic.  Each entry states:
-  • the source (author, title, equation / section / table number)
-  • the formula as implemented
-  • the file and attribute/function where it is used
+This document is the informal knowledge model for the UAV initial sizing KBE
+application.  It collects the relevant support material — equations, design
+rules, empirical tables, and bibliographic references — gathered during the
+knowledge acquisition phase performed prior to KBE app development.
+
+Contents of this document:
+  • Equations derived from textbooks (Raymer, Roskam, ICAO) with the exact
+    form as implemented in the application code
+  • Design rules and empirical data tables used to drive the sizing logic
+  • Bibliographic references for every equation, rule, and table entry
+  • Notes on aerodynamic, structural, and propulsion assumptions
+
+Scope: this document captures DOMAIN KNOWLEDGE only.  It is not a manual
+describing how the KBE app is structured or how to operate it — see README.md
+for operating instructions.  It is a record of the engineering knowledge that
+was researched, organised, and encoded during the knowledge acquisition phase.
+
+Additional informal knowledge model material (plots of design charts, hand
+sketches, UML class and activity diagrams, and textbook page extracts) is
+maintained as a companion slide deck submitted with this assignment.
+
+Each section below follows the same structure:
+  • Source:   bibliographic reference (author, title, edition, equation/table)
+  • Formula:  the equation exactly as implemented, with variable definitions
+  • File:     the Python source file and attribute/function where it is used
 
 --------------------------------------------------------------------------------
 CONTENTS

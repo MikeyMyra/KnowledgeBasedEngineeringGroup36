@@ -103,10 +103,10 @@ class Drone(GeomBase):
     )   # [m/s]
 
     mission_altitude: float = Input(
-        validator=_between(0.0, 20_000.0),
-        doc="Cruise / loiter altitude  [m]  ·  valid: 0 – 20 000 m\n"
+        validator=_between(0.0, 15_000.0),
+        doc="Cruise / loiter altitude  [m]  ·  valid: 0 – 15 000 m\n"
             "Practical ceilings by engine type:\n"
-            "  Piston   ≤ 4 500 m  |  Turboprop ≤ 9 000 m  |  Jet up to 20 000 m\n"
+            "  Piston   ≤ 4 500 m  |  Turboprop ≤ 9 000 m  |  Jet up to 15 000 m\n"
             "Above 9 000 m a jet is selected automatically if Mach threshold is met.",
     )  # [m]
 
@@ -537,12 +537,15 @@ class Drone(GeomBase):
     @action(label="Export PDF Report")
     def export_pdf_report(self):
         """
-        Write a design-summary PDF to the Outputfiles folder.
+        Write a comprehensive design-summary PDF to the Outputfiles folder.
         Any previously generated drone_report_*.pdf is moved to
         Outputfiles/data/ before the new file is written.
         """
         import datetime
         import tempfile
+        import math as _math
+
+        from Pythonfiles.Components.Mission.ISA_calculator import ISA_calculator
 
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -557,7 +560,7 @@ class Drone(GeomBase):
             from reportlab.lib          import colors
             from reportlab.platypus     import (
                 SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-                HRFlowable, Image as RLImage,
+                HRFlowable, Image as RLImage, PageBreak,
             )
 
             doc    = SimpleDocTemplate(pdf_path, pagesize=A4,
@@ -574,6 +577,10 @@ class Drone(GeomBase):
                 fontSize=13, spaceAfter=4, textColor=colors.HexColor("#003366"),
             )
             body_style = styles["Normal"]
+            note_style = ParagraphStyle(
+                "Note", parent=styles["Normal"],
+                fontSize=8, textColor=colors.grey,
+            )
 
             def section(title):
                 return [
@@ -587,12 +594,12 @@ class Drone(GeomBase):
                 if col_widths is None:
                     col_widths = [9*cm, 8*cm]
                 tbl = Table(rows, colWidths=col_widths)
-                style = TableStyle([
+                tbl_style = TableStyle([
                     ("BACKGROUND",   (0, 0), (-1, 0),  colors.HexColor("#003366")),
                     ("TEXTCOLOR",    (0, 0), (-1, 0),  colors.white),
                     ("FONTNAME",     (0, 0), (-1, 0),  "Helvetica-Bold"),
                     ("FONTSIZE",     (0, 0), (-1, 0),  10),
-                    ("ALIGN",        (1, 1), (1, -1),  "RIGHT"),
+                    ("ALIGN",        (1, 1), (-1, -1), "RIGHT"),
                     ("FONTSIZE",     (0, 1), (-1, -1), 9),
                     ("ROWBACKGROUNDS", (0, 1), (-1, -1),
                      [colors.HexColor("#EEF3FA"), colors.white]),
@@ -602,26 +609,99 @@ class Drone(GeomBase):
                     ("LEFTPADDING",  (0, 0), (-1, -1), 6),
                     ("RIGHTPADDING", (0, 0), (-1, -1), 6),
                 ])
-                tbl.setStyle(style)
+                tbl.setStyle(tbl_style)
                 return tbl
 
-            mtow        = self.MTOW
-            empty_wt    = self.empty_weight
-            fuel_wt     = self.fuel_weight
-            payload_wt  = self.payload_weight
-            wing_area   = self.wing_area
-            wing_span   = self.wing_semi_span * 2.0
-            wing_ar     = self.wing_aspect_ratio
-            wing_ld     = self.wing_loading
-            ld          = self.ld_cruise
-            eng_type    = self.engine_type
-            cg_x        = self.cg_x
-            np_x        = self.neutral_point_x
-            sm          = self.static_margin
-            stab        = self.stability_status
-            fus_len     = self.aircraft.fuselage.length
-            fus_rad     = self.aircraft.fuselage.radius
+            # ── Gather all data ────────────────────────────────────────── #
 
+            # Basic weights
+            mtow       = self.MTOW
+            empty_wt   = self.empty_weight
+            fuel_wt    = self.fuel_weight
+            payload_wt = self.payload_weight
+            eng_type   = self.engine_type
+
+            # Wing
+            wing_area  = self.wing_area
+            wing_span  = self.wing_semi_span * 2.0
+            wing_ar    = self.wing_aspect_ratio
+            wing_ld    = self.wing_loading
+            ld         = self.ld_cruise
+
+            # Stability
+            cg_x  = self.cg_x
+            np_x  = self.neutral_point_x
+            sm    = self.static_margin
+            stab  = self.stability_status
+            fus_len = self.aircraft.fuselage.length
+            fus_rad = self.aircraft.fuselage.radius
+
+            # ISA atmosphere at cruise altitude
+            T_isa, p_isa, rho_isa, a_isa = ISA_calculator(self.mission_altitude)
+
+            # Mach number
+            mach_cruise = self.mach
+
+            # Performance margins and Breguet fractions
+            pm  = self.performance_margins
+            fr  = self.mission._fuel_fracs()
+            sfc = self.mission.specific_fuel      # [1/hr]
+            eta = self.mission.prop_efficiency
+
+            # Achievable endurance or range (whichever is the non-driver)
+            driver = pm['fuel_dominant_leg']
+            e_achievable  = None
+            r_achievable  = None
+            e_margin_pct  = None
+            r_margin_pct  = None
+            if driver == 'cruise':
+                frac    = pm['fuel_frac_cruise']
+                w4_eq   = max(1.0 - frac, 1e-6)
+                if eng_type == 'Jet':
+                    e_achievable = -_math.log(w4_eq) * pm['ld_loiter'] / sfc
+                else:
+                    e_achievable = -_math.log(w4_eq) * pm['ld_loiter'] * eta / sfc
+                e_margin_pct = (e_achievable - self.mission_endurance) / self.mission_endurance * 100.0
+            else:
+                frac    = pm['fuel_frac_loiter']
+                w3_eq   = max(1.0 - frac, 1e-6)
+                v_kmh   = self.cruise_speed * 3.6
+                if eng_type == 'Jet':
+                    r_achievable = -_math.log(w3_eq) * v_kmh * pm['ld_cruise'] / sfc
+                else:
+                    r_achievable = -_math.log(w3_eq) * eta * v_kmh * pm['ld_cruise'] / sfc
+                r_margin_pct = (r_achievable - self.mission_range) / self.mission_range * 100.0
+
+            # Wing detailed geometry
+            mac_wing      = self.aircraft.main_wing.mean_aerodynamic_chord
+            c_root_wing   = self.aircraft.main_wing.c_root_aero
+            c_tip_wing    = self.aircraft.main_wing.c_tip
+            sweep_wing    = self.aircraft.wing_sweep_le
+            dihedral_wing = self.aircraft.wing_dihedral
+            tc_wing       = self.aircraft.main_wing.thickness_to_chord
+            x_ac_wing     = self.aircraft.main_wing.x_ac
+
+            # Tail surfaces
+            ht_area  = self.aircraft.horizontal_tail._effective_area
+            ht_span  = self.aircraft.horizontal_tail._effective_span * 2.0
+            ht_ar    = self.aircraft.horizontal_tail.aspect_ratio
+            ht_arm   = self.aircraft.horizontal_tail.tail_arm
+            ht_mac   = self.aircraft.horizontal_tail.mean_aerodynamic_chord
+            x_ac_ht  = self.aircraft.horizontal_tail.x_ac
+
+            vt_area  = self.aircraft.vertical_tail._effective_area
+            vt_span  = self.aircraft.vertical_tail._effective_span
+            vt_ar    = self.aircraft.vertical_tail.aspect_ratio
+            vt_arm   = self.aircraft.vertical_tail.tail_arm
+
+            # Fuel tank
+            ft_sizing = self.aircraft._fuel_tank_sizing
+
+            # Component mass and CG breakdown
+            mass_bd = self.aircraft.mass_breakdown
+            cg_bd   = self.aircraft.cg_breakdown
+
+            # W/P–W/S diagram
             diagram_path = None
             try:
                 tmp = tempfile.NamedTemporaryFile(
@@ -633,6 +713,7 @@ class Drone(GeomBase):
             except Exception as _de:
                 print(f"[PDF] diagram embed skipped: {_de}")
 
+            # ── Build story ────────────────────────────────────────────── #
             story = []
 
             story.append(Paragraph("UAV Initial Sizing — Design Report", title_style))
@@ -642,67 +723,212 @@ class Drone(GeomBase):
             ))
             story.append(Spacer(1, 0.4*cm))
 
+            # ── Section 1: Mission Parameters ──────────────────────────── #
             story += section("1 · Mission Parameters")
             story.append(data_table([
                 ["Parameter",              "Value"],
-                ["Cruise speed",           f"{self.cruise_speed:.1f} m/s  "
-                                           f"({self.cruise_speed * 3.6:.0f} km/h)"],
-                ["Mission altitude",       f"{self.mission_altitude:.0f} m"],
+                ["Cruise speed",           f"{self.cruise_speed:.1f} m/s   ({self.cruise_speed * 3.6:.0f} km/h)"],
+                ["Cruise Mach number",     f"M = {mach_cruise:.4f}"],
+                ["Mission altitude",       f"{self.mission_altitude:.0f} m   ({self.mission_altitude * 3.2808:.0f} ft)"],
+                ["ISA temperature",        f"{T_isa:.1f} K   ({T_isa - 273.15:.1f} °C)"],
+                ["ISA pressure",           f"{p_isa / 1000.0:.3f} kPa"],
+                ["ISA air density",        f"{rho_isa:.4f} kg/m³"],
+                ["Speed of sound",         f"{a_isa:.2f} m/s"],
                 ["Mission range",          f"{self.mission_range:.0f} km"],
-                ["Mission endurance",      f"{self.mission_endurance:.1f} hr"],
-                ["Payload role",           self.payload_role],
+                ["Mission endurance",      f"{self.mission_endurance:.2f} hr"],
+                ["Payload role",           str(self.payload_role)],
                 ["Mission objective",      self.mission_objective],
                 ["UAV class",              self.uav_class],
                 ["Max. load factor",       f"{self.maximum_load_factor:.2f} g"],
                 ["Engine type",            eng_type],
+                ["SFC / BSFC",             f"{sfc:.3f} 1/hr"],
+                ["Propeller efficiency",   f"{eta:.2f}" if eng_type != "Jet" else "N/A (jet)"],
             ]))
 
+            # ── Section 2: Weight Budget ───────────────────────────────── #
             story += section("2 · Weight Budget")
             story.append(data_table([
-                ["Component",              "Mass [kg]"],
-                ["MTOW",                   f"{mtow:.1f}"],
-                ["Empty weight",           f"{empty_wt:.1f}"],
-                ["Fuel weight",            f"{fuel_wt:.1f}"],
-                ["Payload weight",         f"{payload_wt:.1f}"],
-                ["Fuel fraction  Wf/W0",   f"{fuel_wt / mtow:.3f}"],
-                ["Empty fraction We/W0",   f"{empty_wt / mtow:.3f}"],
-            ]))
+                ["Component",            "Mass [kg]",                    "Fraction of MTOW"],
+                ["MTOW",                 f"{mtow:.2f}",                  "—"],
+                ["Empty weight",         f"{empty_wt:.2f}",              f"{empty_wt / mtow:.4f}"],
+                ["Fuel weight",          f"{fuel_wt:.2f}",               f"{fuel_wt / mtow:.4f}"],
+                ["Payload weight",       f"{payload_wt:.2f}",            f"{payload_wt / mtow:.4f}"],
+            ], col_widths=[6.5*cm, 5.5*cm, 5*cm]))
 
-            story += section("3 · Wing & Aerodynamic Sizing")
-            thr_row = (
-                ["Thrust loading  T/W",    f"{self.thrust_loading:.3f}"]
-                if eng_type == "Jet"
-                else ["Power loading  W/P [kg/W]",
-                      f"{self.power_loading:.5f}  "
-                      f"({1.0/self.power_loading:.1f} W/kg)"]
-            )
+            story.append(Spacer(1, 0.25*cm))
+            story.append(Paragraph("Component mass breakdown:", body_style))
+            story.append(Spacer(1, 0.1*cm))
+            comp_rows = [["Component", "Mass [kg]", "CG x [m]"]]
+            for k in mass_bd:
+                comp_rows.append([
+                    k.replace("_", " ").title(),
+                    f"{mass_bd[k]:.2f}",
+                    f"{cg_bd.get(k, 0.0):.3f}",
+                ])
+            comp_rows.append([
+                "TOTAL",
+                f"{self.aircraft.total_structural_mass:.2f}",
+                f"{cg_x:.3f}",
+            ])
+            story.append(data_table(comp_rows, col_widths=[7*cm, 4.5*cm, 5.5*cm]))
+
+            # ── Section 3: Performance Margins ────────────────────────── #
+            story += section("3 · Performance Margins")
+            driver_label = "CRUISE  (range legs consume more fuel)" \
+                if driver == 'cruise' else "LOITER  (endurance leg consumes more fuel)"
+            perf_rows = [
+                ["Parameter",                   "Value"],
+                ["L/D at cruise legs",           f"{pm['ld_cruise']:.3f}"],
+                ["L/D at loiter leg",            f"{pm['ld_loiter']:.3f}"],
+                ["Fuel fraction — cruise legs",  f"{pm['fuel_frac_cruise']:.4f}"],
+                ["Fuel fraction — loiter leg",   f"{pm['fuel_frac_loiter']:.4f}"],
+                ["Total fuel fraction  Wf/W0",   f"{pm['wf_w0']:.4f}"],
+                ["Sizing driver",                driver_label],
+            ]
+            if driver == 'cruise' and e_achievable is not None:
+                perf_rows += [
+                    ["Required range (driver)",      f"{self.mission_range:.0f} km"],
+                    ["Required endurance",           f"{self.mission_endurance:.2f} hr"],
+                    ["Achievable endurance *",       f"{e_achievable:.2f} hr   (+{e_margin_pct:.1f}% margin)"],
+                ]
+            elif r_achievable is not None:
+                perf_rows += [
+                    ["Required endurance (driver)",  f"{self.mission_endurance:.2f} hr"],
+                    ["Required range",               f"{self.mission_range:.0f} km"],
+                    ["Achievable range *",           f"{r_achievable:.0f} km   (+{r_margin_pct:.1f}% margin)"],
+                ]
+            story.append(data_table(perf_rows))
+            story.append(Spacer(1, 0.1*cm))
+            story.append(Paragraph(
+                "* Achievable value: using the fuel fraction consumed by the "
+                "dominant leg, how long the non-dominant segment could be flown "
+                "(Breguet inversion at the same L/D). Represents the margin "
+                "available beyond the stated requirement.",
+                note_style,
+            ))
+
+            # ── Section 4: Mission Segment Weight Fractions ────────────── #
+            story += section("4 · Mission Segment Weight Fractions")
+            story.append(data_table([
+                ["Segment",                          "Wi+1 / Wi",             "Fuel consumed (% MTOW)"],
+                ["Taxi & warm-up  (w1/w0)",          f"{fr['w1_w0']:.4f}",    f"{(1 - fr['w1_w0']) * 100:.2f} %"],
+                ["Climb           (w2/w1)",          f"{fr['w2_w1']:.4f}",    f"{(1 - fr['w2_w1']) * 100:.2f} %"],
+                ["Cruise outbound (w3/w2)",          f"{fr['w3_w2']:.4f}",    f"{(1 - fr['w3_w2']) * 100:.2f} %"],
+                ["Loiter          (w4/w3)",          f"{fr['w4_w3']:.4f}",    f"{(1 - fr['w4_w3']) * 100:.2f} %"],
+                ["Cruise return   (w5/w4)",          f"{fr['w5_w4']:.4f}",    f"{(1 - fr['w5_w4']) * 100:.2f} %"],
+                ["Reserve loiter  (w6/w5)",          f"{fr['w6_w5']:.4f}",    f"{(1 - fr['w6_w5']) * 100:.2f} %"],
+                ["Descent & land  (w7/w6)",          f"{fr['w7_w6']:.4f}",    f"{(1 - fr['w7_w6']) * 100:.2f} %"],
+                ["Taxi out        (w8/w7)",          f"{fr['w8_w7']:.4f}",    f"{(1 - fr['w8_w7']) * 100:.2f} %"],
+                ["TOTAL  Wf/W0",                    f"{fr['wf_w0']:.4f}",    f"{(1 - fr['wf_w0']) * 100:.2f} %"],
+            ], col_widths=[6.5*cm, 4*cm, 6.5*cm]))
+
+            # ── Section 5: Wing & Aerodynamic Sizing ──────────────────── #
+            story += section("5 · Wing & Aerodynamic Sizing")
+            if eng_type == "Jet":
+                thr_label = "Thrust loading  T/W  [—]"
+                thr_value = f"{self.thrust_loading:.4f}" if self.thrust_loading is not None else "N/A"
+            else:
+                thr_label = "Power loading  W/P  [kg/W]"
+                thr_value = (
+                    f"{self.power_loading:.5f}   ({1.0 / self.power_loading:.1f} W/kg)"
+                    if self.power_loading is not None else "N/A"
+                )
             story.append(data_table([
                 ["Parameter",              "Value"],
-                ["Wing area  S",           f"{wing_area:.2f} m²"],
-                ["Wing span  b",           f"{wing_span:.2f} m"],
-                ["Aspect ratio  AR",       f"{wing_ar:.2f}"],
-                ["Wing loading  W/S",      f"{wing_ld:.1f} N/m²"],
-                ["Cruise L/D",             f"{ld:.2f}"],
-                thr_row,
+                ["Wing area  S",           f"{wing_area:.3f} m²"],
+                ["Wing span  b",           f"{wing_span:.3f} m"],
+                ["Aspect ratio  AR (geom)",f"{wing_ar:.3f}"],
+                ["Aspect ratio  AR (Roskam sizing)", f"{self._wing_ar_roskam:.3f}"],
+                ["Taper ratio  λ",         f"{self.wing_taper_ratio:.3f}"],
+                ["Root chord  c_root",     f"{c_root_wing:.3f} m"],
+                ["Tip chord   c_tip",      f"{c_tip_wing:.3f} m"],
+                ["Mean aero chord  MAC",   f"{mac_wing:.3f} m"],
+                ["Sweep LE  Λ",            f"{sweep_wing:.1f} °"],
+                ["Dihedral  Γ",            f"{dihedral_wing:.1f} °"],
+                ["Thickness-to-chord  t/c",f"{tc_wing:.3f}"],
+                ["Wing AC (x from nose)",  f"{x_ac_wing:.3f} m"],
+                ["Wing loading  W/S",      f"{wing_ld:.2f} N/m²"],
+                ["Cruise L/D",             f"{ld:.3f}"],
+                [thr_label,                thr_value],
             ]))
 
-            story += section("4 · Fuselage")
+            # ── Section 6: Tail Surfaces ───────────────────────────────── #
+            story += section("6 · Tail Surfaces")
             story.append(data_table([
+                ["Parameter",          "Horizontal Tail",          "Vertical Tail"],
+                ["Area  S",            f"{ht_area:.3f} m²",        f"{vt_area:.3f} m²"],
+                ["Span / height",      f"{ht_span:.3f} m",         f"{vt_span:.3f} m"],
+                ["Aspect ratio  AR",   f"{ht_ar:.3f}",             f"{vt_ar:.3f}"],
+                ["Tail arm  l_t",      f"{ht_arm:.3f} m",          f"{vt_arm:.3f} m"],
+                ["MAC",                f"{ht_mac:.3f} m",          "—"],
+                ["AC x-position",      f"{x_ac_ht:.3f} m",         "—"],
+                ["Volume coeff.",      f"{self.aircraft.tail_volume_coefficient_h:.3f}",
+                                       f"{self.aircraft.tail_volume_coefficient_v:.4f}"],
+            ], col_widths=[5.5*cm, 5.5*cm, 6*cm]))
+
+            # ── Section 7: Fuselage & Fuel System ─────────────────────── #
+            story += section("7 · Fuselage & Fuel System")
+            fus_rows = [
                 ["Parameter",              "Value"],
-                ["Fuselage length",        f"{fus_len:.2f} m"],
-                ["Fuselage radius",        f"{fus_rad:.3f} m"],
+                ["Fuselage length",        f"{fus_len:.3f} m"],
+                ["Fuselage radius",        f"{fus_rad:.4f} m"],
+                ["Fineness ratio  l/d",    f"{fus_len / (2.0 * fus_rad):.2f}"],
                 ["Cylinder start",         f"{self.fuselage_cylinder_start:.1f} %"],
                 ["Cylinder end",           f"{self.fuselage_cylinder_end:.1f} %"],
+            ]
+            if ft_sizing is not None:
+                fuel_vol_L = fuel_wt / ft_sizing.fuel_density * 1000.0
+                fus_rows += [
+                    ["Fuel type",              ft_sizing.fuel_label],
+                    ["Fuel density",           f"{ft_sizing.fuel_density:.1f} kg/m³"],
+                    ["Fuel mass",              f"{fuel_wt:.2f} kg"],
+                    ["Fuel volume",            f"{fuel_vol_L:.1f} L   ({fuel_vol_L / 1000.0:.4f} m³)"],
+                    ["Tank outer radius",      f"{ft_sizing.outer_radius * 1000.0:.1f} mm"],
+                    ["Tank total length",      f"{ft_sizing.total_length * 1000.0:.1f} mm"],
+                    ["Tank AR (l/d)",          f"{self.fuel_tank_aspect_ratio:.2f}"],
+                ]
+            else:
+                fus_rows.append(["Fuel system", "No fuel tank (fuel mass = 0)"])
+            story.append(data_table(fus_rows))
+
+            # ── Section 8: Longitudinal Stability ─────────────────────── #
+            story += section("8 · Longitudinal Stability")
+            cg_rows = [["Component", "Mass [kg]", "CG x [m]", "m · x [kg·m]"]]
+            for k in mass_bd:
+                cg_rows.append([
+                    k.replace("_", " ").title(),
+                    f"{mass_bd[k]:.2f}",
+                    f"{cg_bd.get(k, 0.0):.3f}",
+                    f"{mass_bd[k] * cg_bd.get(k, 0.0):.2f}",
+                ])
+            cg_rows.append([
+                "TOTAL",
+                f"{self.aircraft.total_structural_mass:.2f}",
+                f"{cg_x:.3f}",
+                f"{sum(mass_bd[k] * cg_bd.get(k, 0.0) for k in mass_bd):.2f}",
+            ])
+            story.append(data_table(cg_rows, col_widths=[5.5*cm, 3.5*cm, 3.5*cm, 4.5*cm]))
+
+            story.append(Spacer(1, 0.25*cm))
+            story.append(data_table([
+                ["Parameter",                  "Value"],
+                ["Wing MAC",                   f"{mac_wing:.3f} m"],
+                ["Wing AC  x_ac_w",            f"{x_ac_wing:.3f} m"],
+                ["Horizontal tail AC  x_ac_h", f"{x_ac_ht:.3f} m"],
+                ["Aircraft CG  (from nose)",   f"{cg_x:.3f} m   ({cg_x / fus_len * 100:.1f} % fus. length)"],
+                ["Neutral point (from nose)",  f"{np_x:.3f} m   ({np_x / fus_len * 100:.1f} % fus. length)"],
+                ["Static margin  SM",          f"{sm * 100.0:.2f} % MAC"],
+                ["Stability assessment",       stab],
             ]))
 
-            story += section("5 · Longitudinal Stability")
-            story.append(data_table([
-                ["Parameter",              "Value"],
-                ["CG position  (from nose)", f"{cg_x:.3f} m"],
-                ["Neutral point (from nose)", f"{np_x:.3f} m"],
-                ["Static margin  SM",      f"{sm*100:.1f} % MAC"],
-                ["Assessment",             stab],
-            ]))
+            # ── Section 9: W/P–W/S Diagram ────────────────────────────── #
+            if diagram_path and os.path.exists(diagram_path):
+                story += section("9 · W/P – W/S Design-Point Diagram")
+                try:
+                    img = RLImage(diagram_path, width=15*cm, height=10*cm)
+                    story.append(img)
+                except Exception as _ie:
+                    story.append(Paragraph(f"[Diagram embed failed: {_ie}]", body_style))
 
             doc.build(story)
             print(f"✓ PDF report saved: {pdf_path}")
