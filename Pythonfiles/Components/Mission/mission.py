@@ -31,7 +31,7 @@ Performance margins:
 """
 
 import numpy as np
-import metric_imperial_conversions as m2i
+import Pythonfiles.metric_imperial_conversions as m2i
 from Pythonfiles.Components.Mission.WP_WS_diagram import WP_WS_Diagram
 
 
