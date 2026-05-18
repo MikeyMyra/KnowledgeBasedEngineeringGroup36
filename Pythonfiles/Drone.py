@@ -411,21 +411,41 @@ class Drone(GeomBase):
         return feet_to_meters(length_ft)
 
     @Attribute
+    def _fuel_tank_length_estimate(self) -> float:
+        """
+        Fuel tank total length estimate [m] — pure math, no geometry.
+
+        Mirrors Aircraft._fuel_tank_sizing so that Drone.payload_start_x can
+        decide whether payload fits before or after the tank without depending
+        on the Aircraft Part (which would be circular).
+        """
+        import math
+        from Pythonfiles.Components.Fuel.FuelTank import FUELS, AUTO_SELECTION, _VOLUME_FACTOR
+        if math.isnan(self.fuel_weight) or self.fuel_weight <= 0.0:
+            return 0.0
+        ft       = self.fuel_type if self.fuel_type != "auto" else AUTO_SELECTION.get(self.engine_type, "jet_a")
+        density  = FUELS[ft]["density_kg_m3"]
+        ar       = max(self.fuel_tank_aspect_ratio, 1.01)
+        fuel_vol = self.fuel_weight / density
+        tank_vol = fuel_vol * _VOLUME_FACTOR
+        r3       = tank_vol / (math.pi * (2.0 * ar - 2.0 / 3.0))
+        R        = r3 ** (1.0 / 3.0)
+        return 2.0 * R * ar   # total capsule length
+
+    @Attribute
     def payload_start_x(self) -> float:
         """
         X-position where the first payload item begins [m].
 
-        = cylinder_start_x (nose-cone end) + payload_nose_clearance.
-
-        Uses the Roskam fuselage length estimate for cylinder_start_x because
-        the actual fuselage length is not yet known at payload-layout time
-        (the Payload Part feeds back into fuselage sizing).  The Roskam
-        estimate is accurate to ±15 % for MTOW-driven designs; the small
-        positional offset this introduces is visually negligible.
+        Always placed from the nose: cylinder_start + nose_clearance offset.
+        If this puts the payload inside the fuel tank the fuselage sizing in
+        Aircraft._min_fuselage_length_for_payload_tank_clearance will force
+        the fuselage (and therefore the wing/tank station) to grow until the
+        tank clears the payload end.
         """
-        cylinder_start_x = (self.fuselage_cylinder_start / 100.0) * \
-                            self._roskam_fuselage_length_estimate
-        return cylinder_start_x + self.payload_nose_clearance
+        L_est            = self._roskam_fuselage_length_estimate
+        cylinder_start_x = (self.fuselage_cylinder_start / 100.0) * L_est
+        return cylinder_start_x + self.payload_nose_clearance * L_est
 
     @Part
     def payload(self) -> Payload:
@@ -735,6 +755,11 @@ class Drone(GeomBase):
                 return False
 
             def _collect(obj):
+                # Handle lists/sequences (quantified @Part returns these)
+                if isinstance(obj, (list, tuple)):
+                    for item in obj:
+                        _collect(item)
+                    return
                 if not isinstance(obj, GeomBase):
                     return
                 added = _add_shape(obj)
@@ -746,7 +771,31 @@ class Drone(GeomBase):
                     except Exception:
                         pass
 
+            # ── main aircraft structure (fuselage, wings, tails, engine nacelles) ──
             _collect(self.aircraft)
+
+            # ── payload (lives as a Part on Drone, NOT under Aircraft) ──
+            try:
+                _collect(self.payload)
+            except Exception as _exc:
+                print(f"[STP] payload collection skipped: {_exc}")
+
+            # ── propeller blades (quantified @Part — may not surface through
+            #    obj.children traversal; collect explicitly by path) ──
+            try:
+                eng = self.aircraft.engines
+                for _prop in (eng.prop_starboard, eng.prop_port):
+                    if getattr(_prop, 'suppress', False):
+                        continue
+                    try:
+                        for _blade in _prop.blades:
+                            _add_shape(_blade)
+                        _add_shape(_prop.spinner)
+                    except Exception as _be:
+                        print(f"[STP] blade/spinner collection skipped for "
+                              f"{_prop.label}: {_be}")
+            except Exception as _exc:
+                print(f"[STP] propeller blade collection skipped: {_exc}")
 
             if shapes_added[0] == 0:
                 print("STP export: no shapes found — geometry may not be "

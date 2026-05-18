@@ -1,6 +1,8 @@
 import sys
 import os
 import math
+import glob
+import shutil
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
@@ -43,7 +45,7 @@ class Aircraft(GeomBase):
     # Gap from nose-cone/cylinder junction to first payload item [m].
     # Prevents payload overlapping the prop nacelle (tractor configurations).
     # Default 100 mm — increase if the nacelle is long.
-    payload_nose_clearance: float = Input(0.20)
+    payload_nose_clearance: float = Input(0.12)
 
     # Fuel and engine mass fractions for CG computation
     # Roskam Vol. I §8.1: fuel CG assumed at wing AC (tanks in centre wing box).
@@ -256,30 +258,18 @@ class Aircraft(GeomBase):
         """
         Nose position of the rendered fuel tank [m from aircraft origin].
 
-        Safe to call: fuselage.length was already determined via
-        _fuel_tank_sizing (no dependency on this Part).
+        The tank is placed at the wing attach station — the aerodynamically
+        correct location for fuel storage (Roskam Vol. I §8.1: fuel CG at
+        wing AC, i.e. fuel lives in the centre wing box / integral wing tanks).
+        Wingbox spar extents are treated as visual geometry only; no structural
+        clearance offset is applied here.
 
-        Layout in cylinder section:
-          [nosecone end] → [payload bay] → [50 mm gap] → [fuel tank] → [tailcone start]
+        Payload items are laid out by Drone.payload_start_x so they land
+        fore or aft of this station without overlapping the tank.
         """
         from parapy.geom import translate as _translate, Vector as _Vector
-        payload_len   = (self.payload_object.min_fuselage_length
-                         if self.payload_object is not None else 0.0)
-        # payload_nose_clearance + payload_bay + 50mm structural gap → tank nose
-        nominal_start = (self.fuselage._x_cylinder_start
-                         + self.payload_nose_clearance
-                         + payload_len
-                         + 0.05)
-        # Push tank aft of wingbox rear spar to avoid structural intersection.
-        # If the payload bay already ends aft of the rear spar the wingbox term
-        # has no effect (max selects the larger value).
-        tank_start_x  = max(nominal_start, self._wingbox_end_x + 0.05)
-        if tank_start_x > nominal_start + 1e-6:
-            print(
-                f"[Aircraft] Fuel tank pushed aft by wingbox: "
-                f"nominal x={nominal_start:.3f} m → {tank_start_x:.3f} m "
-                f"(rear spar at x={self._wingbox_end_x:.3f} m)"
-            )
+        tank_start_x = self.main_wing.attach_x
+        print(f"[Aircraft] Fuel tank nose at wing attach x = {tank_start_x:.3f} m")
         return _translate(self.position, _Vector(1, 0, 0), tank_start_x)
 
     # ============================================================ #
@@ -656,7 +646,7 @@ class Aircraft(GeomBase):
                          if self.payload_object is not None else 0.0)
         # ── payload wingbox overlap check ──────────────────────────── #
         # payload starts at cylinder_start + payload_nose_clearance
-        payload_start_x = self.fuselage._x_cylinder_start + self.payload_nose_clearance
+        payload_start_x = self.fuselage._x_cylinder_start + self.fuselage.length * self.payload_nose_clearance
         payload_end_x   = payload_start_x + payload_len
         if (payload_len > 0.0
                 and payload_end_x > self._wingbox_start_x

@@ -100,9 +100,9 @@ class LiftingSurface(GeomBase):
 
     run_airfoil_sweep: bool  = Input(False)
     ld_required:       float = Input(None)
-    camber_range:    list = Input([0.0, 0.02, 0.04, 0.06, 0.08, 0.09])
-    position_range:  list = Input([0.2, 0.3, 0.4, 0.5, 0.6])
-    thickness_range: list = Input([0.06, 0.08, 0.10, 0.12, 0.15, 0.18, 0.21])
+    camber_range:    list = Input([0.01, 0.02, 0.03, 0.04])
+    position_range:  list = Input([0.3, 0.4, 0.5, 0.6])
+    thickness_range: list = Input([0.08, 0.10, 0.12, 0.14])
     g: float = Input(9.81)
 
     # ------------------------------------------------------------------ #
@@ -508,7 +508,7 @@ class LiftingSurface(GeomBase):
             camber_position=self.maximum_camber_position,
             thickness_to_chord=self.thickness_to_chord,
             thickness_factor=self.t_factor_root,
-            export_dat=True, airfoil_name="root_airfoil_aero",
+            export_dat=True, airfoil_name=None,  # auto-derives NACA name (e.g. naca2412)
             position=self._root_position,
             mach=self.mach,
             reynolds=self.reynolds,

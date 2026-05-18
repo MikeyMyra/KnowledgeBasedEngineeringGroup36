@@ -119,14 +119,12 @@ class Airfoil(GeomBase):
 
     @Attribute
     def normalized_coordinates(self):
-        """Full (x, z) airfoil in unit-chord space."""
         x          = self.x_distribution
         yt         = self.thickness_distribution * self.thickness_factor
-        yc, dyc_dx = self.camber_line
-        theta      = np.arctan(dyc_dx)
+        yc, _      = self.camber_line          # dyc_dx not needed
 
-        xu = x - yt * np.sin(theta);  zu = yc + yt * np.cos(theta)
-        xl = x + yt * np.sin(theta);  zl = yc - yt * np.cos(theta)
+        xu = x;        zu = yc + yt
+        xl = x;        zl = yc - yt
 
         x_full = np.concatenate([xu[::-1], xl[1:]])
         z_full = np.concatenate([zu[::-1], zl[1:]])
@@ -240,15 +238,38 @@ class Airfoil(GeomBase):
         reynolds     = reynolds if reynolds is not None else self.reynolds
         mach_actual  = mach     if mach     is not None else self.mach
         if mach_actual > self.XFOIL_MACH_MAX:
-            print(f"[Xfoil] Mach {mach_actual:.3f} exceeds Xfoil validity limit "
-                  f"(M = {self.XFOIL_MACH_MAX}).  Capping to M = {self.XFOIL_MACH_MAX} "
-                  f"for viscous polar computation.")
-        mach = min(mach_actual, self.XFOIL_MACH_MAX)
+            print(f"[Xfoil] Mach {mach_actual:.3f} exceeds XFoil validity limit "
+                  f"(M = {self.XFOIL_MACH_MAX}). Aborting XFoil run.")
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                _root = tk.Tk()
+                _root.withdraw()
+                messagebox.showwarning(
+                    "XFoil Mach Limit Exceeded",
+                    f"Cruise Mach {mach_actual:.3f} exceeds XFoil's valid range "
+                    f"(M ≤ {self.XFOIL_MACH_MAX}).\n\n"
+                    f"XFoil cannot produce reliable results at transonic speeds. "
+                    f"No polar will be generated.",
+                )
+                _root.destroy()
+            except Exception:
+                pass
+            return [], [], [], []   # abort — do not run XFoil
+        mach = mach_actual
 
-        # 1. Make sure the .dat file exists
-        _ = self.write_dat_file
-
+        # 1. Always write the .dat file fresh (do NOT rely on the cached
+        #    @Attribute write_dat_file — after a sweep the ParaPy cache may
+        #    still hold the old path without re-writing the file on disk).
+        os.makedirs(_AIRFOIL_DIR, exist_ok=True)
         dat_name   = f"{self.resolved_name}.dat"
+        dat_path   = os.path.join(_AIRFOIL_DIR, dat_name)
+        with open(dat_path, "w") as _df:
+            _df.write(f"{self.resolved_name}\n")
+            for _x, _z in self.normalized_coordinates:
+                _df.write(f"{_x:.6f} {_z:.6f}\n")
+        print(f"[XFoil] DAT written → {dat_path}")
+
         polar_path = self.polar_file_path
         dump_path  = self.dump_file_path
 
@@ -259,12 +280,13 @@ class Airfoil(GeomBase):
 
         # 2. Build the XFoil command script
         #    - Paths are relative to _XFOIL_DIR (cwd for the subprocess)
+        #    - Use forward slashes — XFoil (Fortran) does not handle Windows backslashes
         #    - PLOP G turns off the graphics window
         #    - VISC must come BEFORE MACH in OPER
         #    - Two blank PACC lines: first opens, second closes the polar file
-        rel_dat   = os.path.join("Airfoils", dat_name)
-        rel_polar = os.path.join("Airfoils", f"{self.resolved_name}_polar.txt")
-        rel_dump  = os.path.join("Airfoils", f"{self.resolved_name}_dump.txt")
+        rel_dat   = "Airfoils/" + dat_name
+        rel_polar = "Airfoils/" + f"{self.resolved_name}_polar.txt"
+        rel_dump  = "Airfoils/" + f"{self.resolved_name}_dump.txt"
 
         script = "\n".join([
             "PLOP",
@@ -368,6 +390,26 @@ class Airfoil(GeomBase):
 
         if not alphas:
             print("No polar data – XFoil produced no output.")
+            # Only show the "diverged" popup when Mach was within the valid range;
+            # if Mach was the reason run_xfoil aborted, that popup already fired.
+            if self.mach <= self.XFOIL_MACH_MAX:
+                try:
+                    import tkinter as tk
+                    from tkinter import messagebox
+                    _root = tk.Tk()
+                    _root.withdraw()
+                    messagebox.showwarning(
+                        "XFoil Diverged",
+                        f"XFoil produced no polar data for "
+                        f"{self.resolved_name.upper()}.\n\n"
+                        f"The viscous solver likely diverged — this commonly "
+                        f"happens with high-camber or very thin airfoils "
+                        f"(e.g. camber > 6%).\n\n"
+                        f"Try reducing the camber range in the airfoil sweep inputs.",
+                    )
+                    _root.destroy()
+                except Exception:
+                    pass
             return None
 
         alphas = np.array(alphas)
