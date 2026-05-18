@@ -401,7 +401,7 @@ class WP_WS_Diagram:
             ax.set_xlabel("Wing Loading W/S (N/m²)")
             if idh == 0:
                 ax.set_ylabel(y_label)
-            ax.set_title(f"Altitude: {self.h[idh]} m")
+            #ax.set_title(f"Altitude: {self.h[idh]} m")
             ax.grid(True)
             ax.legend(fontsize='small', loc='upper right')
 

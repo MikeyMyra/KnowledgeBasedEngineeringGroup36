@@ -37,21 +37,35 @@ from matplotlib.lines import Line2D
 # ── default parameters (edit or override via function arguments) ──────────── #
 
 DEFAULTS = dict(
-    MTOW        = 500.0,   # [kg]   maximum take-off mass
-    wing_area   = 8.5,     # [m²]   reference wing area
-    rho         = 1.225,   # [kg/m³] air density at cruise altitude
-    n_pos       = 3.5,     # [–]    positive limit load factor
-    n_neg       = -1.5,    # [–]    negative limit load factor  (negative value)
-    CLmax_pos   = 1.4,     # [–]    maximum lift coefficient (positive stall)
-    CLmax_neg   = 1.0,     # [–]    maximum lift coefficient (negative stall, |value|)
-    Vc_factor   = 1.35,    # [–]    Vc = Vc_factor * Va  (Raymer heuristic)
-    Vd_factor   = 1.20,    # [–]    Vd = Vd_factor * Vc  (EASA CS-LUAS)
-    output_dir  = None,    # str or None — directory for timestamped PNG output
+    MTOW           = 500.0,   # [kg]   maximum take-off mass
+    wing_area      = 8.5,     # [m²]   reference wing area
+    cruise_speed   = 60.0,    # [m/s]  true airspeed at cruise (used as Vc directly)
+    cruise_altitude= 3000.0,  # [m]    ISA altitude — drives air density
+    n_pos          = 3.5,     # [–]    positive limit load factor
+    n_neg          = None,    # [–]    negative limit load factor (None → −n_pos/2)
+    CLmax_pos      = 1.4,     # [–]    maximum lift coefficient (positive stall)
+    CLmax_neg      = 1.0,     # [–]    maximum lift coefficient (negative stall, |value|)
+    Vd_factor      = 1.20,    # [–]    Vd = Vd_factor * Vc  (EASA CS-LUAS)
+    output_dir     = None,    # str or None — directory for timestamped PNG output
 )
 
 
-def compute_speeds(MTOW, wing_area, rho, n_pos, n_neg,
-                   CLmax_pos, CLmax_neg, Vc_factor, Vd_factor):
+def _isa_density(altitude_m: float) -> float:
+    """ISA air density at *altitude_m* [kg/m³] — no external dependency."""
+    T0, L, R, g0 = 288.15, 0.0065, 287.058, 9.80665
+    if altitude_m <= 11_000.0:
+        T = T0 - L * altitude_m
+        p = 101_325.0 * (T / T0) ** (g0 / (L * R))
+    else:
+        T11 = T0 - L * 11_000.0
+        p11 = 101_325.0 * (T11 / T0) ** (g0 / (L * R))
+        T   = T11
+        p   = p11 * math.exp(-g0 * (altitude_m - 11_000.0) / (R * T11))
+    return p / (R * T)
+
+
+def compute_speeds(MTOW, wing_area, rho, cruise_speed, n_pos, n_neg,
+                   CLmax_pos, CLmax_neg, Vd_factor):
     """Return dict of all characteristic speeds and wing loading."""
     g   = 9.80665
     W   = MTOW * g          # [N]
@@ -65,8 +79,8 @@ def compute_speeds(MTOW, wing_area, rho, n_pos, n_neg,
     Va     = Vs1     * math.sqrt(abs(n_pos))
     Va_neg = Vs1_neg * math.sqrt(abs(n_neg))
 
-    # design cruise and dive speeds
-    Vc = Vc_factor * Va
+    # Vc is the actual cruise speed; Vd from EASA factor
+    Vc = cruise_speed
     Vd = Vd_factor * Vc
 
     return dict(Vs1=Vs1, Vs1_neg=Vs1_neg, Va=Va, Va_neg=Va_neg,
@@ -83,39 +97,50 @@ def _archive_previous(output_dir: str, pattern: str) -> None:
 
 
 def plot_vn_diagram(
-    MTOW       = DEFAULTS["MTOW"],
-    wing_area  = DEFAULTS["wing_area"],
-    rho        = DEFAULTS["rho"],
-    n_pos      = DEFAULTS["n_pos"],
-    n_neg      = DEFAULTS["n_neg"],
-    CLmax_pos  = DEFAULTS["CLmax_pos"],
-    CLmax_neg  = DEFAULTS["CLmax_neg"],
-    Vc_factor  = DEFAULTS["Vc_factor"],
-    Vd_factor  = DEFAULTS["Vd_factor"],
-    output_dir = DEFAULTS["output_dir"],
+    MTOW            = DEFAULTS["MTOW"],
+    wing_area       = DEFAULTS["wing_area"],
+    cruise_speed    = DEFAULTS["cruise_speed"],
+    cruise_altitude = DEFAULTS["cruise_altitude"],
+    n_pos           = DEFAULTS["n_pos"],
+    n_neg           = DEFAULTS["n_neg"],
+    CLmax_pos       = DEFAULTS["CLmax_pos"],
+    CLmax_neg       = DEFAULTS["CLmax_neg"],
+    Vd_factor       = DEFAULTS["Vd_factor"],
+    output_dir      = DEFAULTS["output_dir"],
 ):
     """
     Generate, display, and save a maneuver V-n diagram.
+
+    Air density is derived from cruise_altitude via the ISA model.
+    Vc is set directly to cruise_speed (the actual design cruise speed).
+    Vd = Vd_factor × Vc  (EASA CS-LUAS default: 1.20).
+    n_neg defaults to −n_pos / 2 if not supplied.
 
     Always calls plt.show(). If output_dir is given, also saves a timestamped
     PNG there (any previous vn_diagram_*.png is archived to output_dir/data/).
 
     Parameters
     ----------
-    MTOW       : float      Maximum take-off mass [kg]
-    wing_area  : float      Reference wing area [m²]
-    rho        : float      Air density at cruise altitude [kg/m³]
-    n_pos      : float      Positive limit load factor [–]
-    n_neg      : float      Negative limit load factor (negative value) [–]
-    CLmax_pos  : float      Max lift coefficient, positive stall [–]
-    CLmax_neg  : float      Max lift coefficient, negative stall (magnitude) [–]
-    Vc_factor  : float      Vc = Vc_factor × Va [–]
-    Vd_factor  : float      Vd = Vd_factor × Vc [–]
-    output_dir : str|None   Directory to save timestamped PNG. None = no file saved.
+    MTOW            : float      Maximum take-off mass [kg]
+    wing_area       : float      Reference wing area [m²]
+    cruise_speed    : float      Cruise true airspeed — used directly as Vc [m/s]
+    cruise_altitude : float      ISA altitude for air density [m]
+    n_pos           : float      Positive limit load factor [–]
+    n_neg           : float|None Negative limit load factor (negative value).
+                                 None → −n_pos / 2
+    CLmax_pos       : float      Max lift coefficient, positive stall [–]
+    CLmax_neg       : float      Max lift coefficient, negative stall (magnitude) [–]
+    Vd_factor       : float      Vd = Vd_factor × Vc [–]
+    output_dir      : str|None   Directory to save timestamped PNG. None = no file saved.
     """
+    if n_neg is None:
+        n_neg = -n_pos / 2.0
+
+    rho = _isa_density(cruise_altitude)
+
     g  = 9.80665
-    sp = compute_speeds(MTOW, wing_area, rho, n_pos, n_neg,
-                        CLmax_pos, CLmax_neg, Vc_factor, Vd_factor)
+    sp = compute_speeds(MTOW, wing_area, rho, cruise_speed, n_pos, n_neg,
+                        CLmax_pos, CLmax_neg, Vd_factor)
     Vs1, Vs1_neg = sp["Vs1"], sp["Vs1_neg"]
     Va, Va_neg   = sp["Va"],  sp["Va_neg"]
     Vc, Vd       = sp["Vc"],  sp["Vd"]
@@ -193,7 +218,10 @@ def plot_vn_diagram(
         f"MTOW = {MTOW:.0f} kg\n"
         f"S = {wing_area:.2f} m²\n"
         f"W/S = {WoS:.0f} N/m²\n"
-        f"ρ = {rho:.4f} kg/m³"
+        f"Vc = {cruise_speed:.1f} m/s\n"
+        f"Alt = {cruise_altitude:.0f} m\n"
+        f"ρ = {rho:.4f} kg/m³\n"
+        f"n+ = {n_pos:.1f} g    n− = {n_neg:.1f} g"
     )
     ax.text(0.02, 0.03, info, transform=ax.transAxes,
             ha="left", va="bottom", fontsize=8.5,
@@ -219,29 +247,33 @@ def plot_vn_diagram(
 
 def print_summary(**kwargs):
     p = {**DEFAULTS, **kwargs}
+    if p["n_neg"] is None:
+        p["n_neg"] = -p["n_pos"] / 2.0
+    rho = _isa_density(p["cruise_altitude"])
     sp = compute_speeds(
-        p["MTOW"], p["wing_area"], p["rho"],
+        p["MTOW"], p["wing_area"], rho, p["cruise_speed"],
         p["n_pos"], p["n_neg"],
         p["CLmax_pos"], p["CLmax_neg"],
-        p["Vc_factor"], p["Vd_factor"],
+        p["Vd_factor"],
     )
-    print("=" * 48)
+    print("=" * 52)
     print("  V-n Diagram — Characteristic Speeds")
-    print("=" * 48)
+    print("=" * 52)
+    print(f"  Cruise speed  Vc  : {p['cruise_speed']:>8.1f} m/s  ({p['cruise_speed']*3.6:.1f} km/h)")
+    print(f"  Cruise altitude   : {p['cruise_altitude']:>8.0f} m")
+    print(f"  Air density   ρ   : {rho:>8.4f} kg/m³")
     print(f"  Wing loading  W/S : {sp['WoS']:>8.1f} N/m²")
     print(f"  Stall speed   Vs₁ : {sp['Vs1']:>8.2f} m/s  ({sp['Vs1']*3.6:.1f} km/h)")
     print(f"  Corner speed  Va  : {sp['Va']:>8.2f} m/s  ({sp['Va']*3.6:.1f} km/h)")
-    print(f"  Cruise speed  Vc  : {sp['Vc']:>8.2f} m/s  ({sp['Vc']*3.6:.1f} km/h)")
     print(f"  Dive speed    Vd  : {sp['Vd']:>8.2f} m/s  ({sp['Vd']*3.6:.1f} km/h)")
     print(f"  n+  limit         : {p['n_pos']:>8.1f} g")
     print(f"  n−  limit         : {p['n_neg']:>8.1f} g")
-    print("=" * 48)
+    print("=" * 52)
 
 
 # ── standalone entry point ────────────────────────────────────────────────── #
 
 if __name__ == "__main__":
     print_summary()
-    # saves to an Outputfiles/ folder next to this script when run directly
     _here = os.path.dirname(os.path.abspath(__file__))
     plot_vn_diagram(output_dir=os.path.join(_here, "Outputfiles"))

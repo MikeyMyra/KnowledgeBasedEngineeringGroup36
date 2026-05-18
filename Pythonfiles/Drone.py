@@ -8,6 +8,7 @@ import math
 import os
 import glob
 import shutil
+import datetime
 from typing import Optional
 
 from parapy.core import Input, Attribute, Part, action
@@ -492,8 +493,6 @@ class Drone(GeomBase):
 
     @action(label="Show Design Point")
     def WP_WS_diagram(self):
-        import datetime
-
         self.mission.thrust_and_wing_loading_plot()
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -509,16 +508,26 @@ class Drone(GeomBase):
 
     @action(label="Show V-n Diagram")
     def vn_diagram(self):
-        import os
-        save_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-        plot_vn_diagram(
-            MTOW       = self.MTOW,
-            wing_area  = self.wing_area,
-            rho        = self.air_density,
-            n_pos      = self.maximum_load_factor,
-            n_neg      = -self.maximum_load_factor / 2.0,
-            output_dir = os.path.join(save_dir, "Outputfiles"),
-        )
+
+        save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        png_path  = os.path.join(save_dir, f"Outputfiles/vn-diagram_{timestamp}.png")
+
+        _archive_previous(os.path.join(save_dir, "Outputfiles"), "vn-diagram*.png")
+
+        try:
+            plot_vn_diagram(
+                MTOW            = self.MTOW,
+                wing_area       = self.wing_area,
+                cruise_speed    = self.cruise_speed,
+                cruise_altitude = self.mission_altitude,
+                n_pos           = self.maximum_load_factor,
+                output_dir      = os.path.join(save_dir, "Outputfiles"),
+            )
+            print(f"✓ Design-point diagram saved: {png_path}")
+        except Exception as exc:
+            print(f"Design-point PNG save failed: {exc}")
+
 
     @action(label="Run Wing Airfoil Sweep")
     def run_wing_sweep(self):
@@ -526,8 +535,6 @@ class Drone(GeomBase):
 
     @action(label="Plot Wing XFoil polars")
     def plot_wing_cl_alpha(self):
-        import datetime
-
         self.aircraft.main_wing.plot_cl_alpha()
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -556,7 +563,6 @@ class Drone(GeomBase):
         Any previously generated drone_report_*.pdf is moved to
         Outputfiles/data/ before the new file is written.
         """
-        import datetime
         import tempfile
         import math as _math
 
@@ -963,8 +969,6 @@ class Drone(GeomBase):
 
     @action(label="Export STP File")
     def export_stp_file(self):
-        import datetime
-
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         stp_path  = os.path.join(save_dir, f"Outputfiles/drone_geometry_{timestamp}.stp")

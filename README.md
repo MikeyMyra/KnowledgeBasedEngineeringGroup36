@@ -67,10 +67,11 @@ If a value is outside the valid range ParaPy raises a `ValueError` and rejects t
 
 ## Available Actions
 
-Click these buttons in the top toolbar:
-
 ### Show Design Point
 Plots the W/P – W/S (or T/W – W/S) constraint diagram and saves a timestamped PNG to `Outputfiles/`.
+
+### Show V-n Diagram
+Plots the V-n diagram and saves a timestamped PNG to `Outputfiles/`.
 
 ### Run Wing Airfoil Sweep
 Runs a Q3D sweep over NACA 4-series airfoil parameters to find the best aerodynamic shape. Requires MATLAB.
