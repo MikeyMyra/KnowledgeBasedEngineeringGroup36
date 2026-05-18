@@ -1,9 +1,10 @@
 # app.py
 
 from typing import Optional
+from parapy.webgui import mui, layout, viewer, html
+from parapy.webgui.core import Component, NodeType, State, alert, get_asset_url
+from parapy.webgui.core.websocket.dispatchers import update
 
-from parapy.webgui.core import Component, NodeType, State, Prop
-from parapy.webgui import mui, layout, viewer
 from parapy.webgui.app_bar import AppBar
 
 # If your Drone lives in another module, adjust this import:
@@ -40,6 +41,13 @@ class DroneApp(Component):
     uav_class_override_ui: str = State("")
     mission_objective_override_ui: str = State("")
 
+    #Diagram state
+    diagrams_open: bool = State(False)
+    diagrams_data: dict = State(default_factory=dict)
+
+    # loading bar
+    creating_concept: bool = State(False)
+
     def open_fine_tune_dialog(self, *args):
         if self.drone is not None:
             self.uav_class_override_ui = self.drone.uav_class_override or ""
@@ -66,6 +74,23 @@ class DroneApp(Component):
             return f"{round(value, ndigits)} {suffix}".rstrip()
         except TypeError:
             return f"{value} {suffix}".rstrip()
+
+    def render_create_concept_progress_dialog(self) -> NodeType:
+        return mui.Dialog(
+            open=self.creating_concept,
+            maxWidth="xs",
+            fullWidth=True,
+        )[
+            mui.DialogTitle["Creating concept"],
+            mui.DialogContent[
+                layout.Box(orientation='vertical', gap='0.75em', style={'minWidth': 280})[
+                    mui.LinearProgress(variant='indeterminate'),  # bar, no fixed %
+                    mui.Typography(color="text.secondary")[
+                        "Sizing concept and generating baseline geometry..."
+                    ],
+                ]
+            ],
+        ]
 
     def render(self) -> NodeType:
         theme = {
@@ -136,6 +161,8 @@ class DroneApp(Component):
                 # Dialogs
             self.render_mission_dialog(),
             self.render_fine_tune_dialog(),
+            self.render_diagrams_dialog(),
+            self.render_create_concept_progress_dialog(),
         ]
 
     def render_viewer(self) -> NodeType:
@@ -301,10 +328,12 @@ class DroneApp(Component):
             ],
             mui.DialogActions[
                 mui.Button(onClick=self.close_mission_dialog)["Cancel"],
-                mui.Button(variant="contained", color="primary",
-                           onClick=self.handle_create_concept)[
-                    "Create concept"
-                ],
+                mui.Button(
+                    variant="contained",
+                    color="primary",
+                    onClick=self.handle_create_concept,
+                    disabled=self.creating_concept,
+                )["Create concept"],
             ]
         ]
 
@@ -351,10 +380,11 @@ class DroneApp(Component):
             self.mission_dialog_open = False
 
     def handle_create_concept(self, *args):
-        """Instantiate Drone using mission & payload intent.
+        """Instantiate Drone using mission & payload intent."""
+        # show progress dialog and lock button
+        self.creating_concept = True
+        update()  # push UI so progress bar appears immediately
 
-        Option B: Drone only exists after this is pressed.
-        """
         try:
             drone = Drone(
                 cruise_speed=self.mission_cruise_speed,
@@ -365,12 +395,12 @@ class DroneApp(Component):
                 weapon_count=self.weapon_count,
             )
         except Exception as exc:
-            # You can replace this with a nicer error dialog/snackbar if desired.
             print(f"Error creating Drone: {exc}")
         else:
             self.drone = drone
             self.mission_dialog_open = False
-
+        finally:
+            self.creating_concept = False
     # -------------------------------------------------------------------------
     # Fine-tuning dialog (post-Drone; uses SlotFields)
     # -------------------------------------------------------------------------
@@ -396,13 +426,20 @@ class DroneApp(Component):
                     # Column 1: classification & objective
                     mui.Box[
                         mui.Typography(variant="subtitle1")["Classification overrides"],
+
+                            # Comment / helper text above field
+                        mui.Typography(variant="body2", color="text.secondary")[
+                            "UAV class override (small/medium/large)"
+                        ],
                         mui.TextField(
-                            label='UAV class override (small/medium/large)',
                             value=self.uav_class_override_ui,
                             onChange=self.on_change_uav_class_override,
                         ),
+
+                        mui.Typography(variant="body2", color="text.secondary", sx={'mt': 0.5})[
+                            "Mission objective override (High Speed/High Endurance/Low cost)"
+                        ],
                         mui.TextField(
-                            label='Mission objective override (High Speed/High Endurance/Low cost)',
                             value=self.mission_objective_override_ui,
                             onChange=self.on_change_mission_objective_override,
                         ),
@@ -428,13 +465,19 @@ class DroneApp(Component):
                         # Column 3: fuel system
                     mui.Box[
                         mui.Typography(variant="subtitle1")["Fuel system"],
+
+                        mui.Typography(variant="body2", color="text.secondary")[
+                            'Fuel type (avgas_100ll, jet_a, jp8, lipo_battery or "auto")'
+                        ],
                         layout.SlotStringField(
-                            self.drone, 'fuel_type',
-                            label='Fuel type (key or "auto")'
+                            self.drone, 'fuel_type'
                         ),
+
+                        mui.Typography(variant="body2", color="text.secondary", sx={'mt': 0.5})[
+                            'Fuel tank aspect ratio [-]'
+                        ],
                         layout.SlotFloatField(
-                            self.drone, 'fuel_tank_aspect_ratio',
-                            label='Fuel tank aspect ratio [-]'
+                            self.drone, 'fuel_tank_aspect_ratio'
                         ),
                     ],
 
@@ -463,35 +506,123 @@ class DroneApp(Component):
     # -------------------------------------------------------------------------
     # Handlers for plots and exports
     # -------------------------------------------------------------------------
+    def render_diagrams_dialog(self) -> NodeType:
+        wp_ws_png = self.diagrams_data.get("wp_ws_png")
+        cl_png = self.diagrams_data.get("cl_png")
+        vn_png = self.diagrams_data.get("vn_png")
+
+        return mui.Dialog(
+            open=self.diagrams_open,
+            onClose=self.handle_close_diagrams,
+            maxWidth='lg',
+            fullWidth=True,
+        )[
+            mui.DialogTitle["Performance diagrams (PNG)"],
+            mui.DialogContent(dividers=True)[
+                mui.Box(
+                    sx={
+                        'display': 'flex',
+                        'flexWrap': 'wrap',  # allow wrapping to next row
+                        'gap': '1em',
+                        'width': '80vw',
+                        'maxHeight': '70vh',
+                        'overflowY': 'auto',
+                    }
+                )[
+                    # WP/WS PNG
+                    mui.Box(sx={'flex': '1 1 calc(50% - 1em)'})[
+                        (
+                            html.img(
+                                src=get_asset_url(wp_ws_png, hash=True),
+                                style={
+                                    'width': '100%',  # fit container width
+                                    'height': 'auto',  # keep aspect ratio
+                                    'objectFit': 'contain',
+                                },
+                            )
+                            if wp_ws_png
+                            else mui.Typography["No WP/WS diagram PNG"]
+                        )
+                    ],
+
+                    # Cl–α PNG
+                    mui.Box(sx={'flex': '1 1 calc(50% - 1em)'})[
+                        (
+                            html.img(
+                                src=get_asset_url(cl_png, hash=True),
+                                style={
+                                    'width': '100%',
+                                    'height': 'auto',
+                                    'objectFit': 'contain',
+                                },
+                            )
+                            if cl_png
+                            else mui.Typography["No Cl–α diagram PNG"]
+                        )
+                    ],
+
+                    # V–n PNG
+                    mui.Box(sx={'flex': '1 1 calc(50% - 1em)'})[
+                        (
+                            html.img(
+                                src=get_asset_url(vn_png, hash=True),
+                                style={
+                                    'width': '100%',
+                                    'height': 'auto',
+                                    'objectFit': 'contain',
+                                },
+                            )
+                            if vn_png
+                            else mui.Typography["No V–n diagram PNG"]
+                        )
+                    ],
+                ],
+                mui.DialogActions[
+                    mui.Button(onClick=self.handle_close_diagrams)["Close"],
+                ]
+            ]
+        ]
+
+    def handle_close_diagrams(self, evt, *args) -> None:
+        self.diagrams_open = False
+
+    # -------------------------------------------------------------------------
+    # Event handler that fills diagrams_data and opens dialog
+    # -------------------------------------------------------------------------
     def handle_show_diagrams(self, *args):
         if self.drone is None:
+            alert("No drone concept available.")
             return
-        # Call existing @action methods on Drone
+
         try:
-            # WP/WS or T/W–W/S design point diagram
-            self.drone.WP_WS_diagram()
-            # XFoil polars for wing root airfoil
-            self.drone.plot_wing_cl_alpha()
-            # V-n diagram (when implemented)
-            self.drone.vn_diagram()
+            self.diagrams_data = {
+                "wp_ws_png": self.drone.WP_WS_diagram(),
+                "cl_png":    self.drone.plot_wing_cl_alpha(),
+                "vn_png":    self.drone.vn_diagram(),
+            }
+            self.diagrams_open = True
         except Exception as exc:
-            print(f"Error running plot actions: {exc}")
+            alert(f"Error running plot actions: {exc}")
 
     def handle_export_step(self, *args):
         if self.drone is None:
+            alert("No drone concept available to export.")
             return
         try:
             self.drone.export_stp_file()
+            alert("STEP file exported successfully.")
         except Exception as exc:
-            print(f"Error exporting STEP: {exc}")
+            alert(f"Error exporting STEP: {exc}")
 
     def handle_export_pdf(self, *args):
         if self.drone is None:
+            alert("No drone concept available to export.")
             return
         try:
             self.drone.export_pdf_report()
+            alert("PDF report exported successfully.")
         except Exception as exc:
-            print(f"Error exporting PDF: {exc}")
+            alert(f"Error exporting PDF: {exc}")
 
 
 # -------------------------------------------------------------------------
@@ -499,4 +630,5 @@ class DroneApp(Component):
 # -------------------------------------------------------------------------
 if __name__ == "__main__":
     from parapy.webgui.core import display
-    display(DroneApp, reload=True)
+    display(DroneApp, reload=True,
+            assets_dir=r'C:\Users\jurge\OneDrive - Delft University of Technology\Documents\Studie\Master\Q3\KBE\ParaPY\Assignment\KnowledgeBasedEngineeringGroup36')
