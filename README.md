@@ -32,7 +32,7 @@ cd Assignment
 python Pythonfiles/main.py
 ```
 
-The ParaPy GUI opens with the 3-D viewer and the attribute tree. Inputs appear in the attribute tree alongside computed outputs — they are typically marked with an input icon and can be edited in-place.
+The ParaPy GUI opens with the 3-D viewer and the attribute tree. Inputs appear in the attribute tree alongside computed outputs.
 
 ---
 
@@ -73,13 +73,13 @@ Click these buttons in the top toolbar:
 Plots the W/P – W/S (or T/W – W/S) constraint diagram and saves a timestamped PNG to `Outputfiles/`.
 
 ### Run Wing Airfoil Sweep
-Runs a Q3D sweep over NACA 4-series airfoil parameters to find the best aerodynamic shape. Requires XFoil.
+Runs a Q3D sweep over NACA 4-series airfoil parameters to find the best aerodynamic shape. Requires MATLAB.
 
 ### Plot Wing XFoil Polars
-Plots Cl–α and Cd–α polars for the wing root airfoil and saves a PNG to `Outputfiles/`.
+Plots Cl–α, Cd–α, Cd–m & Cl-Cd polars for the wing root airfoil and saves a PNG to `Outputfiles/`.
 
 ### Print Stability Report
-Prints a longitudinal stability summary to the console (CG, neutral point, static margin, assessment).
+Prints a longitudinal stability summary to the console (CG, neutral point, static margin, assessment) and saved a TXT in `Outputfiles/`.
 
 ### Export PDF Report
 Generates a full design-summary PDF in `Outputfiles/` covering mission parameters, weight budget, performance margins, fuel fractions, wing and tail geometry, fuselage, fuel system, and stability.

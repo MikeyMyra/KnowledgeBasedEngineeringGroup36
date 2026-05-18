@@ -88,3 +88,12 @@ Pythonfiles/Components/Payload/__pycache__/Payloadrules.cpython-312.pyc
 Pythonfiles/Components/Engines/__pycache__/PropellerEngine.cpython-312.pyc
 Pythonfiles/Components/Engines/__pycache__/PropellerEngine.cpython-312.pyc
 XFOIL6.99/Airfoils
+Q3D/Storage/
+Q3D/Storage/AVLstrip.dat
+Q3D/Storage/AVLrun.dat
+Q3D/Storage/AVLload.dat
+Q3D/Storage/AVLaero.dat
+Pythonfiles/Components/Payload/__pycache__/Payload.cpython-312.pyc
+Pythonfiles/Components/Payload/__pycache__/Payloadrules.cpython-312.pyc
+Q3D/Storage/AVLinput.avl
+Pythonfiles/Components/Engines/__pycache__/PropellerEngine.cpython-312.pyc

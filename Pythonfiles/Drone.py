@@ -13,6 +13,8 @@ from typing import Optional
 from parapy.core import Input, Attribute, Part, action
 from parapy.geom import GeomBase
 
+from Pythonfiles.Components.Mission.vn_diagram import plot_vn_diagram
+
 
 # ─── Input-range validator helpers ────────────────────────────────────────── #
 
@@ -505,6 +507,19 @@ class Drone(GeomBase):
         except Exception as exc:
             print(f"Design-point PNG save failed: {exc}")
 
+    @action(label="Show V-n Diagram")
+    def vn_diagram(self):
+        import os
+        save_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        plot_vn_diagram(
+            MTOW       = self.MTOW,
+            wing_area  = self.wing_area,
+            rho        = self.air_density,
+            n_pos      = self.maximum_load_factor,
+            n_neg      = -self.maximum_load_factor / 2.0,
+            output_dir = os.path.join(save_dir, "Outputfiles"),
+        )
+
     @action(label="Run Wing Airfoil Sweep")
     def run_wing_sweep(self):
         self.aircraft.main_wing.run_sweep()
@@ -637,7 +652,7 @@ class Drone(GeomBase):
             fus_rad = self.aircraft.fuselage.radius
 
             # ISA atmosphere at cruise altitude
-            T_isa, p_isa, rho_isa, a_isa = ISA_calculator(self.mission_altitude)
+            T_isa, p_isa, rho_isa, a_isa, _ = ISA_calculator(self.mission_altitude)
 
             # Mach number
             mach_cruise = self.mach
@@ -921,14 +936,14 @@ class Drone(GeomBase):
                 ["Stability assessment",       stab],
             ]))
 
-            # ── Section 9: W/P–W/S Diagram ────────────────────────────── #
-            if diagram_path and os.path.exists(diagram_path):
-                story += section("9 · W/P – W/S Design-Point Diagram")
-                try:
-                    img = RLImage(diagram_path, width=15*cm, height=10*cm)
-                    story.append(img)
-                except Exception as _ie:
-                    story.append(Paragraph(f"[Diagram embed failed: {_ie}]", body_style))
+            # # ── Section 9: W/P–W/S Diagram ────────────────────────────── #
+            # if diagram_path and os.path.exists(diagram_path):
+            #     story += section("9 · W/P – W/S Design-Point Diagram")
+            #     try:
+            #         img = RLImage(diagram_path, width=15*cm, height=10*cm)
+            #         story.append(img)
+            #     except Exception as _ie:
+            #         story.append(Paragraph(f"[Diagram embed failed: {_ie}]", body_style))
 
             doc.build(story)
             print(f"✓ PDF report saved: {pdf_path}")

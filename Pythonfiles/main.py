@@ -31,16 +31,16 @@ if __name__ == "__main__":
         # ------------------------------------------------------------------ #
         # MISSION  — required
         # ------------------------------------------------------------------ #
-        cruise_speed=100,          # [m/s]
+        cruise_speed=200,          # [m/s]
         mission_altitude=2000,      # [m]
-        mission_range=500,          # [km]
+        mission_range=50,          # [km]
         mission_endurance=1,        # [hr]
 
         # ------------------------------------------------------------------ #
         # PAYLOAD INTENT  — optional overrides
         # ------------------------------------------------------------------ #
-        payload_role="Mapping",         # "ISR" | "Strike" | "Relay" | "Cargo"
-        weapon_count=0,             # 0 = unarmed; max 6
+        payload_role="Strike",         # ISR / Strike / SEAD / Mapping / COMMS relay / Patrol
+        weapon_count=1,             # 0 = unarmed; max 6
 
         # ------------------------------------------------------------------ #
         # OPTIONAL OVERRIDES  (uncomment to change from Roskam/Raymer default)
