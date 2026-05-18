@@ -1,3 +1,10 @@
+"""
+Fuselage.py — Fuselage geometry: nosecone, cylindrical mid-section, tailcone.
+
+Sizes length and radius from MTOW via Roskam Vol. I §3.3 power-law relations,
+then lofts the three-section body and attaches the Undercarriage.
+Exposes min_length and min_radius constraints driven by payload bay sizing.
+"""
 import math
 
 from parapy.core import Input, Attribute, Part, child
@@ -373,37 +380,4 @@ class Fuselage(GeomBase):
         )
 
     @Part
-    def tail(self):
-        return LoftedSolid(
-            profiles=self.tail_profiles,
-            color=self.color_taper,
-            transparency=0.3,
-            mesh_deflection=self.mesh_deflection,
-        )
-
-
-
-# ---------------------------------------------------------------------- #
-# TEST
-# ---------------------------------------------------------------------- #
-
-if __name__ == '__main__':
-    from parapy.gui import display
-
-    obj = Fuselage(
-        undercarriage_retractible=False,
-        aircraft_mass=2500,
-        length_override=20,
-        radius_override=1,
-        cylinder_start=10,
-        cylinder_end=70,
-        label="test_fuselage",
-        color_taper="SteelBlue",
-        color_cylinder="LightBlue",
-        undercarriage_color_tyre="pink",
-        undercarriage_color_axle="silver",
-        undercarriage_color_strut="gray",
-    )
-    print(f"Fuselage mass : {obj.calculate_mass:.1f} kg")
-    print(f"Fuselage CG x : {obj.cg_x:.2f} m")
-    display(obj)
+    d

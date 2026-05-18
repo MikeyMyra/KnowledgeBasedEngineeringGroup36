@@ -1,3 +1,10 @@
+"""
+Liftingsurface.py — Parametric lifting surface (wing, horizontal tail, vertical tail).
+
+Lofts a tapered, swept, dihedral wing from root/tip Airfoil sections and
+attaches a structural Wingbox. Runs Q3D vortex-lattice aerodynamic sweeps
+via MATLAB; Mach is capped at 0.84 (Prandtl-Glauert validity limit for VLM).
+"""
 from itertools import product
 from math import radians, tan
 
@@ -720,114 +727,4 @@ class LiftingSurface(GeomBase):
             self.density * self.velocity**2 * self._effective_area)
 
     # ------------------------------------------------------------------ #
-    # Q3D MATRICES
-    # ------------------------------------------------------------------ #
-
-    @Attribute
-    def _q3d_airfoil_matrix(self):
-        return matlab.double(
-            np.vstack([self.root_airfoil.CST_vector, self.tip_airfoil.CST_vector]).tolist()
-        )
-
-    @Attribute
-    def _q3d_planform_matrix(self):
-        s    = self._effective_span
-        x_le = s * tan(radians(self.sweep_le))
-        z_tip = s * np.sin(radians(self.dihedral))
-        return matlab.double([
-            [0.0,   0.0, 0.0,   self.c_root_aero, 0.0       ],
-            [x_le,  s,   z_tip, self.c_tip,        self.twist],
-        ])
-
-    @Attribute
-    def q3d_data(self):
-        if self.mach > self.Q3D_MACH_MAX:
-            print(f"[Q3D] WARNING: Mach {self.mach:.3f} exceeds Q3D validity "
-                  f"limit (M = {self.Q3D_MACH_MAX:.2f}). "
-                  f"Prandtl-Glauert correction unreliable — results may be "
-                  f"significantly inaccurate.")
-        alpha_or_cl = self.target_cl if self.use_cl else self.alpha
-        return MATLAB_Q3D_ENGINE.run_q3d_cst(
-            self._q3d_planform_matrix,
-            self._q3d_airfoil_matrix,
-            matlab.double([0.0]),
-            matlab.double([self.mach]),
-            matlab.double([self.reynolds]),
-            matlab.double([self.velocity]),
-            matlab.double([alpha_or_cl]),
-            matlab.double([self.altitude]),
-            matlab.double([self.density]),
-            matlab.logical([self.use_cl]),
-            matlab.logical([False]),
-            nargout=2,
-        )
-
-    # ------------------------------------------------------------------ #
-    # UI
-    # ------------------------------------------------------------------ #
-
-    @action(label="Plot XFoil polars")
-    def plot_cl_alpha(self):
-        self.root_airfoil.plot_cl_alpha()
-
-
-# ---------------------------------------------------------------------- #
-# TEST
-# ---------------------------------------------------------------------- #
-
-if __name__ == "__main__":
-    from parapy.gui import display
-
-    wing = LiftingSurface(
-        label="main_wing",
-        effective_area=18.0,  effective_semi_span=7.4,
-        fuselage_length=10.0, fuselage_radius=0.6,
-        is_tail=False, is_vertical_tail=False,
-        mesh_deflection=1e-4,
-        taper_ratio=0.40, sweep_le=5.0, twist=-2.0, dihedral=5.0,
-        run_airfoil_sweep=False,
-        ld_required=10.0,
-        camber_range=[0.0, 0.02, 0.03, 0.04, 0.05, 0.06],
-        position_range=[0.3, 0.35, 0.4, 0.45, 0.5],
-        thickness_range=[0.08, 0.10, 0.12, 0.15],
-        weight=15_000, velocity=60.0, altitude=2_000,
-        t_factor_root=1.0, t_factor_tip=1.0,
-        front_spar_position=0.15, rear_spar_position=0.60,
-        color_wingbox="yellow", color_liftingsurface="orange",
-    )
-
-    horizontal_tail = LiftingSurface(
-        label="horizontal_tail",
-        wing_ref=wing, is_tail=True, is_vertical_tail=False,
-        tail_volume_coefficient_h=0.60, tail_volume_coefficient_v=0.04,
-        tail_aspect_ratio_h=4.5,       tail_aspect_ratio_v=1.8,
-        fuselage_length=10.0, fuselage_radius=0.6,
-        mesh_deflection=1e-4,
-        taper_ratio=0.40, sweep_le=10.0, twist=0.0, dihedral=0.0,
-        run_airfoil_sweep=False,
-        maximum_camber_input=0.0, maximum_camber_position_input=0.4,
-        thickness_to_chord_input=0.12,
-        weight=15_000, velocity=60.0, altitude=2_000,
-        t_factor_root=1.0, t_factor_tip=1.0,
-        front_spar_position=0.15, rear_spar_position=0.60,
-        color_wingbox="red", color_liftingsurface="green",
-    )
-
-    vertical_tail = LiftingSurface(
-        label="vertical_tail",
-        wing_ref=wing, is_tail=True, is_vertical_tail=True,
-        tail_volume_coefficient_h=0.60, tail_volume_coefficient_v=0.04,
-        tail_aspect_ratio_h=4.5,        tail_aspect_ratio_v=1.8,
-        fuselage_length=10.0, fuselage_radius=0.6,
-        mesh_deflection=1e-4,
-        taper_ratio=0.40, sweep_le=35.0, twist=0.0, dihedral=0.0,
-        run_airfoil_sweep=False,
-        maximum_camber_input=0.0, maximum_camber_position_input=0.0,
-        thickness_to_chord_input=0.12,
-        weight=15_000, velocity=60.0, altitude=2_000,
-        t_factor_root=1.0, t_factor_tip=1.0,
-        front_spar_position=0.15, rear_spar_position=0.60,
-        color_wingbox="blue", color_liftingsurface="purple",
-    )
-
-    display([wing, horizontal_tail, vertical_tail])
+ 

@@ -1,3 +1,10 @@
+"""
+PayloadDatabase.py — Shared data layer for the payload subsystem.
+
+Loads payload_library.json once at import time and exposes the full library
+dict, a colour map for the 3-D viewer, resolve_model() for fuzzy model-key
+lookup, and weapon_grid() for multi-weapon packing geometry.
+"""
 import json
 import math
 import os

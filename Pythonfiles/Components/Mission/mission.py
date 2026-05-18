@@ -1,3 +1,10 @@
+"""
+mission.py — Breguet-based mission analysis and UAV initial sizing.
+
+Estimates MTOW, fuel weight, empty weight, thrust-to-weight, and wing loading
+from range, endurance, and payload inputs using Breguet equations and Roskam
+empty-weight fraction regressions. Raises a dialog when the mission is infeasible.
+"""
 import numpy as np
 import Pythonfiles.metric_imperial_conversions as m2i
 from Pythonfiles.Components.Mission.WP_WS_diagram import WP_WS_Diagram
@@ -417,63 +424,4 @@ class Mission:
         }
 
     def performance_margins_summary(self) -> str:
-        m = self.performance_margins()
-        lines = [
-            "── Performance Margins ─────────────────────────────────────",
-            "",
-            "  ① Aerodynamic efficiency (L/D)  [cruise_speed used for all legs]",
-            f"     Cruise  L/D : {m['ld_cruise']:.2f}",
-            f"     Loiter  L/D : {m['ld_loiter']:.2f}",
-            f"     Limiting leg (highest L/D, design driver) : "
-            f"{m['ld_limiting_leg'].upper()}  (L/D = {m['ld_limiting_value']:.2f})",
-            "",
-            "  ② Fuel consumption per leg",
-            f"     Cruise legs (both) : {m['fuel_frac_cruise']:.4f}",
-            f"     Loiter leg         : {m['fuel_frac_loiter']:.4f}",
-            f"     Fuel weight driver : {m['fuel_dominant_leg'].upper()}",
-            "",
-            f"  Total wf/w0 : {m['wf_w0']:.4f}",
-            f"  Range       : {m['specified_range_km']:.0f} km",
-            f"  Endurance   : {m['specified_endurance_hr']:.2f} hr",
-            "────────────────────────────────────────────────────────────",
-        ]
-        return "\n".join(lines)
-
-
-# ================================================================ #
-# STAND-ALONE TEST
-# ================================================================ #
-
-if __name__ == "__main__":
-    from Pythonfiles.Components.Mission.ISA_calculator import ISA_calculator
-
-    def make_mission(altitude, range_km, endurance, payload,
-                     sfc, mach_max, prop_eff, v_cruise,
-                     objective, ar, engine):
-        a   = ISA_calculator(altitude)[3]
-        rho = ISA_calculator(altitude)[2]
-        return Mission(
-            mission_altitude=altitude,
-            mission_range=range_km,
-            mission_endurance=endurance,
-            payload_weight=payload,
-            specific_fuel=sfc,
-            maximum_mach=mach_max,
-            prop_efficiency=prop_eff,
-            cruise_speed=v_cruise,
-            loiter_speed=v_cruise*0.5,
-            mission_objective=objective,
-            oswald_factor=0.8,
-            reserve_time=0.5,
-            maximum_load_factor=2.5,
-            wing_aspect_ratio=ar,
-            speed_of_sound=a,
-            air_density=rho,
-            engine_type=engine,
-        )
-
-    print("=== Turboprop 500 km / 8 hr ===")
-    m1 = make_mission(6000, 500, 8, 100, 0.5, 0.5, 0.8, 80,
-                      "High Endurance", 9.2, "Turboprop")
-    MTOW, _, fw = m1.fuel_weight_sizing()
-    print(f"MTOW={MTOW:.1f} kg  fuel={fw:.1f} kg\n")
+     

@@ -1,3 +1,10 @@
+"""
+JetEngine.py — Turbofan/turbojet nacelle geometry.
+
+Sizes nacelle diameter and length from MTOW and thrust-to-weight ratio
+using Roskam Vol. V correlations, then lofts a cylindrical nacelle solid
+with a tapered inlet and nozzle for 3-D visualisation.
+"""
 from math import radians, tan
 
 from parapy.core import Input, Attribute, Part, child
@@ -329,6 +336,4 @@ if __name__ == "__main__":
         color_nacelle="Silver",
         color_fan="DarkGray",
         color_nozzle="Gray",
-    )
-
-    display(jet)
+  

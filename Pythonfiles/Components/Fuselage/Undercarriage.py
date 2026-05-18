@@ -1,3 +1,10 @@
+"""
+Undercarriage.py — Tricycle fixed undercarriage geometry.
+
+Sizes strut height, wheel radius, and lateral track from MTOW using Roskam
+Vol. I §8.5-8.6 correlations, then builds struts, axles, and torus-shaped
+tyres for 3-D visualisation. Retractable gear suppresses geometry when stowed.
+"""
 import math
 
 from parapy.core import Input, Attribute, Part, child
@@ -490,20 +497,4 @@ class Undercarriage(GeomBase):
 
 # ---------------------------------------------------------------------- #
 # TEST
-# ---------------------------------------------------------------------- #
-
-if __name__ == '__main__':
-    from parapy.gui import display
-
-    obj = Undercarriage(
-        retractible=False,
-        # Required: sizing fully driven by MTOW
-        aircraft_mass=25,       # 25 kg UAV — all geometry auto-derived
-        fuselage_length=3,
-        fuselage_radius=0.5,
-        label="test_undercarriage",
-        color_tyre="black",
-        color_axle="silver",
-        color_strut="gray",
-    )
-    display(obj)
+# -------------------------------------------------------------

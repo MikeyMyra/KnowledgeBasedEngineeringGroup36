@@ -1,3 +1,10 @@
+"""
+Airfoil.py — Parametric NACA 4-series airfoil with CST fitting and XFoil polars.
+
+Generates airfoil coordinates from camber/thickness inputs, fits a CST curve
+for ParaPy geometry, writes a .dat file, and drives the bundled XFoil 6.99
+executable to compute Cl/Cd polars. Polars are cached; Mach is capped at 0.70.
+"""
 import os
 import subprocess
 from math import comb
@@ -491,67 +498,4 @@ class Airfoil(GeomBase):
             ax.legend(fontsize=8)
 
         plt.tight_layout()
-        return fig
-
-    @action(label="Plot XFoil polars")
-    def plot_cl_alpha(self):
-        """
-        Run XFoil and display the 4-panel polar figure
-        """
-        fig = self._build_polar_figure()
-        if fig is not None:
-            plt.show()
-
-    def save_polar_figure(self, save_path: str):
-        """Save the 4-panel XFoil polar figure to *save_path* without displaying it."""
-        fig = self._build_polar_figure()
-        if fig is not None:
-            fig.savefig(save_path, dpi=150, bbox_inches='tight')
-            plt.close(fig)
-            print(f"Wing polars saved → {save_path}")
-
-    # ------------------------------------------------------------------ #
-    # PARAPY GEOMETRY
-    # ------------------------------------------------------------------ #
-
-    @Attribute
-    def raw_points(self):
-        coords = self.normalized_coordinates
-        return [
-            self.position.translate("x", x * self.chord, "z", z * self.chord)
-            for x, z in coords
-        ]
-
-    @Part
-    def geometry(self):
-        return FittedCurve(
-            points=self.raw_points,
-            mesh_deflection=self.mesh_deflection,
-        )
-
-    @Part
-    def frame(self):
-        return Frame(pos=self.position, hidden=False)
-
-
-# ---------------------------------------------------------------------- #
-# QUICK TEST
-# ---------------------------------------------------------------------- #
-
-if __name__ == "__main__":
-    from parapy.gui import display
-
-    # Auto-named: files saved as naca2412.dat / naca2412_polar.txt
-    af = Airfoil(
-        label="test_airfoil",
-        chord=1.0,
-        maximum_camber=0.04,
-        camber_position=0.4,
-        thickness_to_chord=0.12,
-        mach=0.1,
-        reynolds=1_500_000,
-        export_dat=True,
-        alpha_cruise=4,
-    )
-
-    display(af)
+        ret

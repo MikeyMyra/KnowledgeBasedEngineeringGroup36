@@ -1,3 +1,10 @@
+"""
+metric_imperial_conversions.py — Unit conversion utility functions.
+
+Provides simple, stateless functions for converting between metric and imperial
+units: miles/km, pounds/kg, Fahrenheit/Kelvin, and feet/metres. Imported
+throughout the project wherever display values or legacy inputs require conversion.
+"""
 # all conversion functions from metric to imperial and vice versa are defined here
 
 

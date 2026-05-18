@@ -1,3 +1,10 @@
+"""
+generate_uml.py — UML class-diagram generator (work in progress, currently disabled).
+
+When enabled, parses all Python source files via the ast module to extract
+ParaPy classes, their Inputs, Attributes, and Part relationships, and writes
+a Graphviz DOT file for a full UML class diagram of the UAV model.
+"""
 # #!/usr/bin/env python
 # import ast
 # import os
