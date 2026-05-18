@@ -292,7 +292,8 @@ class Aircraft(GeomBase):
             payload=self.payload_object,
             payload_nose_clearance=self.payload_nose_clearance,
             fuel_tank=self._fuel_tank_sizing,   # sizing-only Attribute, no position dep
-            length_min_override=self._min_fuselage_length_from_wing,
+            length_min_override=max(self._min_fuselage_length_from_wing,
+                                    self._min_fuselage_length_for_payload_tank_clearance),
             radius_min_override=self._min_fuselage_radius_from_wing,
         )
 
@@ -529,6 +530,37 @@ class Aircraft(GeomBase):
         lamb   = self.wing_taper_ratio
         c_root = 2.0 * S / (b * (1.0 + lamb))
         return 4.5 * c_root
+
+    @Attribute
+    def _min_fuselage_length_for_payload_tank_clearance(self) -> float:
+        """
+        Minimum fuselage length [m] so the payload bay ends before the
+        fuel tank (which sits at wing_attach_x = 0.40 × L).
+
+        Derivation
+        ----------
+        payload_end  = (cyl_frac + nose_frac) × L  +  payload_length
+        tank_start   = 0.40 × L
+        Constraint   : payload_end + 0.05  ≤  tank_start
+          → (0.40 − cyl_frac − nose_frac) × L  ≥  payload_length + 0.05
+          → L  ≥  (payload_length + 0.05) / (0.40 − cyl_frac − nose_frac)
+        """
+        if self.payload_object is None:
+            return 0.0
+        payload_length = self.payload_object.min_fuselage_length
+        cyl_frac       = self.fuselage_cylinder_start / 100.0
+        nose_frac      = self.payload_nose_clearance
+        denom          = 0.40 - cyl_frac - nose_frac
+        if denom <= 0.0:
+            return 0.0   # degenerate geometry — skip constraint
+        L_min = (payload_length + 0.05) / denom
+        if L_min > 0.0:
+            print(
+                f"[Aircraft] Payload-tank clearance requires L_fus ≥ {L_min:.3f} m "
+                f"(payload {payload_length:.3f} m, cyl_frac {cyl_frac:.2f}, "
+                f"nose_frac {nose_frac:.2f})"
+            )
+        return L_min
 
     @Attribute
     def _min_fuselage_radius_from_wing(self) -> float:
