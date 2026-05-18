@@ -86,6 +86,20 @@ class LiftingSurface(GeomBase):
     maximum_camber_position_input: float = Input(0.40)
     thickness_to_chord_input:      float = Input(0.12)
 
+    # NACA 4-series code forwarded from Drone → Aircraft (e.g. "2412").
+    # User interaction and validation live in Drone._parsed_wing_naca.
+    # Priority (highest → lowest):
+    #   1. sweep_result_* (set after run_sweep action)
+    #   2. naca_input     (forwarded from Drone.wing_naca_input)
+    #   3. maximum_camber_input / maximum_camber_position_input / thickness_to_chord_input
+    naca_input: str = Input(None)
+
+    # Path to the .dat file that the rendered airfoil Parts should read their
+    # geometry from.  Set by Drone._active_wing_dat_path (default: naca0012.dat).
+    # Sweep Airfoil instances (created inside best_airfoil_params) do NOT receive
+    # this — they compute geometry from their explicit NACA params.
+    active_dat_path: str = Input(None)
+
     sweep_result_camber:    float = Input(None)
     sweep_result_position:  float = Input(None)
     sweep_result_thickness: float = Input(None)
@@ -135,16 +149,63 @@ class LiftingSurface(GeomBase):
     # ------------------------------------------------------------------ #
 
     @Attribute
+    def _parsed_naca_input(self):
+        """
+        Parse the NACA 4-series string passed in via naca_input.
+
+        Validation (with user-facing dialog) is handled upstream in Drone so
+        that the error is surfaced at the top-level object.  Here we only do
+        a silent parse: bad strings are logged and return None so the fallback
+        camber/position/thickness inputs remain active without disrupting the
+        geometry.
+
+        Accepted formats: "2412", "NACA2412", "naca 2412" (spaces stripped).
+        Returns dict {camber, position, thickness, naca_str} or None.
+        """
+        raw = self.naca_input
+        if raw is None or str(raw).strip() == "":
+            return None
+
+        s = str(raw).strip().lower().replace(" ", "")
+        if s.startswith("naca"):
+            s = s[4:]
+
+        if len(s) != 4 or not s.isdigit() or int(s[2:4]) == 0:
+            print(f"[LiftingSurface] Ignoring unparseable naca_input '{raw}'.")
+            return None
+
+        m = int(s[0]) / 100.0
+        p = int(s[1]) / 10.0 if int(s[1]) > 0 else 0.4
+        t = int(s[2:4]) / 100.0
+
+        return {"camber": m, "position": p, "thickness": t, "naca_str": f"naca{s}"}
+
+    @Attribute
     def maximum_camber(self):
-        return self.sweep_result_camber    if self.sweep_result_camber    is not None else self.maximum_camber_input
+        if self.sweep_result_camber is not None:
+            return self.sweep_result_camber
+        parsed = self._parsed_naca_input
+        if parsed is not None:
+            return parsed["camber"]
+        return self.maximum_camber_input
 
     @Attribute
     def maximum_camber_position(self):
-        return self.sweep_result_position  if self.sweep_result_position  is not None else self.maximum_camber_position_input
+        if self.sweep_result_position is not None:
+            return self.sweep_result_position
+        parsed = self._parsed_naca_input
+        if parsed is not None:
+            return parsed["position"]
+        return self.maximum_camber_position_input
 
     @Attribute
     def thickness_to_chord(self):
-        return self.sweep_result_thickness if self.sweep_result_thickness is not None else self.thickness_to_chord_input
+        if self.sweep_result_thickness is not None:
+            return self.sweep_result_thickness
+        parsed = self._parsed_naca_input
+        if parsed is not None:
+            return parsed["thickness"]
+        return self.thickness_to_chord_input
 
     # ------------------------------------------------------------------ #
     # ACTION: AIRFOIL SWEEP
@@ -163,6 +224,14 @@ class LiftingSurface(GeomBase):
         self.sweep_result_position  = best["position"]
         self.sweep_result_thickness = best["thickness"]
         self.alpha = best["alpha"]
+
+        # Overwrite naca_input with the found airfoil so the input field
+        # always reflects the active airfoil after a sweep.
+        m_d = round(best["camber"]    * 100)
+        p_d = round(best["position"]  * 10)
+        t_d = round(best["thickness"] * 100)
+        self.naca_input = f"{m_d}{p_d}{t_d:02d}"
+        print(f"[Sweep] naca_input set to '{self.naca_input}'")
 
     @Attribute
     def best_airfoil_params(self):
@@ -494,6 +563,7 @@ class LiftingSurface(GeomBase):
             thickness_to_chord=self.thickness_to_chord,
             thickness_factor=self.t_factor_root,
             export_dat=True, airfoil_name="root_airfoil_geometric",
+            dat_path_override=self.active_dat_path,
             position=self._root_position_wingbox,
             mach=self.mach,
             reynolds=self.reynolds,
@@ -508,7 +578,8 @@ class LiftingSurface(GeomBase):
             camber_position=self.maximum_camber_position,
             thickness_to_chord=self.thickness_to_chord,
             thickness_factor=self.t_factor_root,
-            export_dat=True, airfoil_name=None,  # auto-derives NACA name (e.g. naca2412)
+            export_dat=True, airfoil_name=None,  # resolved from dat filename (e.g. "naca2412")
+            dat_path_override=self.active_dat_path,
             position=self._root_position,
             mach=self.mach,
             reynolds=self.reynolds,
@@ -524,6 +595,7 @@ class LiftingSurface(GeomBase):
             thickness_to_chord=self.thickness_to_chord,
             thickness_factor=self.t_factor_root,
             export_dat=True, airfoil_name="root_airfoil_aero_mirrored",
+            dat_path_override=self.active_dat_path,
             position=self._root_position_mirrored,
             suppress=self.is_vertical_tail,
             mach=self.mach,
@@ -540,6 +612,7 @@ class LiftingSurface(GeomBase):
             thickness_to_chord=self.thickness_to_chord,
             thickness_factor=self.t_factor_tip,
             export_dat=True, airfoil_name="tip_airfoil",
+            dat_path_override=self.active_dat_path,
             position=self._tip_position,
             mach=self.mach,
             reynolds=self.reynolds,
@@ -555,6 +628,7 @@ class LiftingSurface(GeomBase):
             thickness_to_chord=self.thickness_to_chord,
             thickness_factor=self.t_factor_tip,
             export_dat=True, airfoil_name="tip_airfoil_mirrored",
+            dat_path_override=self.active_dat_path,
             position=self._tip_position_mirrored,
             suppress=self.is_vertical_tail,
             mach=self.mach,

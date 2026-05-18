@@ -68,6 +68,12 @@ class Aircraft(GeomBase):
     # ============================================================ #
 
     wing_taper_ratio:             float = Input(0.40)
+    # Optional NACA 4-series code passed from Drone (e.g. "2412").
+    # Forwarded to main_wing.naca_input; has no effect on tails.
+    wing_naca_input:              str   = Input(None)
+    # Path to the active .dat file that drives wing geometry.
+    # Generated and resolved by Drone._active_wing_dat_path.
+    wing_active_dat_path:         str   = Input(None)
     wing_sweep_le: float = Input(
         5.0,
         doc="Wing leading-edge sweep angle  [°]  ·  recommended: 0 – 30°\n"
@@ -326,6 +332,8 @@ class Aircraft(GeomBase):
             thickness_to_chord_input=self.wing_thickness_to_chord,
             maximum_camber_input=self.wing_maximum_camber,
             maximum_camber_position_input=self.wing_maximum_camber_position,
+            naca_input=self.wing_naca_input,
+            active_dat_path=self.wing_active_dat_path,
 
             t_factor_root=self.wing_t_factor_root,
             t_factor_tip=self.wing_t_factor_tip,

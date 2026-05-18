@@ -44,6 +44,7 @@ CONTENTS
   K.  Aerodynamic Model
   L.  Stability
   M.  Payload Library Specifications
+  N.  Payload Role Requirements
 --------------------------------------------------------------------------------
 
 
@@ -686,6 +687,314 @@ The variant selection rule (Payloadrules.select_payload_variant) picks the
 entry flagged as default_for the current UAV class.  If no class-specific
 default exists, the first entry is used with a warning.
 
+----------------------------------------------------------------------
+M1.  Component dimensions and masses by class
+----------------------------------------------------------------------
+
+  All masses below are computed as m = volume × density, matching the
+  runtime behaviour of PayloadItem.mass.
+
+  flight_computer
+    small  : Pixhawk 6C         85 × 44 × 12  mm  box   ρ = 1 280 kg/m³  → 0.057 kg
+    medium : Cube Orange+       94 × 44 × 22  mm  box   ρ = 1 300 kg/m³  → 0.118 kg
+    large  : Cube Orange+       94 × 44 × 22  mm  box   ρ = 1 300 kg/m³  → 0.118 kg
+
+  battery
+    small  : 6S 10 Ah LiPo    177 × 66 × 58  mm  box   ρ = 2 000 kg/m³  → 1.356 kg
+    medium : Large UAV LiPo   300 × 120 × 100 mm  box   ρ = 2 000 kg/m³  → 7.200 kg
+    large  : Large UAV LiPo   300 × 120 × 100 mm  box   ρ = 2 000 kg/m³  → 7.200 kg
+
+  eo_ir
+    small  : FLIR Tau 2        Ø 45 × 30  mm  cyl   ρ = 1 210 kg/m³  → 0.058 kg
+    medium : HD EO/IR Gimbal   Ø120 × 160 mm  cyl   ρ = 1 500 kg/m³  → 2.714 kg
+    large  : HD EO/IR Gimbal   Ø120 × 160 mm  cyl   ρ = 1 500 kg/m³  → 2.714 kg
+
+  radar
+    small  : 77 GHz FMCW       Ø 90 × 25  mm  cyl   ρ = 1 270 kg/m³  → 0.202 kg
+    medium : Medium SAR        350 × 250 × 120 mm  box   ρ =   480 kg/m³  → 5.040 kg
+    large  : Maritime Radar    800 × 500 × 350 mm  box   ρ =   350 kg/m³  → 49.000 kg
+
+  lidar
+    all    : Velodyne VLP-16   Ø103 × 72  mm  cyl   ρ = 1 380 kg/m³  → 0.849 kg
+
+  comms
+    all    : SiK Radio V3      65 × 40 × 15 mm  box   ρ =   510 kg/m³  → 0.020 kg
+
+  datalink
+    small  : Small Data-link   120 × 80 × 40  mm  box   ρ =   800 kg/m³  → 0.307 kg
+    medium : Small Data-link   120 × 80 × 40  mm  box   ρ =   800 kg/m³  → 0.307 kg
+    large  : SATCOM Terminal   450 × 300 × 180 mm  box   ρ =   600 kg/m³  → 14.580 kg
+
+  weapon (per single unit; multiply by weapon_count)
+    small  : Griffin B         Ø140 × 1 070 mm  cyl   ρ =   911 kg/m³  → 14.992 kg
+    medium : AGM-114 Hellfire  Ø178 × 1 630 mm  cyl   ρ = 1 208 kg/m³  → 49.160 kg
+    large  : GBU-12 Paveway II Ø273 × 3 250 mm  cyl   ρ = 1 194 kg/m³  → 226.870 kg
+
+
+================================================================================
+N. PAYLOAD ROLE REQUIREMENTS
+================================================================================
+
+Source:  engineering_rules.py — ROLE_CATEGORIES dict and _MANDATORY list.
+         Payload/payload_library.json — component specifications.
+
+File:    engineering_rules.py — PayloadRole enum, ROLE_CATEGORIES,
+         PayloadRules._active_categories
+
+Design philosophy: every role is defined by a fixed set of mission-driven
+payload categories.  The mandatory categories (flight_computer and battery)
+are always prepended regardless of role.  The role categories listed below
+are the additional mission-specific items placed after the mandatory pair.
+The tool selects the appropriate size variant for each category automatically
+based on the inferred UAV class (Section I).
+
+----------------------------------------------------------------------
+N1.  Mandatory payload parts (all roles)
+----------------------------------------------------------------------
+  These two categories are always present, prepended before any role-
+  specific items.  They are defined in engineering_rules.py as:
+    _MANDATORY = ["flight_computer", "battery"]
+
+  flight_computer  — autopilot / flight management computer
+                     Pixhawk 6C (small) or Cube Orange+ (medium / large)
+
+  battery          — avionics and payload power supply
+                     6S 10 Ah LiPo (small) or Large UAV LiPo (medium / large)
+
+  Rationale: no UAV can operate without a flight management computer and
+  an on-board power source; these are structural constraints, not mission
+  options.
+
+----------------------------------------------------------------------
+N2.  Role category tables
+----------------------------------------------------------------------
+  The ROLE_CATEGORIES dictionary in engineering_rules.py maps each
+  PayloadRole enum value to an ordered list of payload categories.
+  The full mapping is reproduced below.
+
+  Role string values are members of the PayloadRole enum (str, Enum),
+  which ParaPy renders as a GUI dropdown.
+
+  ┌─────────────────┬──────────────────────────────────────────────────┐
+  │ Role            │ Required categories (after mandatory pair)       │
+  ├─────────────────┼──────────────────────────────────────────────────┤
+  │ ISR             │ eo_ir · radar · datalink                         │
+  │ Strike          │ eo_ir · weapon · datalink                        │
+  │ SEAD            │ eo_ir · radar · weapon · datalink                │
+  │ Mapping         │ eo_ir · lidar                                    │
+  │ COMMS relay     │ comms · datalink                                 │
+  │ Patrol          │ eo_ir · comms                                    │
+  └─────────────────┴──────────────────────────────────────────────────┘
+
+  Note: "weapon" is silently removed from the category list when
+  weapon_count = 0 (unarmed configuration), even if it appears in
+  the role definition (e.g. an unarmed Strike variant used for
+  targeting / designation only).
+
+----------------------------------------------------------------------
+N3.  Full payload manifests per role and UAV class
+----------------------------------------------------------------------
+  The tables below list the complete ordered payload manifest
+  (mandatory + role categories) for each role × class combination,
+  with the specific component variant selected by
+  select_payload_variant() and the individual component mass.
+  Masses are volume × density, consistent with Section M1.
+
+  Manifest order: mandatory items first, then role categories in the
+  order listed in ROLE_CATEGORIES.
+
+  ── ISR  (eo_ir · radar · datalink) ──────────────────────────────────
+
+    class = small
+      1. flight_computer   Pixhawk 6C                  0.057 kg
+      2. battery           6S 10 Ah LiPo               1.356 kg
+      3. eo_ir             FLIR Tau 2 EO/IR             0.058 kg
+      4. radar             77 GHz FMCW Radar            0.202 kg
+      5. datalink          Small Data-link Terminal     0.307 kg
+         TOTAL                                          1.980 kg
+
+    class = medium
+      1. flight_computer   Cube Orange+                 0.118 kg
+      2. battery           Large UAV LiPo               7.200 kg
+      3. eo_ir             HD EO/IR Gimbal              2.714 kg
+      4. radar             Medium SAR Radar             5.040 kg
+      5. datalink          Small Data-link Terminal     0.307 kg
+         TOTAL                                         15.379 kg
+
+    class = large
+      1. flight_computer   Cube Orange+                 0.118 kg
+      2. battery           Large UAV LiPo               7.200 kg
+      3. eo_ir             HD EO/IR Gimbal              2.714 kg
+      4. radar             Maritime Surveillance Radar 49.000 kg
+      5. datalink          SATCOM Data-link Terminal   14.580 kg
+         TOTAL                                         73.612 kg
+
+  ── Strike  (eo_ir · weapon · datalink) — weapon_count = 1 ──────────
+
+    class = small
+      1. flight_computer   Pixhawk 6C                  0.057 kg
+      2. battery           6S 10 Ah LiPo               1.356 kg
+      3. eo_ir             FLIR Tau 2 EO/IR             0.058 kg
+      4. weapon            Griffin B Missile           14.992 kg
+      5. datalink          Small Data-link Terminal     0.307 kg
+         TOTAL                                         16.770 kg
+
+    class = medium
+      1. flight_computer   Cube Orange+                 0.118 kg
+      2. battery           Large UAV LiPo               7.200 kg
+      3. eo_ir             HD EO/IR Gimbal              2.714 kg
+      4. weapon            AGM-114 Hellfire            49.160 kg
+      5. datalink          Small Data-link Terminal     0.307 kg
+         TOTAL                                         59.499 kg
+
+    class = large
+      1. flight_computer   Cube Orange+                 0.118 kg
+      2. battery           Large UAV LiPo               7.200 kg
+      3. eo_ir             HD EO/IR Gimbal              2.714 kg
+      4. weapon            GBU-12 Paveway II          226.870 kg
+      5. datalink          SATCOM Data-link Terminal   14.580 kg
+         TOTAL                                        251.482 kg
+
+    Note: for weapon_count > 1 the weapon mass scales linearly
+    (mass × weapon_count).  The weapon bounding envelope in the y-z
+    plane scales as n_cols × n_rows × diameter (Section N4).
+
+  ── SEAD  (eo_ir · radar · weapon · datalink) — weapon_count = 1 ────
+
+    class = small
+      1. flight_computer   Pixhawk 6C                  0.057 kg
+      2. battery           6S 10 Ah LiPo               1.356 kg
+      3. eo_ir             FLIR Tau 2 EO/IR             0.058 kg
+      4. radar             77 GHz FMCW Radar            0.202 kg
+      5. weapon            Griffin B Missile           14.992 kg
+      6. datalink          Small Data-link Terminal     0.307 kg
+         TOTAL                                         16.972 kg
+
+    class = medium
+      1. flight_computer   Cube Orange+                 0.118 kg
+      2. battery           Large UAV LiPo               7.200 kg
+      3. eo_ir             HD EO/IR Gimbal              2.714 kg
+      4. radar             Medium SAR Radar             5.040 kg
+      5. weapon            AGM-114 Hellfire            49.160 kg
+      6. datalink          Small Data-link Terminal     0.307 kg
+         TOTAL                                         64.539 kg
+
+    class = large
+      1. flight_computer   Cube Orange+                 0.118 kg
+      2. battery           Large UAV LiPo               7.200 kg
+      3. eo_ir             HD EO/IR Gimbal              2.714 kg
+      4. radar             Maritime Surveillance Radar 49.000 kg
+      5. weapon            GBU-12 Paveway II          226.870 kg
+      6. datalink          SATCOM Data-link Terminal   14.580 kg
+         TOTAL                                        300.482 kg
+
+  ── Mapping  (eo_ir · lidar) ─────────────────────────────────────────
+
+    class = small / medium / large  (lidar has one variant for all classes)
+      1. flight_computer   Pixhawk 6C (s) / Cube Orange+ (m/l)
+                                                    0.057 / 0.118 kg
+      2. battery           6S LiPo (s) / Large LiPo (m/l)
+                                                    1.356 / 7.200 kg
+      3. eo_ir             FLIR Tau 2 (s) / HD Gimbal (m/l)
+                                                    0.058 / 2.714 kg
+      4. lidar             Velodyne VLP-16            0.849 kg
+
+         TOTAL (small)                               2.320 kg
+         TOTAL (medium / large)                     10.881 kg
+
+  ── COMMS relay  (comms · datalink) ──────────────────────────────────
+
+    class = small
+      1. flight_computer   Pixhawk 6C                  0.057 kg
+      2. battery           6S 10 Ah LiPo               1.356 kg
+      3. comms             SiK Telemetry Radio V3       0.020 kg
+      4. datalink          Small Data-link Terminal     0.307 kg
+         TOTAL                                          1.740 kg
+
+    class = medium
+      1. flight_computer   Cube Orange+                 0.118 kg
+      2. battery           Large UAV LiPo               7.200 kg
+      3. comms             SiK Telemetry Radio V3       0.020 kg
+      4. datalink          Small Data-link Terminal     0.307 kg
+         TOTAL                                          7.645 kg
+
+    class = large
+      1. flight_computer   Cube Orange+                 0.118 kg
+      2. battery           Large UAV LiPo               7.200 kg
+      3. comms             SiK Telemetry Radio V3       0.020 kg
+      4. datalink          SATCOM Data-link Terminal   14.580 kg
+         TOTAL                                         21.918 kg
+
+  ── Patrol  (eo_ir · comms) ──────────────────────────────────────────
+
+    class = small
+      1. flight_computer   Pixhawk 6C                  0.057 kg
+      2. battery           6S 10 Ah LiPo               1.356 kg
+      3. eo_ir             FLIR Tau 2 EO/IR             0.058 kg
+      4. comms             SiK Telemetry Radio V3       0.020 kg
+         TOTAL                                          1.491 kg
+
+    class = medium
+      1. flight_computer   Cube Orange+                 0.118 kg
+      2. battery           Large UAV LiPo               7.200 kg
+      3. eo_ir             HD EO/IR Gimbal              2.714 kg
+      4. comms             SiK Telemetry Radio V3       0.020 kg
+         TOTAL                                         10.052 kg
+
+    class = large
+      1. flight_computer   Cube Orange+                 0.118 kg
+      2. battery           Large UAV LiPo               7.200 kg
+      3. eo_ir             HD EO/IR Gimbal              2.714 kg
+      4. comms             SiK Telemetry Radio V3       0.020 kg
+         TOTAL                                         10.052 kg
+
+----------------------------------------------------------------------
+N4.  Weapon stacking geometry
+----------------------------------------------------------------------
+  Source: Payload.py — weapon_grid(), WeaponSolid, PayloadItem._weapon_grid_positions
+
+  When weapon_count > 1, weapons are arranged in a y-z grid (side-by-
+  side, perpendicular to the fuselage x-axis) to keep the fuselage
+  length independent of weapon count.
+
+  Grid dimensions:
+    n_cols = ceil(sqrt(weapon_count))
+    n_rows = ceil(weapon_count / n_cols)
+
+  Cross-section envelope added to fuselage radius requirement:
+    half_y = n_cols * diameter / 2
+    half_z = n_rows * diameter / 2
+
+  Example grid sizes for the three weapon variants:
+
+    weapon_count  n_cols  n_rows  small (Ø140)      medium (Ø178)     large (Ø273)
+    ─────────────────────────────────────────────────────────────────────────────
+    1             1       1       140 × 140 mm       178 × 178 mm      273 × 273 mm
+    2             2       1       280 × 140 mm       356 × 178 mm      546 × 273 mm
+    4             2       2       280 × 280 mm       356 × 356 mm      546 × 546 mm
+    6             3       2       420 × 280 mm       534 × 356 mm      819 × 546 mm
+
+  The fuselage radius is the diagonal half-envelope (√(half_y² + half_z²))
+  scaled by a 5% clearance factor, as implemented in
+  Payload.min_fuselage_radius.
+
+----------------------------------------------------------------------
+N5.  Category inference when no role is supplied
+----------------------------------------------------------------------
+  Source: engineering_rules.py — PayloadRules._infer_categories()
+
+  If the user supplies no payload_categories or role, the tool infers a
+  minimal category list from mission parameters alone:
+
+    eo_ir    — always included (basic situational awareness)
+    radar    — added if mission_endurance > 6 hr  (persistent ISR)
+    datalink — added if mission_range > 500 km    (BLOS operation)
+    comms    — added if mission_range ≤ 500 km    (line-of-sight operation)
+    weapon   — added if weapon_count > 0
+
+  This inference is a fallback; explicit role or category specification
+  is always preferred and will override this logic entirely.
+
 
 ================================================================================
 END OF ENGINEERING SOURCES FILE
@@ -701,6 +1010,7 @@ Abbreviations used throughout:
   e       Oswald efficiency factor
   HALE    High Altitude Long Endurance
   ISA     International Standard Atmosphere
+  ISR     Intelligence, Surveillance, and Reconnaissance
   L/D     Lift-to-drag ratio
   LOS     Line of sight
   BLOS    Beyond line of sight
@@ -710,6 +1020,7 @@ Abbreviations used throughout:
   NP      Neutral point
   OEI     One engine inoperative
   SAR     Synthetic aperture radar
+  SEAD    Suppression of Enemy Air Defences
   SM      Static margin
   STANAG  NATO Standardisation Agreement
   UAV     Unmanned Aerial Vehicle

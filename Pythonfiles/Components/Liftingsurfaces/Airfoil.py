@@ -11,7 +11,7 @@ from parapy.geom import FittedCurve, GeomBase
 from Pythonfiles.Components.Frame import Frame
 
 _XFOIL_DIR  = os.path.abspath("XFOIL6.99")
-_AIRFOIL_DIR = os.path.join(_XFOIL_DIR, "Airfoils")
+_AIRFOIL_DIR = os.path.join("Inputfiles", "Airfoils")
 _XFOIL_EXE  = os.path.join(_XFOIL_DIR, "xfoil.exe")
 
 
@@ -48,7 +48,12 @@ class Airfoil(GeomBase):
         t = round(self.thickness_to_chord * 100)
         return f"naca{m}{p}{t:02d}"
 
-    airfoil_name: str = Input(None)   # None → falls back to _naca_name
+    airfoil_name: str = Input(None)   # None → falls back to _naca_name / dat filename
+
+    # When set, geometry is READ from this .dat file instead of being computed
+    # from the NACA parameters.  Parameters are still used by sweep instances
+    # (which never set this) and as a fallback if the file is missing.
+    dat_path_override: str = Input(None)
 
     # ------------------------------------------------------------------ #
     # DERIVED NAMES / PATHS
@@ -57,7 +62,12 @@ class Airfoil(GeomBase):
     @Attribute
     def resolved_name(self):
         """The name actually used for all file I/O."""
-        return self.airfoil_name if self.airfoil_name is not None else self._naca_name
+        if self.airfoil_name is not None:
+            return self.airfoil_name
+        if self.dat_path_override is not None:
+            # Derive from the dat filename: "Inputfiles/Airfoils/naca2412.dat" → "naca2412"
+            return os.path.splitext(os.path.basename(self.dat_path_override))[0]
+        return self._naca_name
 
     @Attribute
     def dat_file_path(self):
@@ -117,14 +127,59 @@ class Airfoil(GeomBase):
 
         return yc, dyc_dx
 
+    @staticmethod
+    def _read_dat_coordinates(path: str):
+        """
+        Read a Selig-format .dat file and return an (N, 2) float array of
+        normalised (x, z) coordinates.
+
+        The first line is always the airfoil name and is skipped.  Any line
+        that cannot be parsed as two floats is silently ignored so that blank
+        lines or comment rows don't break the reader.
+        """
+        coords = []
+        with open(path) as fh:
+            for i, line in enumerate(fh):
+                if i == 0:          # name / header row
+                    continue
+                parts = line.strip().split()
+                if len(parts) >= 2:
+                    try:
+                        coords.append([float(parts[0]), float(parts[1])])
+                    except ValueError:
+                        pass
+        if not coords:
+            raise RuntimeError(f"[Airfoil] No coordinates found in '{path}'.")
+        return np.array(coords)
+
     @Attribute
     def normalized_coordinates(self):
-        x          = self.x_distribution
-        yt         = self.thickness_distribution * self.thickness_factor
-        yc, _      = self.camber_line          # dyc_dx not needed
+        """
+        Normalised (x, z) coordinates of the airfoil section.
 
-        xu = x;        zu = yc + yt
-        xl = x;        zl = yc - yt
+        Source priority
+        ---------------
+        1. ``dat_path_override`` — read from the .dat file when the path is
+           set and the file exists.  This is the live-geometry path used by
+           the real wing Parts; the file was written by the Drone when the
+           user picked a NACA code or the sweep completed.
+        2. Computed from NACA 4-series params — used by temporary sweep
+           ``Airfoil`` instances (which never receive ``dat_path_override``)
+           and as an automatic fallback if the file is somehow missing.
+        """
+        if self.dat_path_override is not None:
+            if os.path.exists(self.dat_path_override):
+                return self._read_dat_coordinates(self.dat_path_override)
+            print(f"[Airfoil] WARNING: dat_path_override '{self.dat_path_override}' "
+                  f"not found — falling back to computed NACA geometry.")
+
+        # Compute from NACA 4-series parameters
+        x     = self.x_distribution
+        yt    = self.thickness_distribution * self.thickness_factor
+        yc, _ = self.camber_line
+
+        xu = x;  zu = yc + yt
+        xl = x;  zl = yc - yt
 
         x_full = np.concatenate([xu[::-1], xl[1:]])
         z_full = np.concatenate([zu[::-1], zl[1:]])

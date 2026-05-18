@@ -48,6 +48,77 @@ def _non_negative_int():
     return _check
 
 
+# ─── NACA 4-series .dat writer ────────────────────────────────────────────── #
+
+def _write_naca_dat_if_missing(naca_str: str, m: float, p: float, t: float,
+                                n_points: int = 100) -> str:
+    """
+    Write a Selig-format .dat file for a NACA 4-series airfoil to
+    ``Inputfiles/Airfoils/<naca_str>.dat``.
+
+    If the file already exists it is left untouched and its path is returned.
+    The NACA 4-series geometry matches the formulas used in ``Airfoil.py``
+    (cosine-spaced stations, closed trailing edge via the ×1.015 correction).
+
+    Parameters
+    ----------
+    naca_str : str   e.g. ``"naca2412"``
+    m        : float max camber as fraction of chord  (first digit / 100)
+    p        : float camber position as fraction      (second digit / 10)
+    t        : float max thickness as fraction        (last two digits / 100)
+    n_points : int   number of stations on each surface half (default 100)
+
+    Returns
+    -------
+    str  absolute path to the .dat file
+    """
+    import numpy as np
+
+    airfoil_dir = os.path.join("Inputfiles", "Airfoils")
+    os.makedirs(airfoil_dir, exist_ok=True)
+    dat_path = os.path.join(airfoil_dir, f"{naca_str}.dat")
+
+    if os.path.exists(dat_path):
+        print(f"[NACA DAT] Already exists, skipping: {dat_path}")
+        return dat_path
+
+    # Cosine-spaced x stations (better leading-edge resolution)
+    beta = np.linspace(0, np.pi, n_points)
+    x    = 0.5 * (1.0 - np.cos(beta))
+
+    # Thickness distribution (NACA 4-series standard)
+    yt = 5.0 * t * (
+          0.2969 * np.sqrt(x)
+        - 0.1260 * x
+        - 0.3516 * x**2
+        + 0.2843 * x**3
+        - 0.1015 * x**4
+    )
+
+    # Camber line
+    yc = np.zeros_like(x)
+    if m > 0.0 and p > 0.0:
+        fore        = x < p
+        yc[fore]    = m / p**2       * (2.0 * p * x[fore]  - x[fore]**2)
+        yc[~fore]   = m / (1.0-p)**2 * (1.0 - 2.0*p + 2.0*p*x[~fore] - x[~fore]**2)
+
+    # Upper / lower surfaces (no dyc/dx twist for the .dat; matches Airfoil.py simplified path)
+    xu, zu = x,  yc + yt
+    xl, zl = x,  yc - yt
+
+    # Selig format: upper surface TE→LE, then lower surface LE→TE
+    x_full = np.concatenate([xu[::-1], xl[1:]])
+    z_full = np.concatenate([zu[::-1], zl[1:]])
+
+    with open(dat_path, "w") as fh:
+        fh.write(f"{naca_str}\n")
+        for xi, zi in zip(x_full, z_full):
+            fh.write(f"{xi:.6f} {zi:.6f}\n")
+
+    print(f"[NACA DAT] Written → {dat_path}")
+    return dat_path
+
+
 # ─── Output file archiving helper ─────────────────────────────────────────── #
 
 def _archive_previous(output_dir: str, pattern: str) -> None:
@@ -224,6 +295,99 @@ class Drone(GeomBase):
             "Lower values increase tip wash-out and reduce induced drag; "
             "values below 0.20 cause structural/manufacturing difficulties.",
     )
+
+    wing_naca_input: str = Input(
+        '0012',
+        doc="Optional NACA 4-series code for the main wing, e.g. '2412' or 'naca2412'.\n"
+            "Leave blank to use the per-field camber / position / thickness inputs on Aircraft.\n"
+            "Running the 'Run Wing Airfoil Sweep' action overwrites this with the best candidate.",
+    )
+
+    # ================================================================ #
+    # NACA INPUT VALIDATION
+    # ================================================================ #
+
+    @Attribute
+    def _parsed_wing_naca(self):
+        """
+        Validate and parse wing_naca_input.
+
+        Accepted formats: '2412', 'NACA2412', 'naca 2412' (spaces stripped).
+        Returns dict {camber, position, thickness, naca_str} on success,
+        or None when wing_naca_input is empty / None.
+        Shows a tkinter error dialog on bad input and falls back to None
+        so the rest of the geometry is unaffected while the user corrects it.
+        """
+        raw = self.wing_naca_input
+        if raw is None or str(raw).strip() == "":
+            return None
+
+        s = str(raw).strip().lower().replace(" ", "")
+        if s.startswith("naca"):
+            s = s[4:]
+
+        error_msg = None
+        if len(s) != 4 or not s.isdigit():
+            error_msg = (
+                f"Invalid NACA input '{raw}'.\n\n"
+                f"Expected a 4-digit NACA 4-series code, e.g. '2412' or 'naca2412'.\n"
+                f"Got '{s}' after stripping the 'naca' prefix."
+            )
+        elif int(s[2:4]) == 0:
+            error_msg = (
+                f"Invalid NACA input '{raw}'.\n\n"
+                f"The last two digits encode max thickness as % of chord.\n"
+                f"'00' means zero thickness — not a valid airfoil."
+            )
+
+        if error_msg:
+            print(f"[NACA Input] {error_msg}")
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                _root = tk.Tk()
+                _root.withdraw()
+                messagebox.showerror("Invalid NACA 4-Series Input", error_msg)
+                _root.destroy()
+            except Exception:
+                pass
+            return None
+
+        m = int(s[0]) / 100.0
+        p = int(s[1]) / 10.0 if int(s[1]) > 0 else 0.4
+        t = int(s[2:4]) / 100.0
+        naca_str = f"naca{s}"
+
+        print(f"[NACA Input] Parsed '{raw}' → m={m:.3f}, p={p:.2f}, t={t:.3f}")
+
+        # Write .dat file to Inputfiles/Airfoils/ — skipped if it already exists.
+        _write_naca_dat_if_missing(naca_str, m, p, t)
+
+        return {"camber": m, "position": p, "thickness": t, "naca_str": naca_str}
+
+    @Attribute
+    def _active_wing_dat_path(self) -> str:
+        """
+        Absolute-style path to the .dat file that currently drives wing geometry.
+
+        Resolution order
+        ----------------
+        1. ``wing_naca_input`` typed by the user  → ``_parsed_wing_naca`` validates
+           it, writes the .dat if missing, and returns the parsed dict.
+        2. Default: NACA 0012 — written on first load if not already present.
+
+        The returned path is always passed to ``aircraft.wing_active_dat_path``
+        so the wing geometry immediately reflects the active airfoil.
+        """
+        parsed = self._parsed_wing_naca
+        if parsed is not None:
+            naca_str = parsed["naca_str"]          # .dat was already written by _parsed_wing_naca
+        else:
+            # Default airfoil: NACA 0012 (symmetric, 12 % thick)
+            naca_str = "naca0012"
+            _write_naca_dat_if_missing(naca_str, m=0.0, p=0.4, t=0.12)
+
+        return os.path.join("Inputfiles", "Airfoils", f"{naca_str}.dat")
 
     # ================================================================ #
     # ENGINE TYPE
@@ -532,6 +696,10 @@ class Drone(GeomBase):
     @action(label="Run Wing Airfoil Sweep")
     def run_wing_sweep(self):
         self.aircraft.main_wing.run_sweep()
+        # Sync the winning NACA code back to Drone so the top-level input
+        # field always reflects the active airfoil after a sweep.
+        self.wing_naca_input = self.aircraft.main_wing.naca_input
+        print(f"[Drone] wing_naca_input updated to '{self.wing_naca_input}'")
 
     @action(label="Plot Wing XFoil polars")
     def plot_wing_cl_alpha(self):
@@ -1153,6 +1321,8 @@ class Drone(GeomBase):
             thrust_to_weight=self.thrust_loading if self.engine_type == "Jet" else self.power_loading,
             rho=self.air_density,
             wing_taper_ratio=self.wing_taper_ratio,
+            wing_naca_input=self.wing_naca_input,
+            wing_active_dat_path=self._active_wing_dat_path,
             payload_object=self.payload,
             payload_nose_clearance=self.payload_nose_clearance,
             fuselage_cylinder_start=self.fuselage_cylinder_start,
