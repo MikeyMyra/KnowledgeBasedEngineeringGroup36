@@ -1,158 +1,201 @@
-# UAV Initial Sizing Tool — README
+# UAV Initial Sizing Tool — KBE Assignment
+**TU Delft MSc FPP · Knowledge Based Engineering · Q3/Q4**
 
-Knowledge Based Engineering (KBE) assignment, TU Delft, Q3-Q4  
-Built with the [ParaPy](https://www.parapy.nl/) KBE framework.
-
----
-
-## Prerequisites
-
-```
-Python ≥ 3.9
-ParaPy (licensed)
-numpy, scipy, matplotlib, reportlab
-```
-
-Install Python dependencies:
-
-```bash
-pip install numpy scipy matplotlib reportlab
-```
-
-MATLAB must be installed on the machine and be configured with the Python version of the interpreter of this KBE application
+A knowledge-based ParaPy application for the conceptual sizing and 3-D geometry generation of fixed-wing UAVs. The tool sizes the aircraft from mission requirements (speed, altitude, range, endurance, payload role) using Breguet/Raymer/Roskam empirical methods, then builds a parametric 3-D model in the ParaPy viewer.
 
 ---
 
-## Launching the Tool
+## Quick Start
 
-From the repository root:
+### 1. Launch the application
+
+Open a terminal in the `Assignment/` root folder (one level above `Pythonfiles/`) and run:
 
 ```bash
-cd Assignment
 python Pythonfiles/main.py
 ```
 
-The ParaPy GUI opens with the 3-D viewer and the attribute tree. Inputs appear in the attribute tree alongside computed outputs.
+This starts the ParaPy GUI with a pre-configured `Drone` instance. All inputs can be changed live in the GUI sidebar.
+
+### 2. Root object
+
+The root class is **`Drone`**, defined in `Pythonfiles/Drone.py`.  
+`main.py` instantiates it and passes it to `parapy.gui.display()`.
+
+### 3. Required inputs
+
+These four inputs are mandatory and have no default values — they must be set either in `main.py` or in the GUI sidebar:
+
+| Input | Unit | Valid range | Description |
+|---|---|---|---|
+| `cruise_speed` | m/s | 10 – 350 | True airspeed at cruise |
+| `mission_altitude` | m | 0 – 18 000 | Cruise / loiter altitude above MSL |
+| `mission_range` | km | 1 – 25 000 | Total mission range (outbound + return) |
+| `mission_endurance` | hr | 0.1 – 120 | Loiter endurance |
+
+### 4. Key optional inputs
+
+These have Roskam/Raymer defaults and can be left unchanged or overridden in `main.py`:
+
+| Input | Default | Description |
+|---|---|---|
+| `payload_role` | `ISR` | Mission role: ISR / Strike / SEAD / Mapping / COMMS relay / Patrol |
+| `weapon_count` | `0` | Number of munitions (0 = unarmed) |
+| `wing_naca_input` | `'0012'` | NACA 4-digit code for the main wing (e.g. `'2412'`) |
+| `fuel_type` | `'auto'` | `'auto'` \| `'avgas_100ll'` \| `'jet_a'` \| `'jp8'` \| `'lipo_battery'` |
+| `fuel_tank_aspect_ratio` | `3.0` | Tank length-to-diameter ratio (1.1 – 10) |
+| `wing_taper_ratio` | `0.40` | Wing taper ratio λ = c_tip / c_root (0.20 – 1.00) |
+| `fuselage_cylinder_start` | `10.0` | Nosecone / cylinder junction [% fuselage length] |
+| `fuselage_cylinder_end` | `70.0` | Cylinder / tail-cone junction [% fuselage length] |
+
+Engine type (Piston / Turboprop / Jet) is derived automatically from cruise Mach number and altitude using Roskam Vol. I §3.2 rules.
 
 ---
 
-## Setting Mission Inputs
+## Input Files
 
-All inputs are editable in the attribute tree. Required inputs:
+The application expects an `Inputfiles/` directory at the **working directory** from which you launch the script (i.e. `Assignment/`):
 
-| Input | Units | Valid range | Default |
-|-------|-------|-------------|---------|
-| `cruise_speed` | m/s | 10 – 350 | 80 |
-| `mission_altitude` | m | 0 – 18 000 | 6 000 |
-| `mission_range` | km | 1 – 25 000 | 500 |
-| `mission_endurance` | hr | 0.1 – 120 | 8 |
-| `payload_role` | — | ISR / Strike / SEAD / Mapping / COMMS relay / Patrol | ISR |
-| `weapon_count` | — | 0 – 6 | 0 |
+```
+Assignment/
+├── Inputfiles/
+│   └── Airfoils/        ← .dat files are auto-generated here on first run
+├── Outputfiles/         ← PDFs, plots, and sweep results written here
+├── Pythonfiles/
+│   └── ...
+└── Q3D/                 ← Q3D MATLAB toolbox (see MATLAB note below)
+```
 
-Optional override inputs:
+**Airfoil `.dat` files** are generated automatically into `Inputfiles/Airfoils/` the first time a NACA code is used. You do not need to provide them manually. The default NACA 0012 file is created on startup.
 
-| Input | Purpose |
-|-------|---------|
-| `uav_class_override` | Force class to `"small"`, `"medium"`, or `"large"` |
-| `mission_objective_override` | Force objective to `"High Speed"`, `"High Endurance"`, or `"Low cost"` |
-| `fuselage_cylinder_start` | Nosecone / cylinder junction [% of fuselage length] |
-| `fuselage_cylinder_end` | Cylinder / tailcone junction [% of fuselage length] |
-| `fuel_type` | Fuel key or `"auto"` |
-| `fuel_tank_aspect_ratio` | Tank length-to-diameter ratio |
-| `wing_taper_ratio` | λ = c_tip / c_root |
-
-If a value is outside the valid range ParaPy raises a `ValueError` and rejects the input. All downstream attributes recompute lazily when you access them or trigger an action.
+No other input files need to be loaded manually before running.
 
 ---
 
-## Available Actions
+## GUI Actions
 
-### Show Design Point
-Plots the W/P – W/S (or T/W – W/S) constraint diagram and saves a timestamped PNG to `Outputfiles/`.
+The following actions are available in the ParaPy sidebar / right-click menu on the `Drone` object:
 
-### Show V-n Diagram
-Plots the V-n diagram and saves a timestamped PNG to `Outputfiles/`.
+| Action label | What it does |
+|---|---|
+| **Show Design Point** | Plots the W/P–W/S diagram and saves a PNG to `Outputfiles/` |
+| **Show V-n Diagram** | Plots the V-n manoeuvrability envelope |
+| **Run Wing Airfoil Sweep** | Searches NACA 4-series space via Q3D + XFoil; updates wing geometry with the best candidate |
+| **Plot Wing XFoil Polars** | Runs XFoil on the current wing airfoil and plots Cl–α and Cl/Cd–α |
+| **Print Stability Report** | Prints a static stability summary to the console |
+| **Export PDF Report** | Generates a full PDF sizing report in `Outputfiles/` |
 
-### Run Wing Airfoil Sweep
-Runs a Q3D sweep over NACA 4-series airfoil parameters to find the best aerodynamic shape. Requires MATLAB.
+### Wing airfoil workflow
 
-### Plot Wing XFoil Polars
-Plots Cl–α, Cd–α, Cd–m & Cl-Cd polars for the wing root airfoil and saves a PNG to `Outputfiles/`.
+1. Type a NACA 4-digit code into the `wing_naca_input` field in the GUI (e.g. `2412`). The `.dat` file is generated and the 3-D wing geometry updates immediately.
+2. Alternatively, click **Run Wing Airfoil Sweep** to let the tool search for an aerodynamically optimal NACA 4-series airfoil. This overwrites `wing_naca_input` with the best result.
+3. First digit (camber) is capped at 6 — codes with camber 7–9 are rejected with a dialog, as XFoil diverges in that range.
 
-### Print Stability Report
-Prints a longitudinal stability summary to the console (CG, neutral point, static margin, assessment) and saved a TXT in `Outputfiles/`.
+### Infeasibility handling
 
-### Export PDF Report
-Generates a full design-summary PDF in `Outputfiles/` covering mission parameters, weight budget, performance margins, fuel fractions, wing and tail geometry, fuselage, fuel system, and stability.
-
-### Export STP File
-Exports the full 3-D geometry to a STEP file in `Outputfiles/`.
-
----
-
-## Reading the Results
-
-Key attributes in the ParaPy attribute tree:
-
-| Attribute | Description |
-|-----------|-------------|
-| `MTOW` | Maximum take-off weight [kg] |
-| `fuel_weight` | Required fuel mass [kg] |
-| `empty_weight` | Structural + systems empty weight [kg] |
-| `payload_weight` | Installed payload mass [kg] |
-| `wing_area` | Reference wing area [m²] |
-| `wing_semi_span` | Half-span [m] |
-| `wing_aspect_ratio` | Effective AR (geometry-adjusted) |
-| `wing_loading` | W/S at MTOW [N/m²] |
-| `thrust_loading` | T/W [—] (jet only) |
-| `power_loading` | W/P [kg/W] (piston/turboprop only) |
-| `ld_cruise` | Cruise lift-to-drag ratio [—] |
-| `engine_type` | `"Piston"`, `"Turboprop"`, or `"Jet"` |
-| `uav_class` | `"small"`, `"medium"`, or `"large"` |
-| `mission_objective` | `"Low cost"`, `"High Endurance"`, or `"High Speed"` |
-| `static_margin` | (NP − CG) / MAC [—] — positive = stable |
-| `stability_status` | `"Stable"`, `"Marginal"`, or `"Unstable"` |
-| `performance_margins_summary` | Console string showing sizing driver and achievable off-design value |
+If the mission is infeasible (fuel fraction ≥ 1, or MTOW > 100 t) a warning dialog appears and the 3-D aircraft geometry is suppressed. Reduce range, endurance, or cruise speed to recover a feasible design.
 
 ---
 
-## Output Files
+## Software Requirements
 
-All generated PNGs and PDFs are saved to `Assignment/Outputfiles/`. Previously generated files of the same type are automatically moved to `Outputfiles/data/` so the root always contains only the latest file. Create the `Outputfiles/` folder if it does not exist.
+### Python
+
+Python **3.12** is required (matching the ParaPy installation).
+
+### Python packages
+
+| Package | Version tested | Install |
+|---|---|---|
+| `parapy` | *(license-locked — provided by TU Delft)* | see ParaPy install guide |
+| `numpy` | ≥ 1.26 | `pip install numpy` |
+| `matplotlib` | ≥ 3.8 | `pip install matplotlib` |
+| `matlab` (engine) | matching MATLAB R2023b+ | see MATLAB section below |
+
+Standard library modules used (no install needed): `os`, `sys`, `math`, `subprocess`, `json`, `ast`, `glob`, `shutil`, `datetime`, `enum`, `warnings`, `typing`, `dataclasses`, `itertools`.
+
+### ParaPy
+
+ParaPy is a commercial KBE framework licensed through TU Delft. Install it using the installer and licence key provided by the course.  
+Documentation: [https://www.parapy.nl](https://www.parapy.nl)
+
+The application uses:
+- `parapy.core` — `Input`, `Attribute`, `Part`, `action`, `child`, `validate`
+- `parapy.geom` — `GeomBase`, `LoftedSolid`, `Box`, `Cylinder`, `Circle`, `FittedCurve`, `RevolvedSolid`, `Polygon`, `LineSegment`, `translate`, `rotate`, `Vector`, `Point`
+- `parapy.gui` — `display`
+
+### XFoil
+
+XFoil **6.99** is included in the repository at `XFOIL6.99/xfoil.exe`. No separate installation is needed. XFoil is called as a subprocess automatically when running the airfoil sweep or polar plot actions.
+
+- XFoil runs are limited to Mach ≤ 0.70 (the panel-method validity limit). A warning dialog appears if the cruise Mach exceeds this threshold.
+- XFoil must be run from a working directory that contains the `Inputfiles/Airfoils/` folder (i.e. launch `main.py` from `Assignment/`).
+
+### MATLAB and Q3D
+
+The **Wing Airfoil Sweep** action uses **Q3D**, a vortex-lattice / lifting-line aerodynamic solver that runs inside MATLAB.
+
+Requirements:
+- **MATLAB R2023b** (or later) installed and licensed on the machine.
+- **MATLAB Engine for Python** configured for the same Python version (3.12). Follow MathWorks' guide: [Call MATLAB from Python](https://www.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html)
+- The **Q3D toolbox** must be present in `Assignment/Q3D/` (included in the repository).
+
+`Pythonfiles/Matlab_start.py` starts a shared MATLAB engine at import time and changes its working directory to `Q3D/`. If MATLAB is not configured, importing `Drone.py` will raise an error at startup. Comment out the import in `Liftingsurface.py` to run without Q3D (the sweep action will be unavailable).
 
 ---
 
-## Payload Roles
+## Project Structure
 
-| Role | Sensor / weapon suite |
-|------|-----------------------|
-| ISR | EO/IR camera + radar + datalink |
-| Strike | EO/IR camera + weapons + datalink |
-| SEAD | EO/IR camera + radar + weapons + datalink |
-| Mapping | EO/IR camera + LiDAR |
-| COMMS relay | Communications relay + datalink |
-| Patrol | EO/IR camera + communications |
-
-The correct sensor and weapon variants are selected automatically based on the inferred UAV class.
+```
+Pythonfiles/
+├── main.py                          # Entry point — instantiates Drone and launches GUI
+├── Drone.py                         # Root KBE object; all top-level inputs and actions
+├── Matlab_start.py                  # Starts the shared MATLAB engine for Q3D
+├── metric_imperial_conversions.py   # Unit conversion helpers
+├── generate_uml.py                  # (utility) generates UML class diagram
+└── Components/
+    ├── Aircraft.py                  # Assembles wing, tail, fuselage, engine, fuel tank
+    ├── Fuselage/
+    │   ├── Fuselage.py              # Parametric fuselage geometry
+    │   └── Undercarriage.py         # Landing gear
+    ├── Liftingsurfaces/
+    │   ├── Liftingsurface.py        # Wing / tail planform + airfoil sweep action
+    │   ├── Airfoil.py               # Airfoil geometry, XFoil interface, .dat I/O
+    │   └── Wingbox.py               # Structural wingbox geometry
+    ├── Engines/
+    │   ├── Engine.py                # Base engine class
+    │   ├── PropellerEngine.py       # Piston / turboprop nacelle and propeller
+    │   └── JetEngine.py             # Jet nacelle
+    ├── Fuel/
+    │   └── FuelTank.py              # Fuel tank geometry and sizing
+    ├── Payload/
+    │   ├── Payload.py               # Payload library and 3-D box geometry
+    │   └── Payloadrules.py          # Engineering rules: UAV class, mission objective
+    └── Mission/
+        ├── mission.py               # Breguet / Raymer / Roskam sizing equations
+        ├── WP_WS_diagram.py         # Thrust/weight – wing loading diagram
+        ├── ISA_calculator.py        # International Standard Atmosphere
+        └── vn_diagram.py            # V-n manoeuvrability envelope
+```
 
 ---
 
-## Engine & Class Inference (summary)
+## Typical Design Feasibility Limits
 
-The tool infers engine type and UAV class automatically from the mission inputs — no manual selection is needed unless you use the override inputs.
+The sizing model uses UAV-representative empty-weight fraction caps (derived from real UAV data) to bound the Raymer sizing equation:
 
-**Engine type** is selected from Mach number and altitude:
-- M ≥ 0.40 / 0.50 / 0.60 (altitude-graduated threshold) → Jet  
-- Endurance > 6 hr or altitude > 4 500 m → Turboprop  
-- Otherwise → Piston
+| Engine type | We/W₀ cap | Max fuel fraction | Approx. max range (no endurance) | Approx. max endurance (no range) |
+|---|---|---|---|---|
+| Piston | 0.58 | ~0.42 | ~1 000 – 1 500 km | ~6 – 10 hr |
+| Turboprop | 0.52 | ~0.48 | ~2 000 – 3 000 km | ~12 – 18 hr |
+| Jet | 0.50 | ~0.50 | ~3 000 – 5 000 km | ~10 – 15 hr |
 
-**UAV class** is the most demanding of four independent constraint floors: range, altitude, endurance, and payload mass.
+Combining range and endurance simultaneously reduces both limits. These are approximate figures at typical UAV L/D values (8 – 14) from the W/P–W/S diagram.
 
 ---
 
-## Known Limitations
+## Notes
 
-- **Extreme altitudes (> 18 000 m)**: wing AR and span are automatically capped to prevent visual overlap with the horizontal tail. Console messages report when this cap fires.
-- **XFoil Mach number**: XFOIL will not run when the Mach number is above 0.7.
-- **Engine type transition**: changing `cruise_speed` near the Mach threshold causes a discrete jump in MTOW — this is physically correct behaviour.
-- **Large weapon counts on non-armed roles**: set `payload_role` to `Strike` or `SEAD` explicitly when carrying weapons.
+- All geometry is built in **SI units** (metres, kilograms, seconds). Imperial conversions for Roskam equations are handled internally in `metric_imperial_conversions.py`.
+- The `Outputfiles/` directory is created automatically if it does not exist.
+- Previous output files (design point PNGs, PDF reports) are archived automatically with a timestamp suffix before new ones are written.

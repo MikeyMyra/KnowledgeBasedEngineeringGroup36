@@ -34,7 +34,7 @@ if __name__ == "__main__":
         cruise_speed=50,          # [m/s]
         mission_altitude=1000,      # [m]
         mission_range=100,          # [km]
-        mission_endurance=24,        # [hr]
+        mission_endurance=1,        # [hr]
 
         # ------------------------------------------------------------------ #
         # PAYLOAD INTENT  — optional overrides
