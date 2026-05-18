@@ -106,10 +106,10 @@ class Drone(GeomBase):
     )   # [m/s]
 
     mission_altitude: float = Input(
-        validator=_between(0.0, 15_000.0),
-        doc="Cruise / loiter altitude  [m]  ·  valid: 0 – 15 000 m\n"
+        validator=_between(0.0, 18_000.0),
+        doc="Cruise / loiter altitude  [m]  ·  valid: 0 – 18 000 m\n"
             "Practical ceilings by engine type:\n"
-            "  Piston   ≤ 4 500 m  |  Turboprop ≤ 9 000 m  |  Jet up to 15 000 m\n"
+            "  Piston   ≤ 4 500 m  |  Turboprop ≤ 9 000 m  |  Jet up to 18 000 m\n"
             "Above 9 000 m a jet is selected automatically if Mach threshold is met.",
     )  # [m]
 

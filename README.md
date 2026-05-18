@@ -43,7 +43,7 @@ All inputs are editable in the attribute tree. Required inputs:
 | Input | Units | Valid range | Default |
 |-------|-------|-------------|---------|
 | `cruise_speed` | m/s | 10 – 350 | 80 |
-| `mission_altitude` | m | 0 – 15 000 | 6 000 |
+| `mission_altitude` | m | 0 – 18 000 | 6 000 |
 | `mission_range` | km | 1 – 25 000 | 500 |
 | `mission_endurance` | hr | 0.1 – 120 | 8 |
 | `payload_role` | — | ISR / Strike / SEAD / Mapping / COMMS relay / Patrol | ISR |
@@ -152,7 +152,7 @@ The tool infers engine type and UAV class automatically from the mission inputs 
 
 ## Known Limitations
 
-- **Extreme altitudes (> 15 000 m)**: wing AR and span are automatically capped to prevent visual overlap with the horizontal tail. Console messages report when this cap fires.
-- **XFoil actions**: require a separate XFoil installation on the system PATH.
+- **Extreme altitudes (> 18 000 m)**: wing AR and span are automatically capped to prevent visual overlap with the horizontal tail. Console messages report when this cap fires.
+- **XFoil Mach number**: XFOIL will not run when the Mach number is above 0.7.
 - **Engine type transition**: changing `cruise_speed` near the Mach threshold causes a discrete jump in MTOW — this is physically correct behaviour.
 - **Large weapon counts on non-armed roles**: set `payload_role` to `Strike` or `SEAD` explicitly when carrying weapons.
