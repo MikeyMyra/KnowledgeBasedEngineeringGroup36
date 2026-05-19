@@ -10,6 +10,10 @@ from parapy.webgui.app_bar import AppBar
 # If your Drone lives in another module, adjust this import:
 from Pythonfiles.Drone import Drone
 
+#Notifications
+from GUI_notifications import Notifications
+
+
 
 class DroneApp(Component):
     """Single-design Drone concept app.
@@ -47,6 +51,14 @@ class DroneApp(Component):
 
     # loading bar
     creating_concept: bool = State(False)
+
+    # Notifications
+    notif_message: str = State("")
+    notif_severity: str = State("info")
+    notif_open: bool = State(False)
+
+    def handle_close_notification(self, *args):
+        self.notif_open = False
 
     def open_fine_tune_dialog(self, *args):
         if self.drone is not None:
@@ -163,6 +175,7 @@ class DroneApp(Component):
             self.render_fine_tune_dialog(),
             self.render_diagrams_dialog(),
             self.render_create_concept_progress_dialog(),
+            Notifications,
         ]
 
     def render_viewer(self) -> NodeType:
@@ -321,7 +334,7 @@ class DroneApp(Component):
                     ),
                     mui.TextField(
                         label="Payload role",
-                        helperText='e.g. "ISR", "Strike", "Mapping", "COMMS relay", "Patrol"',
+                        helperText='e.g. "ISR", "Strike", "Mapping", "COMMS relay", "Patrol", "SEAD"',
                         value=self.payload_role,
                         onChange=self.on_change_payload_role,
                     ),
@@ -408,6 +421,7 @@ class DroneApp(Component):
             self.mission_dialog_open = False
         finally:
             self.creating_concept = False
+
     # -------------------------------------------------------------------------
     # Fine-tuning dialog (post-Drone; uses SlotFields)
     # -------------------------------------------------------------------------
