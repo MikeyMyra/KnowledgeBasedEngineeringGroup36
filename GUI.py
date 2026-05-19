@@ -13,6 +13,8 @@ from Pythonfiles.Drone import Drone
 #Notifications
 from GUI_notifications import Notifications
 
+import os
+
 
 
 class DroneApp(Component):
@@ -650,4 +652,4 @@ class DroneApp(Component):
 # -------------------------------------------------------------------------
 if __name__ == "__main__":
     from parapy.webgui.core import display
-    display(DroneApp, reload=True)
+    display(DroneApp, reload=True, assets_dir=os.getcwd())
