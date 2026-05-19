@@ -483,7 +483,45 @@ class Drone(GeomBase):
 
     @Attribute
     def mach(self) -> float:
-        return self.cruise_speed / self.speed_of_sound
+        """
+        Cruise Mach number [-].
+
+        Raises ValueError (and shows a GUI dialog) when Mach > 0.70.
+        Above M 0.70 compressibility effects become significant and the
+        subsonic aerodynamic model (thin-aerofoil theory, Breguet range
+        equations) is no longer valid.  XFoil also hard-caps at M 0.70.
+        """
+        m = self.cruise_speed / self.speed_of_sound
+        if m > 0.70:
+            msg = (
+                f"Cruise Mach number M = {m:.4f} exceeds the maximum "
+                f"allowed limit of M 0.70.\n\n"
+                f"  Cruise speed    : {self.cruise_speed:.1f} m/s\n"
+                f"  Cruise altitude : {self.mission_altitude:.0f} m\n"
+                f"  Speed of sound  : {self.speed_of_sound:.2f} m/s\n\n"
+                f"Reduce cruise_speed or increase mission_altitude until "
+                f"M ≤ 0.70.  At M {m:.3f} the subsonic aerodynamic "
+                f"model (Breguet, thin-aerofoil, XFoil) is no longer valid."
+            )
+            print(f"[Drone] Mach validation FAILED: M = {m:.4f} > 0.70  "
+                  f"(cruise_speed={self.cruise_speed:.1f} m/s, "
+                  f"altitude={self.mission_altitude:.0f} m, "
+                  f"a={self.speed_of_sound:.2f} m/s)")
+            try:
+                import tkinter as tk
+                from tkinter import messagebox
+                _root = tk.Tk()
+                _root.withdraw()
+                messagebox.showerror("Cruise Mach Exceeds Limit — Input Rejected", msg)
+                _root.destroy()
+            except Exception:
+                pass  # headless environment — console print is the fallback
+            raise ValueError(
+                f"cruise_speed={self.cruise_speed:.1f} m/s gives Mach {m:.4f} > 0.70 "
+                f"at altitude {self.mission_altitude:.0f} m. "
+                f"Reduce cruise_speed or increase mission_altitude."
+            )
+        return m
 
     @Attribute
     def maximum_mach(self) -> float:
@@ -1148,30 +1186,72 @@ class Drone(GeomBase):
                 return False
 
             def _collect(obj):
-                # Handle lists/sequences (quantified @Part returns these)
+                """Recursively add OCC shapes from a ParaPy geometry tree."""
+                # ── lists and tuples (explicit Python sequences) ──────────
                 if isinstance(obj, (list, tuple)):
                     for item in obj:
                         _collect(item)
                     return
+                # ── non-GeomBase objects: try iterating (catches ParaPy
+                #    SequenceProxy returned by quantified @Part access) ──────
                 if not isinstance(obj, GeomBase):
+                    try:
+                        for item in obj:
+                            _collect(item)
+                    except TypeError:
+                        pass
                     return
+                # ── GeomBase: try to add a direct OCC shape first ─────────
                 added = _add_shape(obj)
                 if not added:
+                    # No direct shape — recurse into declared child Parts.
                     try:
                         for child in obj.children:
                             if child is not obj:
                                 _collect(child)
-                    except Exception:
-                        pass
+                    except Exception as _ce:
+                        print(f"[STP] children traversal failed for "
+                              f"{getattr(obj, 'label', type(obj).__name__)}: {_ce}")
 
-            # ── main aircraft structure (fuselage, wings, tails, engine nacelles) ──
+            # ── main aircraft structure (fuselage, wings, tails, engine) ──
             _collect(self.aircraft)
 
-            # ── payload (lives as a Part on Drone, NOT under Aircraft) ──
+            # ── undercarriage (nose gear + main landing gear) ─────────────
+            # Quantified LoftedSolid / RevolvedSolid parts (main_struts,
+            # main_tyres, etc.) can be missed by the generic children
+            # traversal when ParaPy returns a SequenceProxy instead of a
+            # plain list.  Collect each gear sub-group explicitly by path.
             try:
-                _collect(self.payload)
+                uc = self.aircraft.fuselage.undercarriage
+                for _gear_part in (
+                    "nose_strut", "nose_axle", "nose_tyres",
+                    "main_struts", "main_axles", "main_tyres",
+                ):
+                    try:
+                        _collect(getattr(uc, _gear_part))
+                    except Exception as _ue:
+                        print(f"[STP] undercarriage.{_gear_part} skipped: {_ue}")
             except Exception as _exc:
-                print(f"[STP] payload collection skipped: {_exc}")
+                print(f"[STP] undercarriage explicit collection failed: {_exc}")
+
+            # ── payload (lives as a Part on Drone, NOT under Aircraft) ────
+            # PayloadItem.solid and .weapon_solids are declared with
+            # @Part(parse=False), which excludes them from obj.children in
+            # ParaPy.  Collect each item's geometry directly by attribute
+            # access to guarantee they make it into the STEP file.
+            try:
+                for _item in self.payload.items:
+                    _lbl = getattr(_item, "label", "?")
+                    try:
+                        _collect(_item.solid)
+                    except Exception as _ie:
+                        print(f"[STP] payload solid skipped ({_lbl}): {_ie}")
+                    try:
+                        _collect(_item.weapon_solids)
+                    except Exception as _we:
+                        print(f"[STP] payload weapon_solids skipped ({_lbl}): {_we}")
+            except Exception as _exc:
+                print(f"[STP] payload collection failed: {_exc}")
 
             # ── propeller blades (quantified @Part — may not surface through
             #    obj.children traversal; collect explicitly by path) ──
@@ -1229,7 +1309,23 @@ class Drone(GeomBase):
 
     @Attribute
     def _feasible(self) -> bool:
-        """True when mission sizing produced a valid (non-nan) MTOW."""
+        """
+        True when the mission is physically feasible and can produce a
+        valid (non-nan) MTOW.
+
+        The Mach check is evaluated here — rather than relying solely on
+        the lazy mach @Attribute — so that the validation dialog fires
+        immediately whenever cruise_speed or mission_altitude changes.
+        _feasible is in the critical path of aircraft geometry: the
+        @Part aircraft uses ``suppress=not self._feasible``, so ParaPy
+        re-evaluates it every time inputs are updated and the 3-D view
+        refreshes.  This guarantees prompt feedback even before the user
+        explicitly reads the mach attribute.
+        """
+        try:
+            _ = self.mach   # validates Mach ≤ 0.70; raises + shows dialog if exceeded
+        except ValueError:
+            return False    # suppress aircraft geometry for invalid Mach inputs
         return not math.isnan(self._mission_sizing[0])
 
     @Attribute
