@@ -636,5 +636,4 @@ class DroneApp(Component):
 # -------------------------------------------------------------------------
 if __name__ == "__main__":
     from parapy.webgui.core import display
-    display(DroneApp, reload=True,
-            assets_dir=r'C:\Users\jurge\OneDrive - Delft University of Technology\Documents\Studie\Master\Q3\KBE\ParaPY\Assignment\KnowledgeBasedEngineeringGroup36')
+    display(DroneApp, reload=True)
