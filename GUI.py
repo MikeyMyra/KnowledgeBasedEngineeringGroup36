@@ -279,6 +279,11 @@ class DroneApp(Component):
             scroll='paper',  # allow scrolling inside paper
             fullWidth=True,
             maxWidth="sm",
+            sx={
+                '& .MuiPaper-root': {
+                    'mt': '3em',  # margin-top relative to viewport
+                }
+            },
         )[
             mui.DialogTitle["Configure mission"],
             mui.DialogContent[
@@ -287,6 +292,8 @@ class DroneApp(Component):
                     'flexDirection': 'column',
                     'gap': '1em',
                     'minWidth': '400px',
+                    'minHeight': '450px',
+                    'mt': '0.5em',
                 })[
                     mui.TextField(
                         label="Cruise speed [m/s]",
@@ -447,7 +454,7 @@ class DroneApp(Component):
 
                         # Column 2: fuselage
                     mui.Box[
-                        mui.Typography(variant="subtitle1")["Fuselage shaping"],
+                        mui.Typography(variant="subtitle1", sx={'mb': 1.5})["Fuselage shaping"],
                         layout.SlotFloatField(
                             self.drone, 'fuselage_cylinder_start',
                             label='Fuselage cylinder start [% of length]'
@@ -464,16 +471,15 @@ class DroneApp(Component):
 
                         # Column 3: fuel system
                     mui.Box[
-                        mui.Typography(variant="subtitle1")["Fuel system"],
-
-                        mui.Typography(variant="body2", color="text.secondary")[
+                        mui.Typography(variant="subtitle1", sx={'mb': 1.5})["Fuel system"],
+                        mui.Typography(variant="body2", color="text.secondary", sx={'mb': 1.5})[
                             'Fuel type (avgas_100ll, jet_a, jp8, lipo_battery or "auto")'
                         ],
                         layout.SlotStringField(
                             self.drone, 'fuel_type'
                         ),
 
-                        mui.Typography(variant="body2", color="text.secondary", sx={'mt': 0.5})[
+                        mui.Typography(variant="body2", color="text.secondary", sx={'mb': 1.5})[
                             'Fuel tank aspect ratio [-]'
                         ],
                         layout.SlotFloatField(
@@ -483,7 +489,7 @@ class DroneApp(Component):
 
                         # Column 4: wing planform
                     mui.Box[
-                        mui.Typography(variant="subtitle1")["Wing planform"],
+                        mui.Typography(variant="subtitle1", sx={'mb': 1.5})["Wing planform"],
                         layout.SlotFloatField(
                             self.drone, 'wing_taper_ratio',
                             label='Wing taper ratio λ = c_tip / c_root'
