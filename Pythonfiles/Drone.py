@@ -628,12 +628,14 @@ class Drone(GeomBase):
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         png_path  = os.path.join(save_dir, f"Outputfiles/design_point_{timestamp}.png")
+        filename = f"design_point_{timestamp}.png"
 
         _archive_previous(os.path.join(save_dir, "Outputfiles"), "design_point_*.png")
 
         try:
             self.mission.save_wp_ws_figure(png_path)
             print(f"✓ Design-point diagram saved: {png_path}")
+            return os.path.join("Outputfiles", filename)
         except Exception as exc:
             print(f"Design-point PNG save failed: {exc}")
 
@@ -642,9 +644,10 @@ class Drone(GeomBase):
 
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        png_path  = os.path.join(save_dir, f"Outputfiles/vn-diagram_{timestamp}.png")
+        png_path  = os.path.join(save_dir, f"Outputfiles/vn_diagram_{timestamp}.png")
+        filename  = f"vn_diagram_{timestamp}.png"
 
-        _archive_previous(os.path.join(save_dir, "Outputfiles"), "vn-diagram*.png")
+        _archive_previous(os.path.join(save_dir, "Outputfiles"), "vn_diagram*.png")
 
         try:
             plot_vn_diagram(
@@ -656,6 +659,7 @@ class Drone(GeomBase):
                 output_dir      = os.path.join(save_dir, "Outputfiles"),
             )
             print(f"✓ Design-point diagram saved: {png_path}")
+            return os.path.join("Outputfiles", filename)
         except Exception as exc:
             print(f"Design-point PNG save failed: {exc}")
 
@@ -672,12 +676,14 @@ class Drone(GeomBase):
         save_dir  = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         png_path  = os.path.join(save_dir, f"Outputfiles/wing_polars_{timestamp}.png")
+        filename  = f"wing_polars_{timestamp}.png"
 
         _archive_previous(os.path.join(save_dir, "Outputfiles"), "wing_polars_*.png")
 
         try:
             self.aircraft.main_wing.root_airfoil.save_polar_figure(png_path)
             print(f"✓ Wing polar figure saved: {png_path}")
+            return os.path.join("Outputfiles", filename)
         except Exception as exc:
             print(f"Wing polars PNG save failed: {exc}")
 
