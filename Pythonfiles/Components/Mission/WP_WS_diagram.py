@@ -1,3 +1,11 @@
+"""
+Power-to-weight vs wing-loading (W/P-W/S) sizing diagram.
+
+Plots constraint curves for cruise, stall, climb, and take-off to identify
+the feasible design space and optimum design point. Supports Jet, Turboprop,
+and Piston engine types with configurable CLmax and aerodynamic coefficients.
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 

@@ -1,3 +1,11 @@
+"""
+Structural wingbox lofted inside the wing airfoil envelope.
+
+Builds the wingbox solid between the front and rear spar positions using real
+local airfoil thickness at root and tip sections. Used for mass estimation
+and structural visualisation inside the LiftingSurface geometry.
+"""
+
 from math import radians, tan, sin
 
 from parapy.core import Input, Attribute, Part

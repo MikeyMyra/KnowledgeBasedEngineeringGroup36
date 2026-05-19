@@ -1,3 +1,11 @@
+"""
+MATLAB engine initialisation for Q3D aerodynamic analysis.
+
+Starts a shared MATLAB engine session at import time and changes the working
+directory to the Q3D folder so that vortex-lattice scripts can be called
+directly from Python via MATLAB_Q3D_ENGINE throughout the application.
+"""
+
 import os
 import matlab.engine
 

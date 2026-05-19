@@ -1,3 +1,12 @@
+"""
+Root ParaPy object for the UAV initial-sizing application.
+
+Assembles the full UAV (Aircraft geometry, Mission analysis, Payload) from
+user-supplied mission inputs (cruise speed, altitude, range, endurance).
+Exposes GUI actions for the design-point diagram, V-n diagram, XFoil polar
+sweep, stability report, and PDF export.
+"""
+
 import math
 import os
 import glob

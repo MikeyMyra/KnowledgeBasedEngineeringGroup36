@@ -1,3 +1,12 @@
+"""
+Mid-level assembly that combines all physical UAV components.
+
+Instantiates and positions the LiftingSurface (wing + tail), Fuselage,
+Engine, and FuelTank from mission-sizing outputs passed down by Drone.
+Computes geometric outputs such as aerodynamic centre, CG, and tail volume
+coefficients used for stability checking.
+"""
+
 import os
 import math
 import glob

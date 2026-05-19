@@ -1,3 +1,11 @@
+"""
+Capsule-shaped fuel tank sized from fuel mass and type.
+
+Loads fuel properties (density, energy content) from fuel_properties.json,
+applies ullage and structure fractions, and lofts a capsule geometry
+(cylinder + hemispherical caps) placed in the fuselage centre section.
+"""
+
 import json
 import math
 import os

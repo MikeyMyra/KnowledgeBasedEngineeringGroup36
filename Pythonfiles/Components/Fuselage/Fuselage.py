@@ -1,3 +1,11 @@
+"""
+Fuselage geometry: nosecone, cylindrical mid-section, tailcone.
+
+Sizes length and radius from MTOW via Roskam Vol. I §3.3 power-law relations,
+then lofts the three-section body and attaches the Undercarriage.
+Exposes min_length and min_radius constraints driven by payload bay sizing.
+"""
+
 import math
 
 from parapy.core import Input, Attribute, Part, child

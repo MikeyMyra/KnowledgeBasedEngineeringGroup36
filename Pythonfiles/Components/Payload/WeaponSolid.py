@@ -1,3 +1,11 @@
+"""
+Single weapon cylinder placed at a pre-computed (dy, dz) offset.
+
+Used by PayloadItem to render individual cylinders in a multi-weapon grid
+arrangement inside the fuselage cross-section. Each instance receives its
+lateral and vertical offset from the parent weapon grid calculation.
+"""
+
 import math
 
 from parapy.core import Input, Part
