@@ -1,4 +1,4 @@
-from parapy.geom import GeomBase, LineSegment, translate
+from parapy.geom import GeomBase, LineSegment, translate, Position, Point
 from parapy.core import Input, Attribute, Part, child
 
 
@@ -49,5 +49,7 @@ class Frame(GeomBase):
 if __name__ == "__main__":
     from parapy.gui import display
 
-    frame = Frame()
+    frame = Frame(
+        pos=Position(Point(0,0,0))
+    )
     display(frame)
