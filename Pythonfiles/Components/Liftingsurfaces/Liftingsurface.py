@@ -336,7 +336,7 @@ class LiftingSurface(GeomBase):
 
     @Attribute
     def attach_z(self):
-        return self.fuselage_wall_radius if (self.is_tail and self.is_vertical_tail) else 0.0
+        return 0.0 #self.fuselage_wall_radius if (self.is_tail and self.is_vertical_tail) else 0.0
 
     @Attribute
     def tail_arm(self):
