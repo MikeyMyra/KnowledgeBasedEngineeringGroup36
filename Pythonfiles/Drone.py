@@ -16,8 +16,38 @@ from Pythonfiles.Components.Payload.Payloadrules import PayloadRules, PayloadRol
 from Pythonfiles.Components.Mission.ISA_calculator import ISA_calculator
 from Pythonfiles.metric_imperial_conversions import kilograms_to_pounds, feet_to_meters
 
+# Notifications
+from GUI_NotiStore import notify_error
+
 
 # ─── Input-range validator helpers ────────────────────────────────────────── #
+
+def with_snackbar(base_validator):
+    """Wraps a simple validator(v) and shows a snackbar on ValueError."""
+    def _wrapped(v, obj=None, slot=None):
+        try:
+            return base_validator(v)
+        except ValueError as exc:
+            slot_name = getattr(slot, "name", None)
+            if slot_name:
+                msg = f"{slot_name}: {exc}"
+            else:
+                msg = str(exc)
+            notify_error(msg)
+            raise
+    return _wrapped
+
+
+def between_with_snackbar(lo: float, hi: float):  # or adjust import
+    return with_snackbar(_between(lo, hi))
+
+
+def positive_with_snackbar():
+    return with_snackbar(_positive())
+
+
+def non_negative_int_with_snackbar():
+    return with_snackbar(_non_negative_int())
 
 def _between(lo: float, hi: float):
     """Closed-interval validator: lo ≤ value ≤ hi."""
@@ -134,7 +164,7 @@ class Drone(GeomBase):
     # ================================================================ #
 
     cruise_speed: float = Input(
-        validator=_between(10.0, 350.0),
+        validator=between_with_snackbar(10.0, 350.0),
         doc="Cruise true airspeed  [m/s]  ·  valid: 10 – 350 m/s\n"
             "Engine type is inferred from Mach number and altitude:\n"
             "  M ≥ 0.40 (sea level) / 0.50 (9 km) / 0.60 (15 km) → Jet\n"
@@ -142,7 +172,7 @@ class Drone(GeomBase):
     )   # [m/s]
 
     mission_altitude: float = Input(
-        validator=_between(0.0, 18_000.0),
+        validator=between_with_snackbar(0.0, 18_000.0),
         doc="Cruise / loiter altitude  [m]  ·  valid: 0 – 18 000 m\n"
             "Practical ceilings by engine type:\n"
             "  Piston   ≤ 4 500 m  |  Turboprop ≤ 9 000 m  |  Jet up to 18 000 m\n"
@@ -150,14 +180,14 @@ class Drone(GeomBase):
     )  # [m]
 
     mission_range: float = Input(
-        validator=_between(1.0, 25_000.0),
+        validator=between_with_snackbar(1.0, 25_000.0),
         doc="Total mission range (outbound + return)  [km]  ·  valid: 1 – 25 000 km\n"
             "Breguet fuel sizing: each cruise leg = range / 2.\n"
             "Class floors: < 150 km → small  |  150 – 500 km → medium  |  > 500 km → large",
     )   # [km]
 
     mission_endurance: float = Input(
-        validator=_between(0.1, 120.0),
+        validator=between_with_snackbar(0.1, 120.0),
         doc="Loiter / endurance duration  [hr]  ·  valid: 0.1 – 120 hr\n"
             "Class floors: < 4 hr → small  |  4 – 10 hr → medium  |  > 10 hr → large\n"
             "Objective: > 6 hr → High Endurance (Turboprop preferred)",
@@ -180,7 +210,7 @@ class Drone(GeomBase):
 
     weapon_count: int = Input(
         0,
-        validator=_between(0, 6),
+        validator=between_with_snackbar(0, 6),
         doc="Number of munitions / hard-points  [—]  ·  valid: 0 – 6\n"
             "0 = unarmed (weapon category suppressed from payload).\n"
             "Requires payload_role = 'Strike' or 'SEAD' to carry weapons.",
@@ -199,7 +229,7 @@ class Drone(GeomBase):
 
     fuselage_cylinder_start: float = Input(
         10.0,
-        validator=_between(5.0, 30.0),
+        validator=between_with_snackbar(5.0, 30.0),
         doc="Nosecone / cylinder junction  [% of fuselage length]  ·  valid: 5 – 30 %\n"
             "Raymer §4.2: nosecone typically 5–30 % of fuselage length.\n"
             "Payload bay begins just aft of this station.",
@@ -207,7 +237,7 @@ class Drone(GeomBase):
 
     fuselage_cylinder_end: float = Input(
         70.0,
-        validator=_between(50.0, 95.0),
+        validator=between_with_snackbar(50.0, 95.0),
         doc="Cylinder / tail-cone junction  [% of fuselage length]  ·  valid: 50 – 95 %\n"
             "Tail-cone begins at this station. Fuel tank fits between payload and this point.\n"
             "Keep at least 5 % gap above cylinder_start.",
@@ -215,7 +245,7 @@ class Drone(GeomBase):
 
     payload_nose_clearance: float = Input(
         0.20,
-        validator=_between(0.0, 2.0),
+        validator=between_with_snackbar(0.0, 2.0),
         doc="Gap from nose-cone end to first payload item  [m]  ·  valid: 0 – 2 m\n"
             "Prevents the payload from overlapping the prop nacelle on tractor configs.\n"
             "100 mm default clears most small/medium UAV nacelles.  Increase to 0.3–0.5 m\n"
@@ -230,7 +260,7 @@ class Drone(GeomBase):
 
     fuel_tank_aspect_ratio: float = Input(
         3.0,
-        validator=_between(1.1, 10.0),
+        validator=between_with_snackbar(1.1, 10.0),
         doc="Fuel tank length-to-diameter ratio  [—]  ·  valid: 1.1 – 10.0\n"
             "3 = compact wing-box tank (default).\n"
             "Increase to 5+ for slender HALE fuselages where tank must fit in a narrow bay.",
@@ -254,7 +284,7 @@ class Drone(GeomBase):
 
     wing_taper_ratio: float = Input(
         0.40,
-        validator=_between(0.20, 1.0),
+        validator=between_with_snackbar(0.20, 1.0),
         doc="Wing taper ratio  λ = c_tip / c_root  [—]  ·  valid: 0.20 – 1.00\n"
             "0.40 — Raymer subsonic endurance UAV default.\n"
             "Lower values increase tip wash-out and reduce induced drag; "
