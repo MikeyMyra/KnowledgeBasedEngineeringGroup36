@@ -1,3 +1,11 @@
+"""
+Piston/turboprop propeller engine geometry.
+
+Sizes engine cowling and propeller disk from MTOW and actuator-disk theory
+(Roskam Vol. I §3.6), and lofts the nacelle solid. Supports both tractor
+and pusher configurations for 3-D visualisation.
+"""
+
 from math import radians, tan, sin, cos, pi, sqrt, isfinite
 
 from parapy.core import Input, Attribute, Part, child

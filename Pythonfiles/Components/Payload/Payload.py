@@ -1,3 +1,11 @@
+"""
+Ordered payload assembly laid out along the fuselage x-axis.
+
+Arranges PayloadItem instances sequentially, computes item x-positions with
+configurable gaps, and exposes total mass, volume, CG, and the minimum
+fuselage length and radius needed to contain the payload bay.
+"""
+
 import math
 
 from parapy.core import Attribute, Input, Part, action, child, validate

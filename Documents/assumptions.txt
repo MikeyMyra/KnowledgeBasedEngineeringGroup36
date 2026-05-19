@@ -1,0 +1,271 @@
+============================================================
+UAV SIZING TOOL — CODE ASSUMPTIONS (non-Roskam/Raymer)
+============================================================
+This file lists all hard-coded numerical constants, defaults,
+and modelling choices that are NOT directly sourced from
+Roskam or Raymer but represent internal design decisions,
+engineering rule-of-thumb values, or convenience defaults.
+============================================================
+
+
+------------------------------------------------------------
+ATMOSPHERE (ISA_calculator.py)
+------------------------------------------------------------
+- ISA sea-level temperature  : T0  = 288.15 K
+- ISA sea-level pressure     : p0  = 101 325 Pa
+- ISA sea-level density      : rho0 = 1.225 kg/m³
+- Tropospheric lapse rate    : L   = 0.0065 K/m
+- Tropopause altitude        : h   = 11 000 m
+- Specific gas constant air  : R   = 287.05 J/(kg·K)
+- Ratio of specific heats    : gamma = 1.4
+- Stratosphere is treated as fully isothermal above 11 000 m
+
+
+------------------------------------------------------------
+MISSION ANALYSIS (mission.py)
+------------------------------------------------------------
+Breguet fractions:
+- Taxi / warm-up fraction     : w1/w0 = 0.98  (fixed)
+- Climb fraction formula      : w2/w1 = 1.0065 − 0.0325 × M_cruise
+- Landing / approach fraction : w7/w6 = 0.99  (fixed)
+- Post-landing taxi fraction  : w8/w7 = 0.992 (fixed)
+- Trapped-fuel allowance      : +1 % added to total fuel weight
+- Reserve time default        : 0.5 hr
+
+Aerodynamic defaults:
+- Default Oswald efficiency   : e     = 0.80
+- Default propeller efficiency: eta   = 0.80  (cruise, global)
+- Default SFC                 : 0.5 1/hr
+
+CL / CD0 values by engine type (used in W/P–W/S diagram):
+                         Clean   Take-off   Landing   CD0
+  Jet                   : 1.2     1.5        1.7      0.015
+  Turboprop             : 1.4     1.7        2.0      0.020
+  Piston                : 1.3     1.5        1.8      0.020
+
+Raymer empty-weight fraction regression (Table 3.1 coefficients + UAV caps):
+  Jet       : We/W0 = 1.67  × W0_lbs^-0.16,  capped at 0.50
+  Turboprop : We/W0 = 2.75  × W0_lbs^-0.18,  capped at 0.52
+  Piston    : We/W0 = 0.97  × W0_lbs^-0.06,  capped at 0.58
+
+Sizing bounds:
+- MTOW hard upper limit: 100 000 kg (outside UAV scope)
+- Bisection convergence tolerance: (hi − lo)/max(hi,1) < 1e-4
+
+
+------------------------------------------------------------
+ENGINE TYPE SELECTION (Drone.py / Engine.py)
+------------------------------------------------------------
+- Mach threshold for jet selection (altitude-graduated):
+    h <= 9 000 m  : M >= 0.40 → Jet
+    h <= 15 000 m : M >= 0.50 → Jet
+    h >  15 000 m : M >= 0.60 → Jet
+- Below Mach threshold:
+    Mission objective == "High Endurance" → Turboprop
+    Altitude > 4 500 m                   → Turboprop
+    Otherwise                            → Piston
+- Piston engine practical ceiling        : 4 500 m
+- Turboprop practical ceiling            : 9 000 m
+
+Engine count from MTOW (Engine.py):
+    MTOW <  2 700 kg  → 1 engine
+    MTOW < 30 000 kg  → 2 engines
+    MTOW >= 30 000 kg → 4 engines  (safety-net only; outside UAV scope)
+
+
+------------------------------------------------------------
+JET ENGINE (JetEngine.py)
+------------------------------------------------------------
+- Thrust lapse model         : T_alt/T_sl = (rho_alt/rho_sl)^0.75
+- Bypass ratio formula       : BPR = 15 × (1 − T/W)², clamped to [1, 12]
+- Fan radius                 : 90 % of nacelle radius
+- Core radius                : 40 % of fan radius
+- Fan disc longitudinal pos  : 15 % of nacelle length from inlet
+- Nozzle taper start         : 80 % of nacelle length
+- Nacelle inlet taper profile : 0–15 % of length (linear in/out)
+- Inlet radius ratio default : 0.85
+- Nozzle radius ratio default: 0.70
+
+
+------------------------------------------------------------
+PROPELLER ENGINE (PropellerEngine.py)
+------------------------------------------------------------
+- Propeller efficiency (cruise) : eta = 0.82
+- Propeller efficiency (climb)  : eta = 0.75
+- Rate-of-climb design target   : ROC = 3.0 m/s
+- Altitude diameter scaling     : D_alt = D_sl × sqrt(rho_sl / rho_alt)
+  (actuator-disk: thrust area ∝ 1/rho → diameter ∝ 1/sqrt(rho))
+- Blade length cap              : min(15 % semi-span, 1.5 × fuselage radius)
+  (nose-mount: fuselage-radius cap; wing-mount: semi-span cap)
+- Spinner radius                : 15 % of propeller diameter
+- Spinner length                : 1.5 × spinner radius
+- Nacelle radius (prop)         : equals spinner radius
+- Nacelle length (prop)         : 3.5 × nacelle radius
+- Blade root chord formula      : 0.065 × D_prop × (n_blades / 2)
+- Blade tip chord               : 30 % of blade root chord
+- n_blades from solidity        : target_solidity × π × R / c_root,
+  rounded and clamped to [2, 6]
+- Solidity bump for V > 80 m/s  : target_solidity × 1.4, capped at 0.30
+
+
+------------------------------------------------------------
+ENGINE POSITIONING (Engine.py)
+------------------------------------------------------------
+- Wing-mount spanwise station   : 35 % semi-span
+- Prop x-offset (forward)       : blade_length × tan(sweep_LE) + 0.05 m
+- Jet x-offset (forward)        : −35 % nacelle length ahead of wing LE
+- Jet z-offset (downward)       : −2 × nacelle radius below wing LE
+- Single jet placement          : dorsal-rear at 85 % fuselage length,
+                                  Z on top of fuselage (Z = fuselage radius)
+- Single prop placement         : nose tractor at fuselage origin (x = 0)
+
+
+------------------------------------------------------------
+WING ASPECT RATIO (Drone.py)
+------------------------------------------------------------
+- Jet     : AR = 4.737 × M_cruise^-0.979, clamped to [6.0, 12.0]
+- Turboprop: AR = 9.2  (statistical MALE default)
+- Piston  : AR = 7.6  (statistical GA default)
+- Wing root chord is capped at 40 % of estimated fuselage length;
+  if exceeded, AR is increased to stay within that chord limit
+- Wing max semi-span capped at 4 × estimated fuselage length
+
+
+------------------------------------------------------------
+UAV CLASS CLASSIFICATION (Drone.py / PayloadRules)
+------------------------------------------------------------
+By range:
+    < 150 km  → small
+    150–500 km → medium
+    > 500 km  → large
+By endurance:
+    < 4 hr   → small
+    4–10 hr  → medium
+    > 10 hr  → large
+(Most restrictive class is used when range and endurance disagree)
+
+Load factor baseline by class:
+    small  → 4.0 g
+    medium → 3.5 g
+    large  → 2.5 g
+Adjustments (additive):
+    Mission objective = "High Speed"    → +1.0 g
+    Mission objective = "High Endurance"→ −0.5 g
+    Payload includes weapon             → +1.0 g
+    Payload includes radar              → +0.5 g
+
+Mach limits:
+    Maximum Mach = 1.5 × cruise Mach   (for V-n diagram sizing)
+    Loiter speed seed = 70 % of cruise speed
+
+
+------------------------------------------------------------
+FUSELAGE GEOMETRY (Fuselage.py)
+------------------------------------------------------------
+- Fineness ratio used for Roskam fallback: l/d = 14
+  (i.e., radius = length / 28 when no payload or fuel tank is defined)
+- Structural minimum radius: max(0.03 × length, 0.06 m)
+- Structural CG assumed at 45 % of fuselage length
+- Nose-cone and tailcone use an elliptical cross-section blend profile
+- Gap between payload bay and fuel tank: 50 mm (hard-coded)
+- Default nosecone end      : 10 % of fuselage length
+- Default tailcone start    : 70 % of fuselage length
+- Default payload nose clearance: 0.20 m
+
+
+------------------------------------------------------------
+UNDERCARRIAGE (Undercarriage.py)
+------------------------------------------------------------
+- Gear configuration           : Tricycle (fixed-wing UAV standard)
+- n_main_struts                : 2 for MTOW ≤ 50 000 kg; 4 above
+- Wheels per strut             : 1 for MTOW ≤ 5 700 kg; 2 above
+- Tyre diameter formula (UAV-modified): d = 0.034 × MTOW^0.21
+  (Roskam Tables extrapolate poorly below ~500 kg; exponent reduced)
+- Tyre width                   : 35 % of tyre outer diameter
+- Strut radius                 : 25 % of wheel major radius
+- Axle radius                  : 60 % of strut radius
+- Nose gear longitudinal pos   : 10 % of fuselage length
+- Main gear longitudinal pos   : 60 % of fuselage length
+- Prop/nacelle ground clearance margin: 0.18 m
+- Tailstrike design rotation angle: 12°
+- Tip-over criterion angle     : 35° from vertical
+- Minimum lateral track        : 3.5 × wheel major radius
+- Axle half-width (dual wheel) : 1.2 × wheel major radius
+
+
+------------------------------------------------------------
+WING GEOMETRY & AERODYNAMICS (LiftingSurface.py / Aircraft.py)
+------------------------------------------------------------
+- Wing attach-point            : 40 % of fuselage length (default)
+- Tail moment arm              : min(65 % of wing span, fuselage end − wing LE)
+- Aerodynamic centre           : 25 % MAC from leading edge of MAC
+- Structural CG of wing/tail   : 40 % MAC from leading edge of MAC
+- Q3D vortex-lattice Mach cap  : M = 0.84  (Prandtl-Glauert validity limit)
+- XFoil Mach cap               : M = 0.70  (viscous divergence limit)
+
+Default planform parameters:
+    Wing taper ratio            : 0.40
+    Wing sweep LE               : 5.0°
+    Wing dihedral               : 5.0°
+    Wing thickness-to-chord     : 0.15
+    Wing maximum camber         : 0.04  (4 %)
+    Wing maximum camber position: 0.40
+    Tail taper ratio            : 0.40
+    Tail sweep LE               : 10.0°
+    Tail dihedral               : 0.0°
+    Tail thickness-to-chord     : 0.15
+    Tail maximum camber         : 0.0   (symmetric)
+    Vertical tail sweep LE      : 35.0° (hard-coded, not user-adjustable)
+
+Default spar positions (all surfaces):
+    Front spar                  : 15 % of local chord
+    Rear spar                   : 60 % of local chord
+
+Tail volume coefficients (default):
+    Horizontal tail : 0.60
+    Vertical tail   : 0.04
+Tail aspect ratios (default):
+    Horizontal tail : 4.50
+    Vertical tail   : 1.80
+
+Disk loading default     : 80.0 N/m²
+Target blade solidity    : 0.15
+Default blade sweep      : 5.0°
+
+
+------------------------------------------------------------
+STABILITY (Aircraft.py)
+------------------------------------------------------------
+- Lift-curve slope: 2π per radian (thin-aerofoil theory, incompressible)
+- Tail aerodynamic efficiency: eta_h = 0.90
+- Target static margin range: 5 – 15 % MAC
+  (FBW aircraft may accept down to −10 %)
+- Engine CG assumed at wing aerodynamic centre
+- Fuel CG assumed at wing aerodynamic centre
+- Fuel tank structure CG assumed at wing aerodynamic centre
+
+
+------------------------------------------------------------
+MASS BREAKDOWN (Aircraft.py)
+------------------------------------------------------------
+- Engine/propulsion group default mass: 10 % of MTOW
+  (used when engine_mass is not supplied)
+- Fuel tank structure mass: 2.5 % of fuel mass
+  (composite integral tank estimate; Roskam range 2–3 %)
+
+
+------------------------------------------------------------
+FUEL TANK (FuelTank.py)
+------------------------------------------------------------
+- Ullage fraction          : 5 % of net fuel volume
+- Tank structure fraction  : 5 % of net fuel volume
+- Volume sizing factor     : 1 / (1 − 0.05 − 0.05) ≈ 1.111
+- Default tank aspect ratio: AR = 3.0  (length / diameter)
+- Minimum AR enforced      : 1.01  (prevents zero cylinder length)
+- Fuselage radius clearance: tank outer radius × 1.03  (+3 %)
+- Tank geometry            : capsule (cylinder + two hemispherical caps)
+- Minimum circle radius in loft: max(R × 0.002, 1e-4 m)  (degenerate-profile guard)
+
+============================================================
+END OF ASSUMPTIONS FILE
+============================================================

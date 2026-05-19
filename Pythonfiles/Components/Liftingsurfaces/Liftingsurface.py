@@ -1,3 +1,11 @@
+"""
+Parametric lifting surface (wing, horizontal tail, vertical tail).
+
+Lofts a tapered, swept, dihedral wing from root/tip Airfoil sections and
+attaches a structural Wingbox. Runs Q3D vortex-lattice aerodynamic sweeps
+via MATLAB; Mach is capped at 0.84 (Prandtl-Glauert validity limit for VLM).
+"""
+
 from itertools import product
 from math import radians, tan
 

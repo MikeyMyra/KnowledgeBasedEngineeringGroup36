@@ -1,3 +1,11 @@
+"""
+Tricycle fixed undercarriage geometry.
+
+Sizes strut height, wheel radius, and lateral track from MTOW using Roskam
+Vol. I §8.5-8.6 correlations, then builds struts, axles, and torus-shaped
+tyres for 3-D visualisation. Retractable gear suppresses geometry when stowed.
+"""
+
 import math
 
 from parapy.core import Input, Attribute, Part, child

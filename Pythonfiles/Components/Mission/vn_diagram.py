@@ -1,3 +1,11 @@
+"""
+V-n (velocity-load factor) diagram generator.
+
+Plots the manoeuvre and gust envelope per Raymer §V.2, Roskam Vol. V §4.2,
+and EASA CS-LUAS ACJ VLA 333. Saves a timestamped PNG and returns the figure
+object for embedding in the ParaPy GUI or PDF report.
+"""
+
 import datetime
 import glob
 import math

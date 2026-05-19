@@ -1,3 +1,11 @@
+"""
+Engine selector and positioning wrapper.
+
+Chooses between JetEngine and PropellerEngine based on the engine_type
+input, sizes the number of engines from Roskam thrust-to-weight relations,
+and places them symmetrically on the wing or fuselage.
+"""
+
 from math import radians, tan, sqrt
 
 from parapy.core import Input, Attribute, Part

@@ -1,3 +1,11 @@
+"""
+International Standard Atmosphere (ISA) model.
+
+Returns temperature, pressure, density, speed of sound, and density altitude
+at a given geometric altitude. Covers the troposphere (0-11000 m) and the
+isothermal tropopause layer above, per ICAO Doc 7488 / ISO 2533.
+"""
+
 import numpy as np
 
 

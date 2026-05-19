@@ -10,10 +10,11 @@ A knowledge-based ParaPy application for the conceptual sizing and 3-D geometry 
 Open a terminal in the folder one level above `Pythonfiles/` and run:
 
 ```bash
-python main.py
+python GUI.py
 ```
 
-This starts the ParaPy GUI with a pre-configured `Drone` instance. All inputs can be changed live in the GUI sidebar.
+This starts the ParaPy GUI with a pre-configured `Drone` instance. All inputs can be changed before configuration creation.
+For the ParaPy Debug Mode, run `main.py`.
 
 ### 2. Root object
 

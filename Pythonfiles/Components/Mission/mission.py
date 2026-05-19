@@ -1,3 +1,11 @@
+"""
+Breguet-based mission analysis and UAV initial sizing.
+
+Estimates MTOW, fuel weight, empty weight, thrust-to-weight, and wing loading
+from range, endurance, and payload inputs using Breguet equations and Roskam
+empty-weight fraction regressions. Raises a dialog when the mission is infeasible.
+"""
+
 import numpy as np
 import Pythonfiles.metric_imperial_conversions as m2i
 from Pythonfiles.Components.Mission.WP_WS_diagram import WP_WS_Diagram

@@ -1,3 +1,11 @@
+"""
+Reference frame visualisation helper.
+
+Renders three colour-coded axis arrows (X=red, Y=green, Z=blue) at any
+ParaPy position, following the standard aircraft body-axis convention.
+Used throughout the model to show local coordinate frames in the 3-D viewer.
+"""
+
 from parapy.geom import GeomBase, LineSegment, translate, Position, Point
 from parapy.core import Input, Attribute, Part, child
 

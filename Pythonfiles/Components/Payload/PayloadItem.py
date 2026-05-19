@@ -1,3 +1,11 @@
+"""
+Single payload item: geometry, mass, and cross-section envelope.
+
+Resolves a model key from the payload library, instantiates Box or Cylinder
+geometry, computes volume and mass from database dimensions and density, and
+handles multi-weapon grid arrangements via WeaponSolid sub-parts.
+"""
+
 import math
 
 from parapy.core import Attribute, Input, Part

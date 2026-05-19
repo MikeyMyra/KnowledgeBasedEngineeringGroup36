@@ -1,3 +1,11 @@
+"""
+Engineering rules mapping mission inputs to UAV class and payload.
+
+Contains PayloadRole (enum), ROLE_CATEGORIES, per-constraint UAV class floors,
+mission objective inference, and the PayloadRules dataclass that applies all
+rules in sequence to produce a ready-to-use payload configuration.
+"""
+
 import enum
 import math
 import warnings

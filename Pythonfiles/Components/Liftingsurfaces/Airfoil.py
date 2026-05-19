@@ -1,3 +1,11 @@
+"""
+Parametric NACA 4-series airfoil with CST fitting and XFoil polars.
+
+Generates airfoil coordinates from camber/thickness inputs, fits a CST curve
+for ParaPy geometry, writes a .dat file, and drives the bundled XFoil 6.99
+executable to compute Cl/Cd polars. Polars are cached; Mach is capped at 0.70.
+"""
+
 import os
 import subprocess
 from math import comb
