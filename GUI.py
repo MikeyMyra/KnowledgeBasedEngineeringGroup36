@@ -431,7 +431,7 @@ class DroneApp(Component):
                     'mt': '0.5em',
                 })[
                     # Column 1: classification & objective
-                    mui.Box[
+                    mui.Box[    
                         mui.Typography(variant="subtitle1")["Classification overrides"],
 
                             # Comment / helper text above field
